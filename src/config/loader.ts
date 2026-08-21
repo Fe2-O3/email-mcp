@@ -315,9 +315,43 @@ export async function saveConfig(
   filePath: string = CONFIG_FILE,
 ): Promise<void> {
   const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
+  // This file holds plaintext IMAP/SMTP passwords and OAuth refresh tokens.
+  // Default umask gives it 0644, readable by every account on the machine.
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
   const toml = stringifyTOML(config as Record<string, unknown>);
-  await fs.writeFile(filePath, toml, 'utf-8');
+  await fs.writeFile(filePath, toml, { encoding: 'utf-8', mode: 0o600 });
+  // `mode` on writeFile only applies when the file is created, so an existing
+  // world-readable config would keep its permissions silently.
+  await fs.chmod(filePath, 0o600);
+}
+
+/**
+ * Warn when an existing config is readable by anyone but its owner.
+ *
+ * Tightening it automatically would be the wrong call: the file may be
+ * deliberately group-readable for a service account, and silently changing
+ * permissions under someone is worse than telling them.
+ *
+ * No-ops on Windows, where POSIX mode bits do not mean this.
+ */
+export async function warnOnLooseConfigPermissions(
+  filePath: string = CONFIG_FILE,
+): Promise<string | null> {
+  if (process.platform === 'win32') return null;
+  try {
+    const stats = await fs.stat(filePath);
+    // eslint-disable-next-line no-bitwise
+    const looseBits = stats.mode & 0o077;
+    if (looseBits === 0) return null;
+    // eslint-disable-next-line no-bitwise
+    const mode = (stats.mode & 0o777).toString(8).padStart(3, '0');
+    return (
+      `Config at ${filePath} is mode ${mode} and holds plaintext credentials. ` +
+      `Restrict it with: chmod 600 ${filePath}`
+    );
+  } catch {
+    return null;
+  }
 }
 
 /**
