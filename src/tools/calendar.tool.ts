@@ -398,7 +398,7 @@ export default function registerCalendarTools(
             'Show events on or before this date (ISO 8601, e.g. 2026-02-28). Defaults to 30 days from now.',
           ),
         calendar_name: z.string().optional().describe('Restrict to a specific calendar by name'),
-        limit: z
+        limit: z.coerce
           .number()
           .int()
           .min(1)
@@ -469,7 +469,7 @@ export default function registerCalendarTools(
           .boolean()
           .default(false)
           .describe('Include completed reminders (default: false)'),
-        limit: z
+        limit: z.coerce
           .number()
           .int()
           .min(1)
