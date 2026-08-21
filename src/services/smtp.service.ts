@@ -6,6 +6,7 @@
 
 import type { IConnectionManager } from '../connections/types.js';
 import type RateLimiter from '../safety/rate-limiter.js';
+import { sanitizeTemplateVariable } from '../safety/validation.js';
 import type { SendResult } from '../types/index.js';
 import type ImapService from './imap.service.js';
 
@@ -126,6 +127,7 @@ export default class SmtpService {
       to: string[];
       body?: string;
       cc?: string[];
+      html?: boolean;
     },
   ): Promise<SendResult> {
     this.checkRateLimit(accountName);
@@ -137,19 +139,46 @@ export default class SmtpService {
       ? original.subject
       : `Fwd: ${original.subject}`;
 
-    // Build forwarded message body
-    const forwardHeader = [
-      '',
-      '---------- Forwarded message ----------',
-      `From: ${original.from.name ? `${original.from.name} <${original.from.address}>` : original.from.address}`,
-      `Date: ${original.date}`,
-      `Subject: ${original.subject}`,
-      `To: ${original.to.map((a) => a.address).join(', ')}`,
-      '',
-    ].join('\n');
+    const from = original.from.name
+      ? `${original.from.name} <${original.from.address}>`
+      : original.from.address;
+    const to = original.to.map((a) => a.address).join(', ');
 
-    const originalBody = original.bodyText ?? original.bodyHtml ?? '';
-    const fullBody = (options.body ?? '') + forwardHeader + originalBody;
+    // Every field below comes from a message someone else composed, so the HTML
+    // branch escapes them. Interpolating an attacker-chosen display name into
+    // the markup of a message the user is forwarding onward is HTML injection.
+    const esc = (value: string) => sanitizeTemplateVariable(value, true);
+
+    let fullBody: string;
+    if (options.html) {
+      const forwardHeader = [
+        '<br><hr>',
+        '<div>---------- Forwarded message ----------<br>',
+        `From: ${esc(from)}<br>`,
+        `Date: ${esc(original.date)}<br>`,
+        `Subject: ${esc(original.subject)}<br>`,
+        `To: ${esc(to)}</div><br>`,
+      ].join('');
+
+      // Prefer the original's HTML part; a plain-text original goes in a <pre>
+      // so its line breaks survive, rather than collapsing into one paragraph.
+      const originalBody = original.bodyHtml ?? `<pre>${esc(original.bodyText ?? '')}</pre>`;
+
+      fullBody = (options.body ?? '') + forwardHeader + originalBody;
+    } else {
+      const forwardHeader = [
+        '',
+        '---------- Forwarded message ----------',
+        `From: ${from}`,
+        `Date: ${original.date}`,
+        `Subject: ${original.subject}`,
+        `To: ${to}`,
+        '',
+      ].join('\n');
+
+      const originalBody = original.bodyText ?? original.bodyHtml ?? '';
+      fullBody = (options.body ?? '') + forwardHeader + originalBody;
+    }
 
     const transport = await this.connections.getSmtpTransport(accountName);
 
@@ -158,7 +187,7 @@ export default class SmtpService {
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
       subject,
-      text: fullBody,
+      ...(options.html ? { html: fullBody } : { text: fullBody }),
     });
 
     return {
