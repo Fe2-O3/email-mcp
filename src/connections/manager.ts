@@ -21,6 +21,40 @@ type SmtpAuth =
   | { user: string; pass?: string }
   | { type: string; user: string; accessToken: string };
 
+/**
+ * Attach `error`/`close` listeners to an ImapFlow client.
+ *
+ * ImapFlow extends EventEmitter. An `error` event with no registered listener
+ * is, in Node, an uncaughtException — it takes the whole process down. Hosted
+ * IMAP providers routinely drop sessions after ~29 minutes of inactivity, so a
+ * long-lived MCP server reliably hits this. Because clients are constructed
+ * with `logger: false`, the crash leaves no trace: the server just vanishes and
+ * the MCP client reports its tools as disconnected for no visible reason.
+ *
+ * Listeners are attached BEFORE `connect()`, because a TLS or auth failure can
+ * emit during the connect handshake itself.
+ *
+ * @param onDead runs on error or close, for callers that pool the client and
+ *   need to evict it. Short-lived clients pass nothing.
+ */
+function attachImapLifecycleHandlers(client: ImapFlow, label: string, onDead?: () => void): void {
+  const handleDead = (reason: string) => {
+    // Logging must never throw from inside an error handler.
+    mcpLog('warning', 'imap', `IMAP connection lost for "${label}": ${reason}`).catch(() => {
+      /* swallow */
+    });
+    onDead?.();
+  };
+
+  client.on('error', (err: unknown) => {
+    handleDead(err instanceof Error ? err.message : String(err));
+  });
+
+  client.on('close', () => {
+    onDead?.();
+  });
+}
+
 export default class ConnectionManager implements IConnectionManager {
   private imapClients = new Map<string, ImapFlow>();
 
@@ -100,6 +134,15 @@ export default class ConnectionManager implements IConnectionManager {
       },
       auth,
       logger: false,
+    });
+
+    // Evict only if this exact client is still the pooled one. A newer client
+    // may already have replaced it, and deleting unconditionally would drop a
+    // live connection.
+    attachImapLifecycleHandlers(client, accountName, () => {
+      if (this.imapClients.get(accountName) === client) {
+        this.imapClients.delete(accountName);
+      }
     });
 
     await client.connect();
@@ -230,6 +273,11 @@ export default class ConnectionManager implements IConnectionManager {
         auth,
         logger: false,
       });
+
+      // Not pooled, so nothing to evict — but the listener still has to exist
+      // or a mid-probe socket error crashes the process during setup.
+      attachImapLifecycleHandlers(client, account.name);
+
       await client.connect();
 
       const mailboxes = await client.list();
