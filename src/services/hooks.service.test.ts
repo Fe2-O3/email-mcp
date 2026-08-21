@@ -57,6 +57,7 @@ function buildConfig(overrides: Partial<HooksConfig> = {}): HooksConfig {
 
 const meta: EmailMeta = {
   id: '4242',
+  messageId: '<deploy-fail@example.invalid>',
   subject: 'Deploy failed',
   from: { address: 'ci@example.com' },
   to: [{ address: 'me@example.com' }],

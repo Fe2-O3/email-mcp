@@ -25,6 +25,25 @@ import { buildSystemPrompt } from './presets.js';
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * The fields a webhook consumer needs to fetch the message it was told about.
+ * Kept as one helper because every alert payload needs all four; spreading it
+ * is harder to forget than copying four lines into a new alert site.
+ */
+function identityOf(email: { mailbox: string; meta: EmailMeta }): {
+  uid: string;
+  messageId: string;
+  folder: string;
+  hasAttachments: boolean;
+} {
+  return {
+    uid: email.meta.id,
+    messageId: email.meta.messageId,
+    folder: email.mailbox,
+    hasAttachments: email.meta.hasAttachments,
+  };
+}
+
 interface TriageResult {
   priority?: 'urgent' | 'high' | 'normal' | 'low';
   labels?: string[];
@@ -322,6 +341,7 @@ export default class HooksService {
       priority: actions.flag ? 'high' : 'normal',
       labels: actions.labels,
       ruleName: rule.name,
+      ...identityOf(email),
     };
     await this.notifier.alert(payload, actions.alert === true);
 
@@ -372,6 +392,7 @@ export default class HooksService {
         sender: e.meta.from,
         subject: e.meta.subject,
         priority: 'normal',
+        ...identityOf(e),
       };
       return this.notifier.alert(payload);
     });
@@ -496,6 +517,7 @@ export default class HooksService {
       subject: email.meta.subject,
       priority,
       labels: triage.labels,
+      ...identityOf(email),
     };
     await this.notifier.alert(payload);
     if (triage.action) {

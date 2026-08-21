@@ -29,6 +29,15 @@ export interface AlertPayload {
   priority: UrgencyLevel;
   labels?: string[];
   ruleName?: string;
+  /**
+   * Identity of the message, so a webhook consumer can call `get_email`
+   * directly. Without uid + folder the only option is a search by subject and
+   * timestamp, which is ambiguous whenever two messages share a subject.
+   */
+  uid?: string;
+  messageId?: string;
+  folder?: string;
+  hasAttachments?: boolean;
 }
 
 export interface PlatformDiagnostics {
@@ -387,6 +396,10 @@ export default class NotifierService {
       priority: payload.priority,
       labels: payload.labels ?? [],
       rule: payload.ruleName ?? null,
+      uid: payload.uid ?? null,
+      messageId: payload.messageId ?? null,
+      folder: payload.folder ?? null,
+      hasAttachments: payload.hasAttachments ?? null,
       timestamp: new Date().toISOString(),
     });
 

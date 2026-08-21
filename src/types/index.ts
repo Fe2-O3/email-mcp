@@ -178,6 +178,8 @@ export interface Mailbox {
 
 export interface EmailMeta {
   id: string;
+  /** RFC 822 Message-ID header. Empty when the sender omitted one. */
+  messageId: string;
   subject: string;
   from: EmailAddress;
   to: EmailAddress[];
