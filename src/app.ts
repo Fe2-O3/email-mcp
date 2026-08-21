@@ -159,6 +159,7 @@ export function startBackgroundServices(
 ): BackgroundHandle {
   const { hooksService, watcherService, schedulerService, imapService, syncEngine, config } =
     services;
+  let stopped = false;
   let schedulerInterval: ReturnType<typeof setInterval> | undefined;
   let cacheInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -168,6 +169,11 @@ export function startBackgroundServices(
   void (async () => {
     try {
       await watcherService.start();
+      // A fast shutdown can run stop() while this startup block is still
+      // awaiting. Every handle armed below must be re-checked against the
+      // stopped flag at each resume point, or it outlives its own teardown
+      // and keeps the event loop alive forever.
+      if (stopped) return;
       await mcpLog('info', 'server', 'Email MCP background services started');
 
       // Check for overdue scheduled emails on startup.
@@ -181,6 +187,7 @@ export function startBackgroundServices(
       }
 
       // Periodic scheduler check every 60 seconds.
+      if (stopped) return;
       schedulerInterval = setInterval(async () => {
         try {
           await schedulerService.checkAndSend();
@@ -203,7 +210,9 @@ export function startBackgroundServices(
           await Promise.allSettled(work);
         };
 
+        if (stopped) return;
         await reconcile();
+        if (stopped) return;
         cacheInterval = setInterval(() => {
           void reconcile();
         }, syncInterval * 1000);
@@ -217,6 +226,7 @@ export function startBackgroundServices(
 
   return {
     stop: async () => {
+      stopped = true;
       if (schedulerInterval) clearInterval(schedulerInterval);
       if (cacheInterval) clearInterval(cacheInterval);
       hooksService.stop();

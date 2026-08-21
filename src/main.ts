@@ -17,6 +17,13 @@ import type { BackgroundHandle } from './app.js';
 import { buildServer, buildServices, startBackgroundServices } from './app.js';
 import { PKG_VERSION } from './server.js';
 
+/**
+ * How long a graceful shutdown may take before the process is forced down.
+ * Bounds the two goodbye round trips (SMTP QUIT, IMAP LOGOUT) over a slow WAN;
+ * past that, dropping the sockets beats leaking the process we are shutting down.
+ */
+const SHUTDOWN_GRACE_MS = 5_000;
+
 const HELP = `
 email-mcp — Email MCP Server (IMAP + SMTP)
 
@@ -82,14 +89,55 @@ async function runServer(): Promise<void> {
   });
 
   // Graceful shutdown.
-  const shutdown = async () => {
+  //
+  // The spec puts shutdown on the client: over stdio it SHOULD initiate it by
+  // "first, closing the input stream to the child process (the server)", then
+  // "waiting for the server to exit" before escalating to SIGTERM and SIGKILL
+  // (MCP basic/lifecycle, Shutdown). So EOF is the primary signal, not a
+  // fallback — and the only one that survives a SIGKILLed client, since the
+  // kernel closes the pipe either way, and the only one Windows has, lacking
+  // POSIX signals. serveStdio closes its transport at EOF, but closing the
+  // transport does not drain the event loop: the services above hold ref'd
+  // handles (scheduler tick, hooks rate-limit timer, IMAP IDLE sockets), so
+  // nothing observes EOF unless we listen for it here. Skipping that leaks an
+  // immortal process on every client death that misses SIGTERM: closed
+  // terminal, SIGKILL, crash, MCP reconnect.
+  let shuttingDown = false;
+
+  const shutdown = async (reason: string): Promise<void> => {
+    // EOF, 'close' and a signal routinely arrive together.
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    // A hung QUIT/LOGOUT must not resurrect the orphan this exists to prevent.
+    // The valve is unref'd or it becomes the handle it was meant to release.
+    setTimeout(() => {
+      process.stderr.write(`[email-mcp] shutdown (${reason}) timed out — forcing exit\n`);
+      // `process.exitCode` is the house style, but it only takes effect once the
+      // loop drains, and a hung shutdown is exactly the case where it will not.
+      // Throwing would surface as an uncaught exception from a timer rather than
+      // a stop. Forcing the exit is what this valve is for.
+      // eslint-disable-next-line n/no-process-exit
+      process.exit(1);
+    }, SHUTDOWN_GRACE_MS).unref();
+
     if (background) await background.stop();
     await services.connections.closeAll();
     await handle.close();
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  const requestShutdown = (reason: string): void => {
+    void shutdown(reason);
+  };
+
+  // Listening for 'data' here would switch stdin to flowing mode and eat protocol
+  // bytes from under the SDK; 'end'/'close' leave the stream's mode untouched.
+  process.stdin.once('end', () => requestShutdown('stdin EOF'));
+  process.stdin.once('close', () => requestShutdown('stdin closed'));
+
+  process.on('SIGINT', () => requestShutdown('SIGINT'));
+  process.on('SIGTERM', () => requestShutdown('SIGTERM'));
+  process.on('SIGHUP', () => requestShutdown('SIGHUP'));
 }
 
 async function main(): Promise<void> {
