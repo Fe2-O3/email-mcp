@@ -110,6 +110,10 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
         mailbox: z.string().default('INBOX').describe('Mailbox path (default: INBOX)'),
         page: z.coerce.number().int().min(1).default(1).describe('Page number'),
         pageSize: z.coerce.number().int().min(1).max(100).default(20).describe('Results per page'),
+        sort: z
+          .enum(['date', 'uid'])
+          .default('date')
+          .describe('Order newest-first by date (spans pages) or by UID'),
         since: z.string().optional().describe('Show emails after this date (ISO 8601)'),
         before: z.string().optional().describe('Show emails before this date (ISO 8601)'),
         from: z.string().optional().describe('Filter by sender address or name'),
@@ -139,6 +143,7 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
           flagged: params.flagged,
           hasAttachment: params.has_attachment,
           answered: params.answered,
+          sort: params.sort,
         });
 
         if (result.items.length === 0) {
@@ -470,6 +475,10 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
         mailbox: z.string().default('INBOX').describe('Mailbox path (default: INBOX)'),
         page: z.coerce.number().int().min(1).default(1).describe('Page number'),
         pageSize: z.coerce.number().int().min(1).max(100).default(20).describe('Results per page'),
+        sort: z
+          .enum(['date', 'uid'])
+          .default('date')
+          .describe('Order newest-first by date (spans pages) or by UID'),
         to: z.string().optional().describe('Filter by recipient address'),
         has_attachment: z
           .boolean()
@@ -493,6 +502,7 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
           largerThan: params.larger_than,
           smallerThan: params.smaller_than,
           answered: params.answered,
+          sort: params.sort,
         });
 
         if (result.items.length === 0) {

@@ -512,6 +512,8 @@ export default class ImapService {
       flagged?: boolean;
       hasAttachment?: boolean;
       answered?: boolean;
+      /** 'date' (default) orders the whole match set before paging; 'uid' keeps raw UID order. */
+      sort?: 'date' | 'uid';
     } = {},
   ): Promise<PaginatedResult<EmailMeta>> {
     const client = await this.connections.getImapClient(accountName);
@@ -562,8 +564,38 @@ export default class ImapService {
         };
       }
 
-      // Sort descending (newest first) and paginate
-      uids.sort((a, b) => b - a);
+      // Order the WHOLE match set before slicing a page. Slicing by UID first
+      // and date-sorting afterwards yields a per-page sort that looks right
+      // and is not: a migrated message with a low UID and a recent date lands
+      // on the wrong page and never surfaces. Date order therefore needs every
+      // message's date before the page is cut, so fetch the cheap pair for the
+      // full range; UID order keeps its original cheap path.
+      const sort = options.sort ?? 'date';
+      if (sort === 'date') {
+        const uidDates = new Map<number, number>();
+        // eslint-disable-next-line no-restricted-syntax
+        for await (const msg of client.fetch(
+          uids.join(','),
+          { uid: true, internalDate: true },
+          { uid: true },
+        )) {
+          const raw = msg as unknown as { uid?: number; internalDate?: Date };
+          if (typeof raw.uid === 'number') {
+            uidDates.set(raw.uid, raw.internalDate ? raw.internalDate.getTime() : 0);
+          }
+        }
+        // Newest first; ties broken by UID so the order is stable.
+        uids.sort((a, b) => {
+          const da = uidDates.get(a) ?? 0;
+          const db = uidDates.get(b) ?? 0;
+          if (da !== db) return db - da;
+          return b - a;
+        });
+      } else {
+        // Raw UID order, server-native ascending.
+        uids.sort((a, b) => a - b);
+      }
+
       const total = uids.length;
       const start = (page - 1) * pageSize;
       const pageUids = uids.slice(start, start + pageSize);
@@ -596,9 +628,14 @@ export default class ImapService {
         items.push(messageToEmailMeta(msg as unknown as Record<string, unknown>));
       }
 
-      // Sort by date descending
-      items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
+      // Servers answer a UID range in ascending order regardless of the
+      // ordering this page was cut with, so re-apply the page's own order to
+      // the hydrated rows. This is safe precisely because the page cut already
+      // happened on the full, globally ordered set: sorting two rows is not
+      // the per-page-sort bug that motivated the change above.
+      if (sort === 'date') {
+        items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      }
       return {
         items,
         total,
@@ -721,6 +758,8 @@ export default class ImapService {
       largerThan?: number;
       smallerThan?: number;
       answered?: boolean;
+      /** 'date' (default) orders the whole match set before paging; 'uid' keeps raw UID order. */
+      sort?: 'date' | 'uid';
     } = {},
   ): Promise<PaginatedResult<EmailMeta>> {
     const client = await this.connections.getImapClient(accountName);
@@ -792,7 +831,31 @@ export default class ImapService {
         };
       }
 
-      uids.sort((a, b) => b - a);
+      // Same ordering rule as list_emails: order the WHOLE match set before
+      // slicing, or pages restart the sort and migrated mail never surfaces.
+      if ((options.sort ?? 'date') === 'date') {
+        const uidDates = new Map<number, number>();
+        // eslint-disable-next-line no-restricted-syntax
+        for await (const msg of client.fetch(
+          uids.join(','),
+          { uid: true, internalDate: true },
+          { uid: true },
+        )) {
+          const raw = msg as unknown as { uid?: number; internalDate?: Date };
+          if (typeof raw.uid === 'number') {
+            uidDates.set(raw.uid, raw.internalDate ? raw.internalDate.getTime() : 0);
+          }
+        }
+        uids.sort((a, b) => {
+          const da = uidDates.get(a) ?? 0;
+          const db = uidDates.get(b) ?? 0;
+          if (da !== db) return db - da;
+          return b - a;
+        });
+      } else {
+        // Raw UID order, server-native ascending.
+        uids.sort((a, b) => a - b);
+      }
       const total = uids.length;
       const start = (page - 1) * pageSize;
       const pageUids = uids.slice(start, start + pageSize);
@@ -825,8 +888,11 @@ export default class ImapService {
         items.push(messageToEmailMeta(msg as unknown as Record<string, unknown>));
       }
 
-      items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
+      // Same in-page re-application as list_emails: the range comes back
+      // ascending, so restore this page's own order after hydration.
+      if ((options.sort ?? 'date') === 'date') {
+        items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      }
       return {
         items,
         total,
