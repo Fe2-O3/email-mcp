@@ -568,7 +568,15 @@ export default class ImapService {
 
       // Search for matching UIDs
       const searchResult = await client.search(search, { uid: true });
-      let uids: number[] = Array.isArray(searchResult) ? searchResult : [];
+      // A server whose SEARCH is broken may answer with something other than
+      // a UID array. Treating that as 'no matches' hides real mail behind a
+      // confident-looking empty result; failing loudly names the problem.
+      if (!Array.isArray(searchResult)) {
+        throw new Error(
+          `Mailbox search returned an unusable response from the server; its SEARCH implementation appears broken.`,
+        );
+      }
+      let uids: number[] = searchResult;
 
       // Post-filter for hasAttachment (IMAP has no native attachment search)
       if (options.hasAttachment !== undefined && uids.length > 0) {
@@ -831,7 +839,13 @@ export default class ImapService {
         andConditions.length === 1 ? baseCriteria : Object.assign({}, ...andConditions);
 
       const searchResult = await client.search(searchCriteria, { uid: true });
-      let uids: number[] = Array.isArray(searchResult) ? searchResult : [];
+      // Loud failure over silent zero - see list_emails above.
+      if (!Array.isArray(searchResult)) {
+        throw new Error(
+          `Mailbox search returned an unusable response from the server; its SEARCH implementation appears broken.`,
+        );
+      }
+      let uids: number[] = searchResult;
 
       // Post-filter for has_attachment if requested (IMAP doesn't have native support)
       if (options.hasAttachment !== undefined && uids.length > 0) {
