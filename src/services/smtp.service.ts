@@ -50,7 +50,7 @@ export default class SmtpService {
     const account = this.connections.getAccount(accountName);
     const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await this.sendWithRecovery(accountName, transport, {
+    const mailOptions = {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
@@ -70,9 +70,11 @@ export default class SmtpService {
         : {}),
       disableFileAccess: true,
       disableUrlAccess: true,
-    });
+    };
 
-    this.fileToSent(accountName, result);
+    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+
+    this.fileToSent(accountName, mailOptions);
 
     return {
       messageId: result.messageId ?? '',
@@ -127,7 +129,7 @@ export default class SmtpService {
 
     const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await this.sendWithRecovery(accountName, transport, {
+    const mailOptions = {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: to.join(', '),
       cc: cc.length > 0 ? cc.join(', ') : undefined,
@@ -135,9 +137,11 @@ export default class SmtpService {
       inReplyTo: original.messageId,
       references: references.join(' '),
       ...(options.html ? { html: options.body } : { text: options.body }),
-    });
+    };
 
-    this.fileToSent(accountName, result);
+    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+
+    this.fileToSent(accountName, mailOptions);
 
     return {
       messageId: result.messageId ?? '',
@@ -226,7 +230,7 @@ export default class SmtpService {
         )
       : [];
 
-    const result = await this.sendWithRecovery(accountName, transport, {
+    const mailOptions = {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
@@ -235,9 +239,11 @@ export default class SmtpService {
       ...(attachments.length > 0 ? { attachments } : {}),
       disableFileAccess: true,
       disableUrlAccess: true,
-    });
+    };
 
-    this.fileToSent(accountName, result);
+    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+
+    this.fileToSent(accountName, mailOptions);
 
     return {
       messageId: result.messageId ?? '',
@@ -302,20 +308,24 @@ export default class SmtpService {
    * File a sent message into the Sent folder, best effort. SMTP already
    * succeeded: an APPEND failure is logged as a warning and never surfaces as
    * a failed send - the mail went out either way.
+   *
+   * The raw message is composed locally via MailComposer — the SMTP transport
+   * does not return it (only json/stream transports set `info.message`).
    */
-  private fileToSent(accountName: string, info: { message?: Buffer }): void {
-    const raw = info?.message;
-    if (!raw) return;
-    this.imapService
-      .appendSent(accountName, raw)
-      .then((res) => {
+  private fileToSent(accountName: string, mailOptions: Record<string, unknown>): void {
+    void (async () => {
+      try {
+        const { default: MailComposer } = await import('nodemailer/lib/mail-composer/index.js');
+        const composer = new MailComposer(mailOptions as never);
+        const raw = await composer.compile().build();
+        const res = await this.imapService.appendSent(accountName, raw);
         if (!res.appended) {
           mcpLog('debug', 'smtp', `No Sent folder found for "${accountName}"; copy not filed`);
         }
-      })
-      .catch(() => {
+      } catch {
         mcpLog('warning', 'smtp', `Sent-folder filing failed for "${accountName}"`);
-      });
+      }
+    })();
   }
 
   /**
@@ -368,7 +378,7 @@ export default class SmtpService {
       draftsPath,
     );
 
-    const result = await this.sendWithRecovery(accountName, transport, {
+    const mailOptions = {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to,
       cc,
@@ -379,12 +389,14 @@ export default class SmtpService {
       ...(draftAttachments.length > 0 ? { attachments: draftAttachments } : {}),
       disableFileAccess: true,
       disableUrlAccess: true,
-    });
+    };
+
+    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
     // Delete the draft after successful send
     await this.imapService.deleteDraft(accountName, draftId, draftsPath);
 
-    this.fileToSent(accountName, result);
+    this.fileToSent(accountName, mailOptions);
 
     return {
       messageId: result.messageId ?? '',

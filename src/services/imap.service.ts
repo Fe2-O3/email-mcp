@@ -1442,7 +1442,18 @@ export default class ImapService {
     const client = await this.connections.getImapClient(accountName);
 
     const mailboxes = await client.list();
-    const sentFolder = (mailboxes ?? []).find((m) => /sent/i.test(String(m.path)));
+    const sentFolder =
+      (mailboxes ?? []).find((m) => m.specialUse === '\\Sent') ??
+      (mailboxes ?? []).find((m) => {
+        const p = String(m.path).toLowerCase();
+        return (
+          p === 'sent' ||
+          p === 'sent mail' ||
+          p.endsWith('/sent') ||
+          p.endsWith('/sent mail') ||
+          p.endsWith('.sent')
+        );
+      });
     if (!sentFolder) return { appended: false };
 
     const lock = await ImapService.lockMailbox(client, String(sentFolder.path));

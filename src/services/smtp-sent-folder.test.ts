@@ -13,12 +13,9 @@
 
 import SmtpService from './smtp.service.js';
 
-const RAW = Buffer.from('Message-ID: <raw@example.invalid>\r\n\r\nbody');
-
 function buildService(appendSent: ReturnType<typeof vi.fn>) {
   const sendMail = vi.fn().mockResolvedValue({
     messageId: '<sent@example.invalid>',
-    message: RAW,
   });
   const connections = {
     getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
@@ -50,7 +47,10 @@ describe('sent messages are filed into the Sent folder', () => {
       body: 'b',
     });
 
-    expect(appendSent).toHaveBeenCalledWith('work', RAW);
+    await vi.waitFor(() => expect(appendSent).toHaveBeenCalled());
+    const [, raw] = appendSent.mock.calls[0] as [string, Buffer];
+    expect(raw.toString()).toContain('Subject: s');
+    expect(raw.toString()).toContain('c@example.invalid');
   });
 
   it('an APPEND failure never turns into a failed send', async () => {
@@ -60,6 +60,7 @@ describe('sent messages are filed into the Sent folder', () => {
     await expect(
       service.sendEmail('work', { to: ['c@example.invalid'], subject: 's', body: 'b' }),
     ).resolves.toMatchObject({ status: 'sent' });
+    await vi.waitFor(() => expect(appendSent).toHaveBeenCalled());
   });
 
   it('a missing Sent folder is not an error either', async () => {
@@ -69,7 +70,7 @@ describe('sent messages are filed into the Sent folder', () => {
     await expect(
       service.sendEmail('work', { to: ['c@example.invalid'], subject: 's', body: 'b' }),
     ).resolves.toMatchObject({ status: 'sent' });
-    expect(appendSent).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(appendSent).toHaveBeenCalledOnce());
   });
 
   it('forwards are filed too', async () => {
@@ -77,7 +78,7 @@ describe('sent messages are filed into the Sent folder', () => {
     const connections = {
       getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
       getSmtpTransport: async () => ({
-        sendMail: vi.fn().mockResolvedValue({ messageId: '<f@example.invalid>', message: RAW }),
+        sendMail: vi.fn().mockResolvedValue({ messageId: '<f@example.invalid>' }),
       }),
       invalidateSmtpTransport: vi.fn(),
     };
@@ -101,6 +102,8 @@ describe('sent messages are filed into the Sent folder', () => {
 
     await service.forwardEmail('work', { emailId: '1', to: ['c@example.invalid'] });
 
-    expect(appendSent).toHaveBeenCalledWith('work', RAW);
+    await vi.waitFor(() => expect(appendSent).toHaveBeenCalled());
+    const [, raw] = appendSent.mock.calls[0] as [string, Buffer];
+    expect(raw.toString()).toContain('Subject: Fwd: orig');
   });
 });
