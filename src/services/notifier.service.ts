@@ -13,6 +13,7 @@
 import { execFile } from 'node:child_process';
 import { mcpLog } from '../logging.js';
 import { validateWebhookUrl } from '../safety/validation.js';
+import { assertWebhookTargetAllowed } from '../safety/webhook-guard.js';
 
 import type { AlertsConfig } from '../types/index.js';
 
@@ -388,6 +389,10 @@ export default class NotifierService {
 
     try {
       validateWebhookUrl(this.config.webhookUrl);
+      // The synchronous checks above see the hostname as text. This resolves
+      // it and range-checks every address, so a name answering in private
+      // space is refused before anything goes out.
+      await assertWebhookTargetAllowed(this.config.webhookUrl);
     } catch (err) {
       await mcpLog(
         'warning',
@@ -423,8 +428,14 @@ export default class NotifierService {
         headers: { 'Content-Type': 'application/json' },
         body,
         signal: controller.signal,
+        // Webhook consumers answer POSTs; they do not bounce callers around.
+        // Following a redirect would silently re-address this request to
+        // wherever the first host points, so any 3xx is a failed delivery.
+        redirect: 'manual',
       });
-      if (!resp.ok) {
+      if (resp.status >= 300 && resp.status < 400) {
+        await mcpLog('warning', 'notifier', `Webhook redirect refused (${resp.status})`);
+      } else if (!resp.ok) {
         await mcpLog('warning', 'notifier', `Webhook returned ${resp.status}`);
       }
     } catch {

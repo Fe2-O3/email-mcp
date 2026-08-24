@@ -10,6 +10,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import audit from '../safety/audit.js';
+import { assertWebhookTargetAllowed } from '../safety/webhook-guard.js';
 import type HooksService from '../services/hooks.service.js';
 import NotifierService from '../services/notifier.service.js';
 import { listPresets as listAllPresets } from '../services/presets.js';
@@ -331,7 +332,14 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
         if (desktop !== undefined) partial.desktop = desktop;
         if (sound !== undefined) partial.sound = sound;
         if (urgencyThreshold !== undefined) partial.urgencyThreshold = urgencyThreshold;
-        if (webhookUrl !== undefined) partial.webhookUrl = webhookUrl;
+        if (webhookUrl !== undefined) {
+          if (webhookUrl !== '') {
+            // Reject an unroutable destination when it is set, not the first
+            // time an alert fires.
+            await assertWebhookTargetAllowed(webhookUrl);
+          }
+          partial.webhookUrl = webhookUrl;
+        }
         if (webhookEvents !== undefined) partial.webhookEvents = webhookEvents;
 
         if (Object.keys(partial).length === 0) {

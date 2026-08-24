@@ -128,9 +128,9 @@ describe('alerting tools respect the read-only gate', () => {
       const configure = captured.find((t) => t.name === 'configure_alerts');
       if (!configure) throw new Error('configure_alerts not registered');
 
-      // Loopback literal: set-time validation must refuse it rather than
-      // accept silently and only fail at dispatch.
-      const result = await configure.handler({ webhook_url: 'http://127.0.0.1:8080/admin' });
+      // Cloud-metadata literal: the old string-only filter had no range for
+      // link-local, so configuring this succeeded and only dispatch failed.
+      const result = await configure.handler({ webhook_url: 'http://169.254.169.254/latest/' });
 
       expect(result).toMatchObject({ isError: true });
       expect(notifier.getConfig().webhookUrl).toBe('');
