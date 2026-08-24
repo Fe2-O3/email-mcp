@@ -457,16 +457,25 @@ export default class ImapService {
     const cached = this.labelStrategies.get(accountName);
     if (cached) return cached;
 
-    // Deduplicate concurrent detection for the same account
+    // Deduplicate concurrent detection for the same account. A failed attempt
+    // must not stay cached: the entry is cleared when detection settles with a
+    // rejection, so the next caller retries instead of awaiting a promise that
+    // can never succeed.
     const pending = this.labelStrategyPending.get(accountName);
     if (pending) return pending;
 
     const promise = (async () => {
-      const client = await this.connections.getImapClient(accountName);
-      const strategy = await detectLabelStrategy(client);
-      this.labelStrategies.set(accountName, strategy);
-      this.labelStrategyPending.delete(accountName);
-      return strategy;
+      try {
+        const client = await this.connections.getImapClient(accountName);
+        const strategy = await detectLabelStrategy(client);
+        this.labelStrategies.set(accountName, strategy);
+        return strategy;
+      } finally {
+        // Clear on settle, success or failure: a rejected detection must not
+        // stay cached, or every later caller awaits a promise that can never
+        // succeed and the account's labels are wedged until a reconnect.
+        this.labelStrategyPending.delete(accountName);
+      }
     })();
 
     this.labelStrategyPending.set(accountName, promise);

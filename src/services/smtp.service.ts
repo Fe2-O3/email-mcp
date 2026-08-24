@@ -4,6 +4,7 @@
  * No MCP dependency — fully unit-testable.
  */
 
+import type { Transporter } from 'nodemailer';
 import type { IConnectionManager } from '../connections/types.js';
 import type RateLimiter from '../safety/rate-limiter.js';
 import { sanitizeTemplateVariable } from '../safety/validation.js';
@@ -39,7 +40,7 @@ export default class SmtpService {
     const account = this.connections.getAccount(accountName);
     const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await transport.sendMail({
+    const result = await this.sendWithRecovery(accountName, transport, {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
@@ -113,7 +114,7 @@ export default class SmtpService {
 
     const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await transport.sendMail({
+    const result = await this.sendWithRecovery(accountName, transport, {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: to.join(', '),
       cc: cc.length > 0 ? cc.join(', ') : undefined,
@@ -210,7 +211,7 @@ export default class SmtpService {
         )
       : [];
 
-    const result = await transport.sendMail({
+    const result = await this.sendWithRecovery(accountName, transport, {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
@@ -237,6 +238,25 @@ export default class SmtpService {
         `Rate limit exceeded for account "${accountName}". ` +
           `Please wait before sending more emails.`,
       );
+    }
+  }
+
+  /**
+   * Send through the pooled transport, and on failure evict it. A pooled SMTP
+   * socket that died between messages would otherwise be handed to every
+   * later send: only a health check ever re-verified the cache, so the send
+   * path wedged until restart. Evicting lets the next call dial fresh.
+   */
+  private async sendWithRecovery(
+    accountName: string,
+    transport: Transporter,
+    payload: Record<string, unknown>,
+  ): Promise<{ messageId?: string }> {
+    try {
+      return await transport.sendMail(payload as never);
+    } catch (err) {
+      this.connections.invalidateSmtpTransport(accountName);
+      throw err;
     }
   }
 
@@ -268,7 +288,7 @@ export default class SmtpService {
       draftsPath,
     );
 
-    const result = await transport.sendMail({
+    const result = await this.sendWithRecovery(accountName, transport, {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to,
       cc,

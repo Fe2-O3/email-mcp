@@ -237,6 +237,22 @@ export default class ConnectionManager implements IConnectionManager {
     return transport;
   }
 
+  /**
+   * Drop the cached SMTP transport for an account. Called when a send fails:
+   * a pooled socket that died between messages would otherwise be handed to
+   * every later send forever, since only a health check re-verifies.
+   */
+  invalidateSmtpTransport(accountName: string): void {
+    const existing = this.smtpTransports.get(accountName);
+    if (!existing) return;
+    this.smtpTransports.delete(accountName);
+    try {
+      existing.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
   async verifySmtpTransport(accountName: string): Promise<void> {
     await this.getSmtpTransport(accountName, { verify: true });
   }
