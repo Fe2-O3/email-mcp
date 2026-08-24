@@ -33,9 +33,18 @@ export default class SmtpService {
       html?: boolean;
       /** Inline attachment parts. Content is base64; no filesystem paths are accepted. */
       attachments?: Array<{ filename?: string; content: string; contentType?: string }>;
+      /**
+       * Explicit Message-ID for retries. Without it nodemailer mints a fresh
+       * one per attempt, so a retried send is indistinguishable from a new
+       * email and the recipient sees both.
+       */
+      messageId?: string;
+      /** Set on a deliberate resend to pass the duplicate-send guard. */
+      allowDuplicate?: boolean;
     },
   ): Promise<SendResult> {
     this.checkRateLimit(accountName);
+    this.assertNotDuplicate(accountName, options.to, options.subject, options.allowDuplicate);
 
     const account = this.connections.getAccount(accountName);
     const transport = await this.connections.getSmtpTransport(accountName);
@@ -47,6 +56,7 @@ export default class SmtpService {
       bcc: options.bcc?.join(', '),
       subject: options.subject,
       ...(options.html ? { html: options.body } : { text: options.body }),
+      ...(options.messageId ? { messageId: options.messageId } : {}),
       ...(options.attachments && options.attachments.length > 0
         ? {
             attachments: options.attachments.map((a) => ({
@@ -238,6 +248,46 @@ export default class SmtpService {
         `Rate limit exceeded for account "${accountName}". ` +
           `Please wait before sending more emails.`,
       );
+    }
+  }
+
+  /**
+   * Recent sends, keyed by account | recipients | subject. A retried send is
+   * otherwise indistinguishable from a new one: nodemailer mints a fresh
+   * random Message-ID per attempt, so a timeout-then-retry delivers twice and
+   * mailbox providers file both copies.
+   */
+  private readonly recentSends = new Map<string, number>();
+
+  /** Window in which an identical account+recipients+subject send is refused. */
+  private static readonly DUPLICATE_SEND_WINDOW_MS = 60_000;
+
+  private assertNotDuplicate(
+    accountName: string,
+    to: string[],
+    subject: string,
+    allowDuplicate?: boolean,
+  ): void {
+    const key = `${accountName}|${to.slice().sort().join(',')}|${subject}`;
+    const last = this.recentSends.get(key);
+    if (
+      last !== undefined &&
+      Date.now() - last < SmtpService.DUPLICATE_SEND_WINDOW_MS &&
+      !allowDuplicate
+    ) {
+      throw new Error(
+        `An email with the same recipients and subject was sent less than a minute ago. ` +
+          `If this is a deliberate resend, set allow_duplicate to true.`,
+      );
+    }
+    this.recentSends.set(key, Date.now());
+    // The record exists to catch retries minutes apart, not to grow forever.
+    if (this.recentSends.size > 1000) {
+      const cutoff = Date.now() - SmtpService.DUPLICATE_SEND_WINDOW_MS;
+      for (const [k, ts] of this.recentSends) {
+        if (ts < cutoff) this.recentSends.delete(k);
+        if (this.recentSends.size <= 500) break;
+      }
     }
   }
 

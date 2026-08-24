@@ -46,6 +46,16 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .array(attachmentInput)
           .optional()
           .describe('Files to attach, as base64 parts'),
+        message_id: z
+          .string()
+          .optional()
+          .describe(
+            'Explicit Message-ID for retries. Use it so a retried send deduplicates instead of delivering twice.',
+          ),
+        allow_duplicate: z
+          .boolean()
+          .default(false)
+          .describe('Deliberately resend the same recipients+subject within one minute'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -60,6 +70,8 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
             contentType: a.contentType,
             content: a.base64,
           })),
+          messageId: params.message_id,
+          allowDuplicate: params.allow_duplicate,
         });
         await audit.log(
           'send_email',
