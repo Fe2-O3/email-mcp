@@ -8,21 +8,42 @@
 
 ## Reporting a Vulnerability
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+**Please do not report security vulnerabilities through public GitHub
+issues.**
 
-Instead, please report them via [GitHub Security Advisories](https://github.com/codefuturist/email-mcp/security/advisories/new).
+GitHub's private vulnerability reporting is not enabled for this repository
+yet. Until then:
 
-You should receive a response within 48 hours. If the issue is confirmed, a fix will be released as soon as possible.
+- **Maintainers of the project:** use the maintainer's private contact
+  channel, or open a draft advisory once private reporting is switched on.
+- **Everyone else:** describe the issue without exploit details in a direct
+  message to a maintainer, and we will follow up.
+
+You should receive an acknowledgement within a few days. If the issue is
+confirmed, a fix will be released as soon as possible.
 
 ## Security Considerations
 
-email-mcp handles sensitive email credentials and message content. The project includes several security measures:
+email-mcp handles sensitive email credentials and message content. The
+project includes several security measures:
 
-- **No credential storage** — passwords and tokens are read from your local config file or environment variables at runtime
-- **Audit logging** — all write operations are logged with automatic redaction of sensitive fields (passwords, email body content)
-- **Rate limiting** — configurable rate limits on send operations (default: 10/minute)
-- **Read-only mode** — can be configured to disable all write operations
-- **Input validation** — all tool inputs are validated with Zod schemas
+- **Credential file permissions** — the config file that stores account
+  secrets is written readable only by its owner.
+- **HTTP transport authentication** — HTTP mode requires a bearer token,
+  compared in constant time; the server refuses to bind a non-loopback
+  interface without one.
+- **Webhook destination checks** — alert webhook URLs are validated when
+  configured and again at dispatch, resolved through DNS with private,
+  loopback and link-local destinations refused, and redirects are never
+  followed.
+- **Audit logging** — write operations are logged with automatic redaction
+  of sensitive fields (passwords, tokens, message bodies).
+- **Rate limiting** — configurable rate limits on send operations
+  (default: 10/minute).
+- **Read-only mode** — disables all write tools, including alert
+  configuration and notification testing.
+- **Input validation** — all tool inputs are validated with Zod schemas;
+  request bodies over the size cap are refused.
 
 ## Best Practices for Users
 
@@ -30,4 +51,5 @@ email-mcp handles sensitive email credentials and message content. The project i
 - Enable OAuth2 authentication where supported (Gmail, Outlook)
 - Review the audit log at `~/.local/share/email-mcp/audit.jsonl`
 - Use `read_only: true` in config if you only need read access
+- Set a token whenever you run the HTTP server, including on loopback
 - Keep email-mcp updated to the latest version
