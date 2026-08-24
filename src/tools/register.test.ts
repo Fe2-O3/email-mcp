@@ -23,7 +23,10 @@ vi.mock('./templates.tool.js', () => ({
   registerTemplateWriteTools: vi.fn(),
 }));
 vi.mock('./thread.tool.js', () => ({ default: vi.fn() }));
-vi.mock('./watcher.tool.js', () => ({ default: vi.fn() }));
+vi.mock('./watcher.tool.js', () => ({
+  registerWatcherReadTools: vi.fn(),
+  registerWatcherWriteTools: vi.fn(),
+}));
 
 import registerAccountsTools from './accounts.tool.js';
 import registerBulkTools from './bulk.tool.js';

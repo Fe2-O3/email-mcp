@@ -35,7 +35,7 @@ import registerSchedulerTools from './scheduler.tool.js';
 import registerSendTools from './send.tool.js';
 import { registerTemplateReadTools, registerTemplateWriteTools } from './templates.tool.js';
 import registerThreadTools from './thread.tool.js';
-import registerWatcherTools from './watcher.tool.js';
+import { registerWatcherReadTools, registerWatcherWriteTools } from './watcher.tool.js';
 
 export default function registerAllTools(
   server: McpServer,
@@ -71,7 +71,7 @@ export default function registerAllTools(
   registerAnalyticsTools(server, imapService);
   registerHealthTools(server, connections, imapService);
   registerLocateTools(server, imapService);
-  registerWatcherTools(server, watcherService, hooksService);
+  registerWatcherReadTools(server, watcherService, hooksService);
 
   // Write tools — skipped in read-only mode
   if (!readOnly) {
@@ -83,5 +83,6 @@ export default function registerAllTools(
     registerFolderTools(server, imapService);
     registerTemplateWriteTools(server, templateService, imapService, smtpService);
     registerSchedulerTools(server, schedulerService);
+    registerWatcherWriteTools(server, hooksService);
   }
 }

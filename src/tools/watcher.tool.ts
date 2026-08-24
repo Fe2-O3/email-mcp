@@ -1,18 +1,22 @@
 /**
- * Watcher & Hooks tools — inspect watcher status, list presets, view hooks config,
- * check notification setup, test notifications, configure alerts.
+ * Watcher & Hooks tools.
+ *
+ * Split into read and write halves (mirroring templates.tool.ts): inspecting
+ * watcher status, presets and config is always available, while firing test
+ * notifications and reconfiguring alerts are write operations and disappear
+ * in read-only mode.
  */
 
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { loadRawConfig, saveConfig } from '../config/loader.js';
+import audit from '../safety/audit.js';
 import type HooksService from '../services/hooks.service.js';
 import NotifierService from '../services/notifier.service.js';
 import { listPresets as listAllPresets } from '../services/presets.js';
 import type WatcherService from '../services/watcher.service.js';
 import type { AlertsConfig } from '../types/index.js';
 
-export default function registerWatcherTools(
+export function registerWatcherReadTools(
   server: McpServer,
   watcherService: WatcherService,
   hooksService: HooksService,
@@ -230,6 +234,15 @@ export default function registerWatcherTools(
       };
     },
   );
+}
+
+/**
+ * Write tools — skipped in read-only mode. Both mutate process or OS state
+ * (a desktop notification, the alert routing), so they sit behind the same
+ * gate as every other write tool.
+ */
+export function registerWatcherWriteTools(server: McpServer, hooksService: HooksService): void {
+  const hooksConfig = hooksService.getHooksConfig();
 
   // -------------------------------------------------------------------------
   // test_notification — send a test notification
@@ -253,6 +266,8 @@ export default function registerWatcherTools(
     async ({ sound }) => {
       const notifier = hooksService.getNotifier();
       const result = await notifier.sendTestNotification(sound);
+
+      await audit.log('test_notification', 'system', { sound }, result.success ? 'ok' : 'error');
 
       const icon = result.success ? '✅' : '❌';
       const lines = [`${icon} ${result.message}`];
@@ -280,8 +295,8 @@ export default function registerWatcherTools(
     {
       title: 'Configure alerts',
       description:
-        'Update alert/notification settings at runtime. Changes take effect immediately. ' +
-        'Use save=true to persist changes to the config file. ' +
+        'Update alert/notification settings for this session. Changes take effect immediately ' +
+        'but are never written to the config file; edit config.toml directly to persist them. ' +
         'Omit any field to leave it unchanged.',
       inputSchema: z.object({
         desktop: z.boolean().optional().describe('Enable/disable desktop notifications'),
@@ -298,10 +313,6 @@ export default function registerWatcherTools(
           .array(z.enum(['urgent', 'high', 'normal', 'low']))
           .optional()
           .describe('Which urgency levels trigger webhook dispatch'),
-        save: z
-          .boolean()
-          .default(false)
-          .describe('Persist changes to config.toml (default: runtime only)'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
@@ -311,7 +322,6 @@ export default function registerWatcherTools(
       urgency_threshold: urgencyThreshold,
       webhook_url: webhookUrl,
       webhook_events: webhookEvents,
-      save,
     }) => {
       try {
         const notifier = hooksService.getNotifier();
@@ -342,52 +352,50 @@ export default function registerWatcherTools(
           };
         }
 
-        // Apply runtime update
+        // Apply runtime update. updateConfig rejects a webhook URL that fails
+        // the safety validation, so a rejected URL never takes effect here.
         const updated = notifier.updateConfig(partial as Partial<AlertsConfig>);
 
         // Also update the in-memory hooks config alerts reference
         hooksConfig.alerts = { ...updated };
 
-        // Persist to file if requested
-        let persistMsg = '';
-        if (save) {
-          try {
-            const rawConfig = await loadRawConfig();
-            rawConfig.settings.hooks.alerts = {
-              desktop: updated.desktop,
-              sound: updated.sound,
-              urgency_threshold: updated.urgencyThreshold,
-              webhook_url: updated.webhookUrl,
-              webhook_events: updated.webhookEvents,
-            };
-            await saveConfig(rawConfig);
-            persistMsg = '\n\n💾 Changes saved to config file.';
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            persistMsg = `\n\n⚠️ Could not save to config file: ${errMsg}\n   Changes are active for this session only.`;
-          }
-        }
+        await audit.log(
+          'configure_alerts',
+          'system',
+          {
+            desktop: updated.desktop,
+            sound: updated.sound,
+            urgencyThreshold: updated.urgencyThreshold,
+            webhookUrl: updated.webhookUrl,
+            webhookEvents: updated.webhookEvents,
+          },
+          'ok',
+        );
 
         const lines = [
-          '✅ Alerts configuration updated:',
+          '✅ Alerts configuration updated (this session only):',
           `   Desktop:   ${updated.desktop ? '✅ enabled' : '❌ disabled'}`,
           `   Sound:     ${updated.sound ? '✅ enabled' : '❌ disabled'}`,
           `   Threshold: ${updated.urgencyThreshold}`,
           `   Webhook:   ${updated.webhookUrl || '(none)'}`,
           `   Events:    ${updated.webhookEvents.join(', ')}`,
-          persistMsg,
+          '\nEdit config.toml to persist changes across restarts.',
         ];
 
         return {
           content: [{ type: 'text' as const, text: lines.join('\n') }],
         };
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await audit.log('configure_alerts', 'system', {}, 'error', message).catch(() => {
+          /* logging must not mask the original failure */
+        });
         return {
           isError: true,
           content: [
             {
               type: 'text' as const,
-              text: `Failed to update alerts config: ${err instanceof Error ? err.message : String(err)}`,
+              text: `Failed to update alerts config: ${message}`,
             },
           ],
         };

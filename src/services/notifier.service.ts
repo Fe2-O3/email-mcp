@@ -113,8 +113,17 @@ export default class NotifierService {
     return { ...this.config };
   }
 
-  /** Updates alert configuration at runtime (partial merge). */
+  /**
+   * Updates alert configuration at runtime (partial merge).
+   *
+   * Validates the webhook URL here rather than only at dispatch time, so a
+   * rejected URL never becomes the live configuration — and, since callers
+   * may persist config, never reaches the file either.
+   */
   updateConfig(partial: Partial<AlertsConfig>): AlertsConfig {
+    if (partial.webhookUrl !== undefined && partial.webhookUrl !== '') {
+      validateWebhookUrl(partial.webhookUrl);
+    }
     this.config = { ...this.config, ...partial };
     return this.getConfig();
   }
