@@ -134,6 +134,7 @@ export default class ConnectionManager implements IConnectionManager {
       },
       auth,
       logger: false,
+      ...(account.imap.starttls ? { doSTARTTLS: true as const } : {}),
     });
 
     // Evict only if this exact client is still the pooled one. A newer client
