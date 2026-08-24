@@ -337,30 +337,52 @@ async function messageToEmail(
   // bytes of header.
   const headers = parseHeaders(msg.headers);
 
-  // Always download the body part; never read it out of `source`. Raw source
+  // Always download body parts; never read them out of `source`. Raw source
   // is transfer-encoded (quoted-printable, base64) with soft line breaks, so
   // using it directly yields "=3D" for '=' and words split mid-token.
   // download() applies the decoding declared by Content-Transfer-Encoding.
-  const chosen = selectBodyPart(collectTextParts(msg.bodyStructure));
+  //
+  // Both halves of a multipart/alternative are fetched when present. Keeping
+  // only one loses information the other carries: the plain part may be a
+  // stub, the html part may be unreadable markup, and downstream consumers
+  // cannot choose between them if they never see both.
+  const textParts = collectTextParts(msg.bodyStructure);
+  const plainPart = textParts.find((p) => p.subtype === 'plain');
+  const htmlPart = textParts.find((p) => p.subtype === 'html');
+  const chosen = selectBodyPart(textParts);
 
-  if (chosen) {
+  const downloadPart = async (target: TextPart): Promise<string | undefined> => {
     try {
-      const part = await client.download(String(uid), chosen.path, { uid: true });
-      if (part?.content) {
-        const chunks: Buffer[] = [];
-        // eslint-disable-next-line no-restricted-syntax
-        for await (const chunk of part.content) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        const decoded = Buffer.concat(chunks).toString('utf-8');
-        if (chosen.subtype === 'html') {
-          bodyHtml = decoded;
-        } else {
-          bodyText = decoded;
-        }
+      const part = await client.download(String(uid), target.path, { uid: true });
+      if (!part?.content) return undefined;
+      const chunks: Buffer[] = [];
+      // eslint-disable-next-line no-restricted-syntax
+      for await (const chunk of part.content) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
+      return Buffer.concat(chunks).toString('utf-8');
     } catch {
       // Part may not exist on this server — better an empty body than a throw.
+      return undefined;
+    }
+  };
+
+  // The selected part is fetched first so single-part messages keep exactly
+  // one round trip; its subtype decides which slot receives the bytes. When an
+  // alternative sibling exists, fetch it too.
+  if (chosen) {
+    const decoded = await downloadPart(chosen);
+    if (decoded !== undefined) {
+      if (chosen.subtype === 'html') bodyHtml = decoded;
+      else bodyText = decoded;
+    }
+  }
+  const sibling = chosen === htmlPart ? plainPart : htmlPart;
+  if (sibling && sibling !== chosen) {
+    const decoded = await downloadPart(sibling);
+    if (decoded !== undefined) {
+      if (sibling.subtype === 'html') bodyHtml = decoded;
+      else bodyText = decoded;
     }
   }
 

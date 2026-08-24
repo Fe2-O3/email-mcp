@@ -57,7 +57,7 @@ type BodyFormat = 'full' | 'text' | 'stripped';
  * - text:     prefers bodyText; converts bodyHtml to plain text if needed
  * - stripped: like text, but also removes quoted reply chains and signatures
  */
-function applyBodyFormat(
+export function applyBodyFormat(
   bodyText: string | undefined,
   bodyHtml: string | undefined,
   format: BodyFormat,
@@ -68,7 +68,17 @@ function applyBodyFormat(
   if (format === 'full') {
     body = bodyText ?? bodyHtml ?? '(no content)';
   } else {
-    const base = bodyText ?? (bodyHtml ? stripHtml(bodyHtml) : undefined) ?? '(no content)';
+    // Both halves present: prefer the html-derived text only when it is
+    // materially richer than the plain alternative. Marketing mail ships a
+    // token one-line plain part beside the real content; taking that stub
+    // literally reports a placeholder as the email. The ratio is deliberately
+    // concrete so this decision is testable, not a feeling.
+    const MATERIAL_RATIO = 1.5;
+    const derived = bodyHtml ? stripHtml(bodyHtml) : undefined;
+    const useDerived =
+      derived !== undefined &&
+      (bodyText === undefined || derived.length > bodyText.length * MATERIAL_RATIO);
+    const base = useDerived ? derived : (bodyText ?? derived ?? '(no content)');
     body = format === 'stripped' ? stripReplyChain(base) : base;
   }
 
