@@ -35,9 +35,10 @@ afterEach(async () => {
   }
 });
 
-async function startServer(): Promise<number> {
+async function startServer(): Promise<{ port: number; token: string }> {
   sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'email-mcp-http-resilience-'));
   port = 20_000 + Math.floor(Math.random() * 20_000);
+  let token = '';
 
   child = spawn(process.execPath, ['--import', 'tsx', ENTRY, 'http', '--port', String(port)], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -59,7 +60,10 @@ async function startServer(): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('server did not start')), BUDGET_MS);
     proc.stderr.on('data', (chunk: Buffer) => {
-      if (chunk.toString().includes('Streamable HTTP')) {
+      const text = chunk.toString();
+      const m = /Generated HTTP token.*: (\S+)/.exec(text);
+      if (m) token = m[1];
+      if (text.includes('Streamable HTTP')) {
         clearTimeout(timer);
         resolve();
       }
@@ -70,7 +74,15 @@ async function startServer(): Promise<number> {
     });
   });
 
-  return port as number;
+  if (!token) {
+    try {
+      token = (
+        await fs.readFile(path.join(sandbox, 'config', 'email-mcp', 'http-token'), 'utf-8')
+      ).trim();
+    } catch {}
+  }
+
+  return { port: port as number, token };
 }
 
 function request(
@@ -113,13 +125,14 @@ describe('http server resilience', () => {
   it(
     'survives malformed JSON, oversized bodies, and mid-body resets',
     async () => {
-      await startServer();
+      const { token } = await startServer();
+      const auth = { Authorization: `Bearer ${token}` };
 
       // Malformed JSON → protocol-level 400 from the transport.
       const garbage = await request(
         'POST',
         '/mcp',
-        { 'content-type': 'application/json' },
+        { 'content-type': 'application/json', Authorization: auth.Authorization },
         '{not json at all',
       );
       expect(garbage.status).toBe(400);
@@ -129,7 +142,11 @@ describe('http server resilience', () => {
       const huge = await request(
         'POST',
         '/mcp',
-        { 'content-type': 'application/json', 'content-length': String(64 * 1024 * 1024) },
+        {
+          'content-type': 'application/json',
+          'content-length': String(64 * 1024 * 1024),
+          Authorization: auth.Authorization,
+        },
         '',
       );
       expect(huge.status).toBe(413);

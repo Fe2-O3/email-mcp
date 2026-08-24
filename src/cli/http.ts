@@ -12,19 +12,20 @@
  *       email-mcp http --host 0.0.0.0 --port 8080 --token "$SECRET"
  */
 
-import { timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import fs from 'node:fs/promises';
 import {
   createServer as createHttpServer,
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http';
-
+import path from 'node:path';
 import {
   hostHeaderValidation,
   NodeStreamableHTTPServerTransport,
 } from '@modelcontextprotocol/node';
-
 import { buildServer, buildServices, startBackgroundServices } from '../app.js';
+import { xdg } from '../config/xdg.js';
 
 interface HttpOptions {
   host: string;
@@ -33,9 +34,12 @@ interface HttpOptions {
   token?: string;
   allowedHosts: string[]; // empty ⇒ validation disabled (wildcard)
   insecure: boolean;
+  noToken: boolean;
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost', '[::1]']);
+
+const HTTP_TOKEN_FILE = path.join(xdg.config, 'http-token');
 
 /**
  * Upper bound on one request body. Matches the SDK's own 10 MB message cap:
@@ -61,6 +65,7 @@ function parseOptions(argv: string[]): HttpOptions {
       .map((h) => h.trim())
       .filter(Boolean),
     insecure: false,
+    noToken: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -93,6 +98,9 @@ function parseOptions(argv: string[]): HttpOptions {
       case '--insecure':
         opts.insecure = true;
         break;
+      case '--no-token':
+        opts.noToken = true;
+        break;
       default:
         // Ignore unknown flags (keeps forward-compatibility).
         break;
@@ -116,6 +124,36 @@ function tokenMatches(header: string | undefined, token: string): boolean {
 
 export default async function runHttp(argv: string[]): Promise<void> {
   const opts = parseOptions(argv);
+
+  // Token handling: generate on first run unless explicitly opted out.
+  if (opts.noToken) {
+    process.stderr.write(
+      '[email-mcp] WARNING: running without authentication (--no-token). ' +
+        'Any local process can access all 49 tools.\n',
+    );
+    opts.token = undefined;
+  } else if (!opts.token) {
+    try {
+      const existing = await fs.readFile(HTTP_TOKEN_FILE, 'utf-8');
+      const trimmed = existing.trim();
+      if (trimmed) {
+        opts.token = trimmed;
+      } else {
+        throw new Error('empty token file');
+      }
+    } catch {
+      // No token yet — generate, persist 0o600, print once.
+      const generated = randomBytes(32).toString('base64url');
+      await fs.mkdir(path.dirname(HTTP_TOKEN_FILE), { recursive: true, mode: 0o700 });
+      await fs.writeFile(HTTP_TOKEN_FILE, `${generated}\n`, { encoding: 'utf-8', mode: 0o600 });
+      await fs.chmod(HTTP_TOKEN_FILE, 0o600);
+      process.stderr.write(
+        `[email-mcp] Generated HTTP token (printed once): ${generated}\n` +
+          `  Stored at ${HTTP_TOKEN_FILE} (mode 0o600). Use --token or EMAIL_MCP_HTTP_TOKEN to override.\n`,
+      );
+      opts.token = generated;
+    }
+  }
 
   // Safety: never expose a networked email server without authentication.
   if (!isLoopback(opts.host) && !opts.token && !opts.insecure) {
@@ -171,7 +209,7 @@ export default async function runHttp(argv: string[]): Promise<void> {
       // DNS-rebinding guard answers with 403 itself when it returns false.
       if (validateHost && !validateHost(req, res)) return;
 
-      if (opts.token && !tokenMatches(req.headers.authorization, opts.token)) {
+      if (!opts.noToken && !tokenMatches(req.headers.authorization, opts.token ?? '')) {
         res.writeHead(401, {
           'content-type': 'application/json',
           'www-authenticate': 'Bearer',
