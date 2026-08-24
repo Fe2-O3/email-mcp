@@ -4,6 +4,8 @@
  * No MCP dependency — fully unit-testable.
  */
 
+import path from 'node:path';
+
 import type { ImapFlow } from 'imapflow';
 import type { IConnectionManager } from '../connections/types.js';
 import { sanitizeMailboxName, sanitizeSearchQuery } from '../safety/validation.js';
@@ -1650,8 +1652,20 @@ export default class ImapService {
           meta.filename,
           maxSizeBytes,
         );
-        const safe = meta.filename.replace(/[/\\?%*:|"<>]/g, '_');
-        const localPath = `${destDir}/${safe}`;
+        const resolvedDir = path.resolve(destDir);
+        // Filenames come from whatever a stranger attached. Strip directory
+        // components outright, then verify by resolving: the final path must
+        // land inside the destination, checked on the resolved prefix rather
+        // than by hunting for '..' in a string.
+        const sanitizedBase =
+          path
+            .basename(meta.filename)
+            .replace(/[/\\?%*:|"<>]/g, '_')
+            .replace(/^\.+$/, '_') || 'unnamed';
+        const localPath = path.resolve(resolvedDir, sanitizedBase);
+        if (!localPath.startsWith(resolvedDir + path.sep)) {
+          throw new Error(`Refusing to write outside the destination directory`);
+        }
         const { writeFile } = await import('node:fs/promises');
         await writeFile(localPath, Buffer.from(downloaded.contentBase64, 'base64'));
         return {
