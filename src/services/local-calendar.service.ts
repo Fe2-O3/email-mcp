@@ -16,7 +16,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { mcpLog } from '../logging.js';
+
 const execFile = promisify(execFileCb);
+
+/**
+ * AppleScript `whose` predicates against Calendar.app are slow: roughly 7.7s for
+ * a single calendar including AppleEvent warmup, and ~36s across ten. The 15s
+ * this replaces was below the real cost of an ordinary multi-calendar setup, so
+ * the query was SIGTERM'd every time. `addEventMacOS` already uses 90s for the
+ * same reason.
+ */
+const LIST_EVENTS_TIMEOUT_MS = 90_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -545,10 +556,24 @@ return jsonResult
 `;
 
   try {
-    const { stdout } = await execFile('osascript', ['-e', script], { timeout: 15_000 });
+    const { stdout } = await execFile('osascript', ['-e', script], {
+      timeout: LIST_EVENTS_TIMEOUT_MS,
+    });
     return JSON.parse(stdout.trim()) as CalendarEventSummary[];
-  } catch {
-    return [];
+  } catch (err) {
+    // A bare `return []` here made a hard failure indistinguishable from a
+    // mailbox that genuinely has no events: no error, no log line, nothing the
+    // user could act on. Surface the cause and rethrow, so `list_events` reports
+    // a timeout as a timeout.
+    const reason = err instanceof Error ? err.message : String(err);
+    mcpLog('warning', 'calendar', `list_events failed: ${reason}`).catch(() => {
+      /* logging must not mask the original failure */
+    });
+    throw new Error(
+      `Calendar query failed: ${reason}. ` +
+        `AppleScript 'whose' predicates are slow across many calendars; ` +
+        `narrow the date range or pass calendar_name to limit the search.`,
+    );
   }
 }
 
