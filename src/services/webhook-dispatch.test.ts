@@ -14,6 +14,8 @@ const guardMock = vi.hoisted(() => ({ assert: vi.fn().mockResolvedValue(undefine
 const mcpLogMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('../logging.js', () => ({ mcpLog: mcpLogMock }));
+const validateMock = vi.hoisted(() => vi.fn());
+vi.mock('../safety/validation.js', () => ({ validateWebhookUrl: validateMock }));
 vi.mock('../safety/webhook-guard.js', () => ({
   assertWebhookTargetAllowed: guardMock.assert,
 }));
@@ -98,4 +100,82 @@ describe('webhook dispatch', () => {
       expect.stringContaining('public address'),
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// Wire-level assertion: the JSON that actually arrives on the socket
+// ---------------------------------------------------------------------------
+
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+describe('webhook wire body', () => {
+  const realFetch = globalThis.fetch.bind(globalThis);
+  beforeEach(() => {
+    mcpLogMock.mockClear();
+    validateMock.mockClear();
+    validateMock.mockImplementation(() => {});
+    guardMock.assert.mockReset();
+    guardMock.assert.mockResolvedValue(undefined);
+  });
+
+  it('delivers the documented JSON fields to a real HTTP endpoint', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const server = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          seen.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
+        } catch {
+          seen.push({});
+        }
+        res.writeHead(200);
+        res.end('ok');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+
+    vi.stubGlobal(
+      'fetch',
+      // Real fetch against the local listener; redirect stays manual so the
+      // production option is exercised end to end. The real fetch is captured
+      // BEFORE stubbing, or the stub would recurse into itself.
+      vi
+        .fn()
+        .mockImplementation(async (url: string | URL, init?: RequestInit) =>
+          realFetch(url, { ...init, redirect: 'manual' } as RequestInit),
+        ),
+    );
+
+    const notifier = makeService(`http://127.0.0.1:${port}/hook`);
+    await (notifier as never as { sendWebhook: (p: unknown) => Promise<void> }).sendWebhook({
+      event: 'email.high',
+      account: 'work',
+      sender: 'billing@example.invalid',
+      subject: 'Invoice',
+      priority: 'high',
+      labels: ['billing'],
+      rule: 'invoices',
+      uid: 4821,
+      messageId: '<abc@sender.invalid>',
+      folder: 'INBOX',
+      hasAttachments: true,
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      account: 'work',
+      sender: 'billing@example.invalid',
+      subject: 'Invoice',
+      priority: 'high',
+      uid: 4821,
+      messageId: '<abc@sender.invalid>',
+      folder: 'INBOX',
+      hasAttachments: true,
+    });
+
+    server.close();
+  }, 15_000);
 });
