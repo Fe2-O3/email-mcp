@@ -30,6 +30,8 @@ export default class SmtpService {
       cc?: string[];
       bcc?: string[];
       html?: boolean;
+      /** Inline attachment parts. Content is base64; no filesystem paths are accepted. */
+      attachments?: Array<{ filename?: string; content: string; contentType?: string }>;
     },
   ): Promise<SendResult> {
     this.checkRateLimit(accountName);
@@ -44,6 +46,18 @@ export default class SmtpService {
       bcc: options.bcc?.join(', '),
       subject: options.subject,
       ...(options.html ? { html: options.body } : { text: options.body }),
+      ...(options.attachments && options.attachments.length > 0
+        ? {
+            attachments: options.attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+              encoding: 'base64' as const,
+              contentType: a.contentType,
+            })),
+          }
+        : {}),
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
 
     return {
@@ -128,6 +142,8 @@ export default class SmtpService {
       body?: string;
       cc?: string[];
       html?: boolean;
+      /** Defaults to true: a forward that silently drops the invoice is the bug. */
+      includeAttachments?: boolean;
     },
   ): Promise<SendResult> {
     this.checkRateLimit(accountName);
@@ -182,12 +198,27 @@ export default class SmtpService {
 
     const transport = await this.connections.getSmtpTransport(accountName);
 
+    // Reattach the original's parts. Fetching happens before anything goes
+    // out, and the fetch refuses oversized originals at compose time.
+    const includeAttachments =
+      options.includeAttachments === undefined ? true : options.includeAttachments;
+    const attachments = includeAttachments
+      ? await this.imapService.fetchMessageAttachments(
+          accountName,
+          options.emailId,
+          options.mailbox ?? 'INBOX',
+        )
+      : [];
+
     const result = await transport.sendMail({
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
       subject,
       ...(options.html ? { html: fullBody } : { text: fullBody }),
+      ...(attachments.length > 0 ? { attachments } : {}),
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
 
     return {
@@ -229,6 +260,14 @@ export default class SmtpService {
     const to = draft.to.map((a) => a.address).join(', ');
     const cc = draft.cc?.map((a) => a.address).join(', ');
 
+    // A draft saved with attachments must send with them. The draft's own
+    // UID addresses its parts in the Drafts mailbox.
+    const draftAttachments = await this.imapService.fetchMessageAttachments(
+      accountName,
+      String(draftId),
+      draftsPath,
+    );
+
     const result = await transport.sendMail({
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to,
@@ -237,6 +276,9 @@ export default class SmtpService {
       inReplyTo: draft.inReplyTo,
       references: draft.references?.join(' '),
       ...(draft.bodyHtml ? { html: draft.bodyHtml } : { text: draft.bodyText ?? '' }),
+      ...(draftAttachments.length > 0 ? { attachments: draftAttachments } : {}),
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
 
     // Delete the draft after successful send

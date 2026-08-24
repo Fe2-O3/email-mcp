@@ -109,6 +109,43 @@ function findMimePartByFilename(
   return undefined;
 }
 
+interface AttachmentPart {
+  filename: string;
+  mimeType: string;
+  size: number;
+  partPath?: string;
+}
+
+/** Collect every attachment part together with its MIME part path, in one walk. */
+function extractAttachmentParts(bodyStructure: unknown, partPath = ''): AttachmentPart[] {
+  const parts: AttachmentPart[] = [];
+  if (!bodyStructure || typeof bodyStructure !== 'object') return parts;
+
+  const bs = bodyStructure as Record<string, unknown>;
+  const currentPart = bs.part as string | undefined;
+  const effectivePath = currentPart ?? partPath;
+
+  if (bs.disposition === 'attachment') {
+    const params = (bs.dispositionParameters ?? bs.parameters ?? {}) as Record<string, string>;
+    parts.push({
+      filename: params.filename ?? params.name ?? 'unnamed',
+      mimeType: typeof bs.type === 'string' ? bs.type.toLowerCase() : 'application/octet-stream',
+      size: (bs.size as number) ?? 0,
+      partPath: effectivePath,
+    });
+  }
+
+  if (Array.isArray(bs.childNodes)) {
+    // eslint-disable-next-line no-plusplus
+    for (let i = 0; i < bs.childNodes.length; i++) {
+      const childPart = effectivePath ? `${effectivePath}.${i + 1}` : String(i + 1);
+      parts.push(...extractAttachmentParts(bs.childNodes[i], childPart));
+    }
+  }
+
+  return parts;
+}
+
 /**
  * Map a raw ImapFlow fetch result to `EmailMeta`.
  *
@@ -1374,6 +1411,86 @@ export default class ImapService {
         size: content.length,
         contentBase64: content.toString('base64'),
       };
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
+   * Fetch every attachment of a message as nodemailer-ready parts.
+   *
+   * Used by forward_email (reattaching the original's parts) and send_draft
+   * (sending a draft's own attachments). The total byte budget is enforced
+   * against the sizes reported by bodyStructure BEFORE any download, so an
+   * oversized original fails at compose time with a clear message instead of
+   * at the SMTP server mid-handshake.
+   */
+  async fetchMessageAttachments(
+    accountName: string,
+    emailId: string,
+    mailbox = 'INBOX',
+    maxTotalBytes = 25 * 1024 * 1024,
+  ): Promise<
+    Array<{ filename: string; content: string; contentType: string; encoding: 'base64' }>
+  > {
+    const client = await this.connections.getImapClient(accountName);
+    const uid = parseInt(emailId, 10);
+
+    const lock = await ImapService.lockMailbox(client, mailbox);
+    try {
+      const msg = await client.fetchOne(
+        String(uid),
+        { uid: true, bodyStructure: true },
+        { uid: true },
+      );
+
+      if (!msg) {
+        throw new Error(`Email ${emailId} not found in ${mailbox}`);
+      }
+
+      const parts = extractAttachmentParts(msg.bodyStructure);
+      if (parts.length === 0) return [];
+
+      const totalBytes = parts.reduce((sum, p) => sum + p.size, 0);
+      if (totalBytes > maxTotalBytes) {
+        throw new Error(
+          `Original carries ${Math.round(totalBytes / 1024 / 1024)}MB of attachments, ` +
+            `exceeds the ${Math.round(maxTotalBytes / 1024 / 1024)}MB outbound limit. ` +
+            `Forward without attachments or send them another way.`,
+        );
+      }
+
+      const out: Array<{
+        filename: string;
+        content: string;
+        contentType: string;
+        encoding: 'base64';
+      }> = [];
+
+      for (const part of parts) {
+        if (!part.partPath) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const downloadResult = await client.download(String(uid), part.partPath, { uid: true });
+        if (!downloadResult?.content) {
+          throw new Error(`Failed to download attachment "${part.filename}"`);
+        }
+
+        const chunks: Buffer[] = [];
+        // eslint-disable-next-line no-restricted-syntax
+        for await (const chunk of downloadResult.content) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        const content = Buffer.concat(chunks);
+
+        out.push({
+          filename: part.filename,
+          content: content.toString('base64'),
+          contentType: part.mimeType,
+          encoding: 'base64',
+        });
+      }
+
+      return out;
     } finally {
       lock.release();
     }

@@ -9,6 +9,13 @@ import { validateInputLength } from '../safety/validation.js';
 
 import type SmtpService from '../services/smtp.service.js';
 
+/** Inline attachment parts. Base64 content only — no filesystem paths. */
+const attachmentInput = z.object({
+  filename: z.string().optional().describe('Name shown to the recipient'),
+  contentType: z.string().optional().describe('MIME type, e.g. application/pdf'),
+  base64: z.string().min(1).describe('Attachment bytes as base64'),
+});
+
 export default function registerSendTools(server: McpServer, smtpService: SmtpService): void {
   // ---------------------------------------------------------------------------
   // send_email
@@ -35,6 +42,10 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .optional()
           .describe('CC recipients'),
         html: z.boolean().default(false).describe('Send as HTML (default: plain text)'),
+        attachments: z
+          .array(attachmentInput)
+          .optional()
+          .describe('Files to attach, as base64 parts'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -42,7 +53,14 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
       try {
         validateInputLength(params.subject, 998, 'Subject');
         validateInputLength(params.body, 5_000_000, 'Body');
-        const result = await smtpService.sendEmail(params.account, params);
+        const result = await smtpService.sendEmail(params.account, {
+          ...params,
+          attachments: params.attachments?.map((a) => ({
+            filename: a.filename,
+            contentType: a.contentType,
+            content: a.base64,
+          })),
+        });
         await audit.log(
           'send_email',
           params.account,
@@ -159,13 +177,20 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .array(z.email({ pattern: z.regexes.html5Email }))
           .optional()
           .describe('CC recipients'),
+        include_attachments: z
+          .boolean()
+          .default(true)
+          .describe('Reattach the original email\u2019s attachments (default: true)'),
         html: z.boolean().default(false).describe('Send as HTML (default: plain text)'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     async (params) => {
       try {
-        const result = await smtpService.forwardEmail(params.account, params);
+        const result = await smtpService.forwardEmail(params.account, {
+          ...params,
+          includeAttachments: params.include_attachments,
+        });
         await audit.log(
           'forward_email',
           params.account,

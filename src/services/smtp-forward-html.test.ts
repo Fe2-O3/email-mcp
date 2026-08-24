@@ -34,6 +34,7 @@ function buildService(overrides: Partial<typeof original> = {}) {
   };
   const imapService = {
     getEmail: async () => ({ ...original, ...overrides }),
+    fetchMessageAttachments: vi.fn().mockResolvedValue([]),
   };
   return new SmtpService(
     connections as never,
