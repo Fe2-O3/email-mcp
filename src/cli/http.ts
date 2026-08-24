@@ -37,6 +37,13 @@ interface HttpOptions {
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost', '[::1]']);
 
+/**
+ * Upper bound on one request body. Matches the SDK's own 10 MB message cap:
+ * anything larger cannot be a valid MCP message, and without this the
+ * transport buffers whatever arrives with no ceiling at all.
+ */
+const MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
+
 function isLoopback(host: string): boolean {
   return LOOPBACK.has(host);
 }
@@ -173,6 +180,16 @@ export default async function runHttp(argv: string[]): Promise<void> {
         return;
       }
 
+      // Refuse oversized bodies before the transport reads a byte. The
+      // transport buffers request bodies without its own cap, so this is the
+      // only bound on what one connection can make the process hold.
+      const contentLength = Number(req.headers['content-length'] ?? 0);
+      if (contentLength > MAX_REQUEST_BODY_BYTES) {
+        res.writeHead(413, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'payload_too_large' }));
+        return;
+      }
+
       await transport.handleRequest(req, res);
     })().catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
@@ -185,15 +202,47 @@ export default async function runHttp(argv: string[]): Promise<void> {
   });
 
   const shutdown = async (): Promise<void> => {
-    await background.stop();
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => resolve());
-    });
-    await services.connections.closeAll();
-    await server.close();
+    try {
+      await background.stop();
+      await new Promise<void>((resolve) => {
+        httpServer.close(() => resolve());
+      });
+      await services.connections.closeAll();
+      await server.close();
+    } catch (err) {
+      // A signal handler may not discard its promise: an escaped rejection
+      // here would kill the process mid-shutdown instead of finishing it.
+      process.stderr.write(
+        `[email-mcp] http shutdown error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
   };
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
+
+  // The request path is fully guarded, but any other rejected promise in the
+  // service graph would otherwise take the whole server down (Node's default
+  // for unhandled rejections is a fatal throw). Log, keep serving.
+  process.on('unhandledRejection', (reason) => {
+    process.stderr.write(
+      `[email-mcp] unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}\n`,
+    );
+  });
+  process.on('uncaughtException', (err) => {
+    process.stderr.write(`[email-mcp] uncaught exception: ${err.message}\n`);
+  });
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      process.stderr.write(
+        `email-mcp — port ${opts.port} is already in use; choose another with --port\n`,
+      );
+    } else {
+      process.stderr.write(`email-mcp — HTTP server error: ${err.message}\n`);
+    }
+    // eslint-disable-next-line n/no-process-exit
+    process.exit(1);
+  });
 
   await new Promise<void>((resolve) => {
     httpServer.listen(opts.port, opts.host, () => {
