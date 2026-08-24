@@ -32,6 +32,7 @@ import registerLocateTools from './locate.tool.js';
 import registerMailboxesTools from './mailboxes.tool.js';
 import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
+import registerSecurityTools from './security.tool.js';
 import registerSendTools from './send.tool.js';
 import { registerTemplateReadTools, registerTemplateWriteTools } from './templates.tool.js';
 import registerThreadTools from './thread.tool.js';
@@ -71,6 +72,7 @@ export default function registerAllTools(
   registerAnalyticsTools(server, imapService);
   registerHealthTools(server, connections, imapService);
   registerLocateTools(server, imapService);
+  registerSecurityTools(server, imapService);
   registerWatcherReadTools(server, watcherService, hooksService);
 
   // Write tools — skipped in read-only mode

@@ -17,6 +17,7 @@ vi.mock('./locate.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./mailboxes.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./manage.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./scheduler.tool.js', () => ({ default: vi.fn() }));
+vi.mock('./security.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./send.tool.js', () => ({ default: vi.fn() }));
 vi.mock('./templates.tool.js', () => ({
   registerTemplateReadTools: vi.fn(),

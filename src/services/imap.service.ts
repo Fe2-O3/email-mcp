@@ -24,6 +24,11 @@ import type {
   QuotaInfo,
   SenderStat,
 } from '../types/index.js';
+import {
+  type AuthSignals,
+  extractAuthenticationResults,
+  parseAuthSignals,
+} from '../utils/auth-results.js';
 import { imapCommand } from '../utils/imap-error.js';
 import type { ReconnectEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
@@ -1444,6 +1449,47 @@ export default class ImapService {
     try {
       await client.append(String(sentFolder.path), raw, ['\\Seen']);
       return { appended: true, folder: String(sentFolder.path) };
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
+   * Sender authentication signals for one message, from headers already on
+   * the server - a single headers-only fetch, no body round trips.
+   */
+  async getEmailSecurity(
+    accountName: string,
+    emailId: string,
+    mailbox = 'INBOX',
+  ): Promise<AuthSignals & { from?: string; replyTo?: string; returnPath?: string }> {
+    const client = await this.connections.getImapClient(accountName);
+    const uid = parseInt(emailId, 10);
+
+    const lock = await ImapService.lockMailbox(client, mailbox);
+    try {
+      const msg = await client.fetchOne(
+        String(uid),
+        { uid: true, envelope: true, headers: true },
+        { uid: true },
+      );
+      if (!msg) throw new Error(`Email ${emailId} not found in ${mailbox}`);
+
+      const headerBlock = Buffer.isBuffer(msg.headers) ? msg.headers.toString('utf-8') : '';
+      const values = extractAuthenticationResults(headerBlock);
+      const signals = parseAuthSignals(values);
+
+      const headerValue = (key: string): string | undefined => {
+        const re = new RegExp(`^${key}:[ \\t]*(.*)$`, 'im');
+        const m = re.exec(headerBlock);
+        return m ? m[1].trim() : undefined;
+      };
+
+      return {
+        ...signals,
+        replyTo: headerValue('reply-to'),
+        returnPath: headerValue('return-path'),
+      };
     } finally {
       lock.release();
     }
