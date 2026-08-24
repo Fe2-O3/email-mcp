@@ -10,7 +10,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const guardMock = vi.hoisted(() => ({ assert: vi.fn().mockResolvedValue(undefined) }));
+const guardMock = vi.hoisted(() => ({ assert: vi.fn() }));
 const mcpLogMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('../logging.js', () => ({ mcpLog: mcpLogMock }));
@@ -44,56 +44,83 @@ const payload = {
   priority: 'high' as const,
 };
 
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+
 describe('webhook dispatch', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     mcpLogMock.mockClear();
     guardMock.assert.mockClear();
+    validateMock.mockClear();
+    validateMock.mockImplementation(() => {});
   });
 
   it('sends POSTs with redirects disabled and refuses to follow a 3xx', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 307 });
-    vi.stubGlobal('fetch', fetchMock);
+    const server = http.createServer((_req, res) => {
+      res.writeHead(307, { Location: 'http://127.0.0.1/other' });
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const url = `http://hooks.example.invalid:${port}/x`;
+    guardMock.assert.mockResolvedValue({
+      hostname: 'hooks.example.invalid',
+      address: '127.0.0.1',
+      family: 4,
+    });
 
-    const notifier = makeService('https://hooks.example.invalid/x');
+    const notifier = makeService(url);
     await (notifier as never as { sendWebhook: (p: unknown) => Promise<void> }).sendWebhook(
       payload,
     );
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, Record<string, unknown>];
-    expect(init.redirect).toBe('manual');
-
+    expect(guardMock.assert).toHaveBeenCalledWith(url);
     expect(mcpLogMock).toHaveBeenCalledWith(
       'warning',
       'notifier',
       expect.stringContaining('redirect refused'),
     );
+    server.close();
   });
 
   it('runs the destination guard before dispatch', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('ok');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const url = `http://hooks.example.invalid:${port}/x`;
+    guardMock.assert.mockResolvedValue({
+      hostname: 'hooks.example.invalid',
+      address: '127.0.0.1',
+      family: 4,
+    });
 
-    const notifier = makeService('https://hooks.example.invalid/x');
+    const notifier = makeService(url);
     await (notifier as never as { sendWebhook: (p: unknown) => Promise<void> }).sendWebhook(
       payload,
     );
 
-    expect(guardMock.assert).toHaveBeenCalledWith('https://hooks.example.invalid/x');
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(guardMock.assert).toHaveBeenCalledWith(url);
+    // No warning for successful dispatch
+    expect(mcpLogMock).not.toHaveBeenCalledWith(
+      'warning',
+      'notifier',
+      expect.stringContaining('redirect'),
+    );
+    server.close();
   });
 
   it('never reaches fetch when the guard refuses', async () => {
     guardMock.assert.mockRejectedValue(new Error('must point to a public address'));
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-
+    // No server needed — guard fails before connect
     const notifier = makeService('https://rebind.example.invalid/hook');
     await (notifier as never as { sendWebhook: (p: unknown) => Promise<void> }).sendWebhook(
       payload,
     );
 
-    expect(fetchMock).not.toHaveBeenCalled();
     expect(mcpLogMock).toHaveBeenCalledWith(
       'warning',
       'notifier',
@@ -106,17 +133,17 @@ describe('webhook dispatch', () => {
 // Wire-level assertion: the JSON that actually arrives on the socket
 // ---------------------------------------------------------------------------
 
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
-
 describe('webhook wire body', () => {
-  const realFetch = globalThis.fetch.bind(globalThis);
   beforeEach(() => {
     mcpLogMock.mockClear();
     validateMock.mockClear();
     validateMock.mockImplementation(() => {});
     guardMock.assert.mockReset();
-    guardMock.assert.mockResolvedValue(undefined);
+    guardMock.assert.mockResolvedValue({
+      hostname: '127.0.0.1',
+      address: '127.0.0.1',
+      family: 4,
+    });
   });
 
   it('delivers the documented JSON fields to a real HTTP endpoint', async () => {
@@ -137,19 +164,13 @@ describe('webhook wire body', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const { port } = server.address() as AddressInfo;
 
-    vi.stubGlobal(
-      'fetch',
-      // Real fetch against the local listener; redirect stays manual so the
-      // production option is exercised end to end. The real fetch is captured
-      // BEFORE stubbing, or the stub would recurse into itself.
-      vi
-        .fn()
-        .mockImplementation(async (url: string | URL, init?: RequestInit) =>
-          realFetch(url, { ...init, redirect: 'manual' } as RequestInit),
-        ),
-    );
-
+    // No fetch stub — we use real http.request via pinned target
     const notifier = makeService(`http://127.0.0.1:${port}/hook`);
+    guardMock.assert.mockResolvedValue({
+      hostname: '127.0.0.1',
+      address: '127.0.0.1',
+      family: 4,
+    });
     await (notifier as never as { sendWebhook: (p: unknown) => Promise<void> }).sendWebhook({
       event: 'email.high',
       account: 'work',

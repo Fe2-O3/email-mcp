@@ -111,14 +111,22 @@ function expandIPv6(address: string): string | null {
   return groups.map((g) => g.padStart(4, '0')).join('');
 }
 
+export interface ValidatedTarget {
+  hostname: string;
+  address: string;
+  family: number;
+}
+
 /**
  * Refuses a webhook URL unless every address its hostname resolves to is
- * public. Throws with an operator-actionable message when refused.
+ * public. Returns the validated target pinned to the address that was checked,
+ * so dispatch can connect to that address rather than resolving again.
+ * Throws with an operator-actionable message when refused.
  */
 export async function assertWebhookTargetAllowed(
   url: string,
   lookup: Lookup = DEFAULT_LOOKUP,
-): Promise<void> {
+): Promise<ValidatedTarget> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -134,12 +142,12 @@ export async function assertWebhookTargetAllowed(
   // resolves identically but compares differently as text. Normalise first.
   const hostname = parsed.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '');
 
-  // Literal addresses need no resolution.
+  // Literal addresses need no resolution — pin to the literal itself.
   if (net.isIP(hostname) !== 0) {
     if (isForbiddenAddress(hostname)) {
       throw new Error(`Webhook URL must point to a public address: ${hostname} is not routable`);
     }
-    return;
+    return { hostname, address: hostname, family: net.isIP(hostname) };
   }
 
   let resolved: { address: string; family: number }[];
@@ -161,4 +169,9 @@ export async function assertWebhookTargetAllowed(
       );
     }
   }
+
+  // Pin to the first validated address — all were checked, so any is safe.
+  // The caller must use this address for the connection, not resolve again.
+  const first = resolved[0];
+  return { hostname, address: first.address, family: first.family };
 }

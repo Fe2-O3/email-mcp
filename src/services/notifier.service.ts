@@ -11,11 +11,70 @@
  */
 
 import { execFile } from 'node:child_process';
+import http from 'node:http';
+import https from 'node:https';
 import { mcpLog } from '../logging.js';
 import { validateWebhookUrl } from '../safety/validation.js';
-import { assertWebhookTargetAllowed } from '../safety/webhook-guard.js';
+import { assertWebhookTargetAllowed, type ValidatedTarget } from '../safety/webhook-guard.js';
 
 import type { AlertsConfig } from '../types/index.js';
+
+export async function fetchWithPinnedTarget(
+  url: string,
+  pinned: ValidatedTarget,
+  init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal },
+): Promise<{ status: number; ok: boolean }> {
+  const parsed = new URL(url);
+  const isHttps = parsed.protocol === 'https:';
+  const lib = isHttps ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = lib.request(
+      url,
+      {
+        method: init.method,
+        headers: init.headers,
+        signal: init.signal,
+        // Pin the connection to the validated address — do not resolve again.
+        // Node's http may call lookup with all:true expecting an array; handle both.
+        lookup: (
+          _hostname: string,
+          opts: { all?: boolean },
+          cb: (
+            err: Error | null,
+            address: string | { address: string; family: number }[],
+            family?: number,
+          ) => void,
+        ) => {
+          if (opts.all) {
+            cb(null, [{ address: pinned.address, family: pinned.family }]);
+          } else {
+            cb(null, pinned.address, pinned.family);
+          }
+        },
+        ...(isHttps ? { servername: pinned.hostname } : {}),
+      } as http.RequestOptions & { servername?: string; lookup?: typeof import('node:dns').lookup },
+      (res) => {
+        // Drain body — we only need status, and redirects are never followed
+        // (manual), so no re-validation is needed.
+        res.on('data', () => {});
+        res.on('end', () => {
+          const status = res.statusCode ?? 0;
+          resolve({ status, ok: status >= 200 && status < 300 });
+        });
+      },
+    );
+
+    req.on('error', reject);
+    if (init.signal) {
+      init.signal.addEventListener('abort', () => {
+        req.destroy(new Error('aborted'));
+      });
+    }
+    req.write(init.body);
+    req.end();
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -387,12 +446,15 @@ export default class NotifierService {
   private async sendWebhook(payload: AlertPayload): Promise<void> {
     if (!this.config.webhookUrl) return;
 
+    let pinned: ValidatedTarget;
     try {
       validateWebhookUrl(this.config.webhookUrl);
       // The synchronous checks above see the hostname as text. This resolves
       // it and range-checks every address, so a name answering in private
-      // space is refused before anything goes out.
-      await assertWebhookTargetAllowed(this.config.webhookUrl);
+      // space is refused before anything goes out. The returned target is
+      // pinned — dispatch uses it, not a fresh lookup, closing the rebinding
+      // window between check and connect.
+      pinned = await assertWebhookTargetAllowed(this.config.webhookUrl);
     } catch (err) {
       await mcpLog(
         'warning',
@@ -423,15 +485,11 @@ export default class NotifierService {
     }, 5000);
 
     try {
-      const resp = await fetch(this.config.webhookUrl, {
+      const resp = await fetchWithPinnedTarget(this.config.webhookUrl, pinned, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
         signal: controller.signal,
-        // Webhook consumers answer POSTs; they do not bounce callers around.
-        // Following a redirect would silently re-address this request to
-        // wherever the first host points, so any 3xx is a failed delivery.
-        redirect: 'manual',
       });
       if (resp.status >= 300 && resp.status < 400) {
         await mcpLog('warning', 'notifier', `Webhook redirect refused (${resp.status})`);
