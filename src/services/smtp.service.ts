@@ -6,6 +6,7 @@
 
 import type { Transporter } from 'nodemailer';
 import type { IConnectionManager } from '../connections/types.js';
+import { mcpLog } from '../logging.js';
 import type RateLimiter from '../safety/rate-limiter.js';
 import { sanitizeTemplateVariable } from '../safety/validation.js';
 import type { SendResult } from '../types/index.js';
@@ -71,6 +72,8 @@ export default class SmtpService {
       disableUrlAccess: true,
     });
 
+    this.fileToSent(accountName, result);
+
     return {
       messageId: result.messageId ?? '',
       status: 'sent',
@@ -133,6 +136,8 @@ export default class SmtpService {
       references: references.join(' '),
       ...(options.html ? { html: options.body } : { text: options.body }),
     });
+
+    this.fileToSent(accountName, result);
 
     return {
       messageId: result.messageId ?? '',
@@ -232,6 +237,8 @@ export default class SmtpService {
       disableUrlAccess: true,
     });
 
+    this.fileToSent(accountName, result);
+
     return {
       messageId: result.messageId ?? '',
       status: 'sent',
@@ -292,6 +299,26 @@ export default class SmtpService {
   }
 
   /**
+   * File a sent message into the Sent folder, best effort. SMTP already
+   * succeeded: an APPEND failure is logged as a warning and never surfaces as
+   * a failed send - the mail went out either way.
+   */
+  private fileToSent(accountName: string, info: { message?: Buffer }): void {
+    const raw = info?.message;
+    if (!raw) return;
+    this.imapService
+      .appendSent(accountName, raw)
+      .then((res) => {
+        if (!res.appended) {
+          mcpLog('debug', 'smtp', `No Sent folder found for "${accountName}"; copy not filed`);
+        }
+      })
+      .catch(() => {
+        mcpLog('warning', 'smtp', `Sent-folder filing failed for "${accountName}"`);
+      });
+  }
+
+  /**
    * Send through the pooled transport, and on failure evict it. A pooled SMTP
    * socket that died between messages would otherwise be handed to every
    * later send: only a health check ever re-verified the cache, so the send
@@ -301,9 +328,12 @@ export default class SmtpService {
     accountName: string,
     transport: Transporter,
     payload: Record<string, unknown>,
-  ): Promise<{ messageId?: string }> {
+  ): Promise<{ messageId?: string; message?: Buffer }> {
     try {
-      return await transport.sendMail(payload as never);
+      return (await transport.sendMail(payload as never)) as {
+        messageId?: string;
+        message?: Buffer;
+      };
     } catch (err) {
       this.connections.invalidateSmtpTransport(accountName);
       throw err;
@@ -353,6 +383,8 @@ export default class SmtpService {
 
     // Delete the draft after successful send
     await this.imapService.deleteDraft(accountName, draftId, draftsPath);
+
+    this.fileToSent(accountName, result);
 
     return {
       messageId: result.messageId ?? '',

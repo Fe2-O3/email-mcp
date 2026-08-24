@@ -1404,6 +1404,37 @@ export default class ImapService {
     return { email, mailbox: draftsPath };
   }
 
+  /**
+   * Append a sent message to the account's Sent folder.
+   *
+   * SMTP delivery and Sent-folder filing are separate concerns: this is best
+   * effort by contract. Callers must treat an APPEND failure as a warning,
+   * never as a failed send - the mail already went out.
+   *
+   * The folder is located per attempt from the server's own listing, so
+   * provider differences (Gmail's "[Gmail]/Sent Mail", "Sent Items",
+   * "INBOX.Sent", ...) resolve without configuration. Returns whether a
+   * folder was found, so callers can log usefully when it was not.
+   */
+  async appendSent(
+    accountName: string,
+    raw: Buffer | string,
+  ): Promise<{ appended: boolean; folder?: string }> {
+    const client = await this.connections.getImapClient(accountName);
+
+    const mailboxes = await client.list();
+    const sentFolder = (mailboxes ?? []).find((m) => /sent/i.test(String(m.path)));
+    if (!sentFolder) return { appended: false };
+
+    const lock = await ImapService.lockMailbox(client, String(sentFolder.path));
+    try {
+      await client.append(String(sentFolder.path), raw, ['\\Seen']);
+      return { appended: true, folder: String(sentFolder.path) };
+    } finally {
+      lock.release();
+    }
+  }
+
   /** Delete a draft after it has been sent. */
   async deleteDraft(accountName: string, emailId: number, mailbox: string): Promise<void> {
     const client = await this.connections.getImapClient(accountName);
