@@ -35,6 +35,7 @@ export default function registerCalendarTools(
   calendarService: CalendarService,
   localCalendarService: LocalCalendarService,
   remindersService: RemindersService,
+  readOnly = false,
 ): void {
   // ---------------------------------------------------------------------------
   // extract_calendar
@@ -95,199 +96,197 @@ export default function registerCalendarTools(
   );
 
   // ---------------------------------------------------------------------------
-  // add_to_calendar
+  // add_to_calendar — write, behind readOnly
   // ---------------------------------------------------------------------------
 
-  server.registerTool(
-    'add_to_calendar',
-    {
-      title: 'Add to calendar',
-      description: [
-        'Add an email event to the local calendar (macOS Calendar.app / Linux via xdg-open).',
-        'Automatically extracts event data from the email: ICS attachments, meeting URL (Zoom/Teams/Meet),',
-        'conference dial-in / ID / passcode, attendees, and email body excerpt.',
-        'All relevant email attachments (PDFs, docs, etc.) are saved locally and linked in the event notes.',
-        'A native confirmation dialog is shown on macOS before the event is written.',
-        'Returns one of: added | cancelled | timed_out | no_display.',
-      ].join(' '),
-      inputSchema: z.object({
-        account: z.string().describe('Account name'),
-        email_id: z.string().describe('Email UID'),
-        mailbox: z.string().default('INBOX').describe('Mailbox path (default: INBOX)'),
-        calendar_name: z
-          .string()
-          .optional()
-          .describe('Target calendar name (empty = default calendar)'),
-        alarm_minutes: z
-          .number()
-          .int()
-          .min(0)
-          .max(1440)
-          .default(15)
-          .describe('Minutes before event to show an alert (default: 15)'),
-        save_attachments: z
-          .boolean()
-          .default(true)
-          .describe('Save non-ICS email attachments locally and link them in the event notes'),
-        confirm: z
-          .boolean()
-          .default(true)
-          .describe('Show native confirmation dialog before adding (default: true)'),
-      }),
-      annotations: { readOnlyHint: false, destructiveHint: false },
-    },
-    async ({
-      account,
-      email_id: emailId,
-      mailbox,
-      calendar_name: calendarName,
-      alarm_minutes: alarmMinutes,
-      save_attachments: saveAttachments,
-      confirm,
-    }) => {
-      // 1. Fetch full email
-      const email = await imapService.getEmail(account, emailId, mailbox);
-      const bodyText = email.bodyText ?? '';
-      const bodyHtml = email.bodyHtml ?? '';
-      const combinedText = `${bodyText}\n${bodyHtml}`;
-
-      // 2. Try to get event data from ICS attachment
-      let eventStart: Date = new Date(email.date);
-      let eventEnd: Date = new Date(eventStart.getTime() + 60 * 60 * 1000);
-      let eventLocation: string | undefined;
-      let eventOrganizer: string | undefined;
-      let eventAttendees: string[] = [];
-      let icsUid: string | undefined;
-
-      const icsContents = await imapService.getCalendarParts(account, mailbox, emailId);
-      if (icsContents.length > 0) {
-        const events = calendarService.extractFromParts(icsContents);
-        if (events.length > 0) {
-          const ev = events[0];
-          eventStart = new Date(ev.start);
-          eventEnd = new Date(ev.end);
-          eventLocation = ev.location;
-          icsUid = ev.uid;
-          if (ev.organizer) {
-            eventOrganizer = ev.organizer.name
-              ? `${ev.organizer.name} <${ev.organizer.address}>`
-              : ev.organizer.address;
-          }
-          eventAttendees = ev.attendees.map((a) => {
-            if (a.name) return `${a.name} <${a.address}>`;
-            return a.address;
-          });
-        }
-      }
-
-      // 3. Extract meeting URL and conference details
-      const meetingUrl = extractMeetingUrl(combinedText);
-      const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);
-
-      // 4. Save attachments (before dialog so filenames are shown)
-      let savedAttachments: {
-        filename: string;
-        localPath: string;
-        fileUrl: string;
-        mimeType: string;
-        size: number;
-      }[] = [];
-
-      if (saveAttachments && email.attachments.length > 0) {
-        const destDir = join(
-          CALENDAR_ATTACHMENTS_DIR,
-          `${account}-${emailId}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
-        );
-        savedAttachments = await imapService.saveEmailAttachments(
-          account,
-          emailId,
-          mailbox,
-          destDir,
-        );
-      }
-
-      // 5. Build rich notes
-      const notes = buildCalendarNotes({
-        emailFrom: email.from.name
-          ? `${email.from.name} <${email.from.address}>`
-          : email.from.address,
-        emailSubject: email.subject,
-        emailDate: new Date(email.date).toLocaleString('en', {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
+  if (!readOnly) {
+    server.registerTool(
+      'add_to_calendar',
+      {
+        title: 'Add to calendar',
+        description: [
+          'Add an email event to the local calendar (macOS Calendar.app / Linux via xdg-open).',
+          'Automatically extracts event data from the email: ICS attachments, meeting URL (Zoom/Teams/Meet),',
+          'conference dial-in / ID / passcode, attendees, and email body excerpt.',
+          'All relevant email attachments (PDFs, docs, etc.) are saved locally and linked in the event notes.',
+          'A native confirmation dialog is shown on macOS before the event is written.',
+          'Returns one of: added | cancelled | timed_out | no_display.',
+        ].join(' '),
+        inputSchema: z.object({
+          account: z.string().describe('Account name'),
+          email_id: z.string().describe('Email UID'),
+          mailbox: z.string().default('INBOX').describe('Mailbox path (default: INBOX)'),
+          calendar_name: z
+            .string()
+            .optional()
+            .describe('Target calendar name (empty = default calendar)'),
+          alarm_minutes: z
+            .number()
+            .int()
+            .min(0)
+            .max(1440)
+            .default(15)
+            .describe('Minutes before event to show an alert (default: 15)'),
+          save_attachments: z
+            .boolean()
+            .default(true)
+            .describe('Save non-ICS email attachments locally and link them in the event notes'),
         }),
-        organizer: eventOrganizer,
-        attendees: eventAttendees,
-        meetingUrl: meetingUrl?.url,
-        meetingUrlLabel: meetingUrl?.label,
-        dialIn: conference?.dialIn,
-        meetingId: conference?.meetingId,
-        passcode: conference?.passcode,
-        conferenceProvider: conference?.provider,
-        bodyExcerpt: bodyText || bodyHtml,
-        savedAttachments,
-      });
+        annotations: { readOnlyHint: false, destructiveHint: false },
+      },
+      async ({
+        account,
+        email_id: emailId,
+        mailbox,
+        calendar_name: calendarName,
+        alarm_minutes: alarmMinutes,
+        save_attachments: saveAttachments,
+      }) => {
+        // 1. Fetch full email
+        const email = await imapService.getEmail(account, emailId, mailbox);
+        const bodyText = email.bodyText ?? '';
+        const bodyHtml = email.bodyHtml ?? '';
+        const combinedText = `${bodyText}\n${bodyHtml}`;
 
-      // 6. Add to calendar (shows dialog if confirm=true, dedup check is automatic)
-      const result = await localCalendarService.addEvent(
-        {
-          title: email.subject,
-          start: eventStart,
-          end: eventEnd,
-          location: eventLocation,
-          notes,
-          url: meetingUrl?.url,
-          urlLabel: meetingUrl?.label,
-          alarmMinutes,
-          attendeeCount: eventAttendees.length,
-          savedAttachments,
+        // 2. Try to get event data from ICS attachment
+        let eventStart: Date = new Date(email.date);
+        let eventEnd: Date = new Date(eventStart.getTime() + 60 * 60 * 1000);
+        let eventLocation: string | undefined;
+        let eventOrganizer: string | undefined;
+        let eventAttendees: string[] = [];
+        let icsUid: string | undefined;
+
+        const icsContents = await imapService.getCalendarParts(account, mailbox, emailId);
+        if (icsContents.length > 0) {
+          const events = calendarService.extractFromParts(icsContents);
+          if (events.length > 0) {
+            const ev = events[0];
+            eventStart = new Date(ev.start);
+            eventEnd = new Date(ev.end);
+            eventLocation = ev.location;
+            icsUid = ev.uid;
+            if (ev.organizer) {
+              eventOrganizer = ev.organizer.name
+                ? `${ev.organizer.name} <${ev.organizer.address}>`
+                : ev.organizer.address;
+            }
+            eventAttendees = ev.attendees.map((a) => {
+              if (a.name) return `${a.name} <${a.address}>`;
+              return a.address;
+            });
+          }
+        }
+
+        // 3. Extract meeting URL and conference details
+        const meetingUrl = extractMeetingUrl(combinedText);
+        const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);
+
+        // 4. Save attachments (before dialog so filenames are shown)
+        let savedAttachments: {
+          filename: string;
+          localPath: string;
+          fileUrl: string;
+          mimeType: string;
+          size: number;
+        }[] = [];
+
+        if (saveAttachments && email.attachments.length > 0) {
+          const destDir = join(
+            CALENDAR_ATTACHMENTS_DIR,
+            `${account}-${emailId}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
+          );
+          savedAttachments = await imapService.saveEmailAttachments(
+            account,
+            emailId,
+            mailbox,
+            destDir,
+          );
+        }
+
+        // 5. Build rich notes
+        const notes = buildCalendarNotes({
+          emailFrom: email.from.name
+            ? `${email.from.name} <${email.from.address}>`
+            : email.from.address,
+          emailSubject: email.subject,
+          emailDate: new Date(email.date).toLocaleString('en', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          organizer: eventOrganizer,
+          attendees: eventAttendees,
+          meetingUrl: meetingUrl?.url,
+          meetingUrlLabel: meetingUrl?.label,
           dialIn: conference?.dialIn,
           meetingId: conference?.meetingId,
           passcode: conference?.passcode,
           conferenceProvider: conference?.provider,
-          icsUid,
-        },
-        calendarName,
-        { confirm },
-      );
+          bodyExcerpt: bodyText || bodyHtml,
+          savedAttachments,
+        });
 
-      // 7. Build response
-      const details: Record<string, unknown> = {
-        status: result.status,
-        message: result.message,
-      };
-      if (result.status === 'duplicate') {
-        details.duplicate = result.duplicate;
-        details.hint = 'Event already exists. Use skipDuplicateCheck or update the existing event.';
-      }
-      if (result.status === 'added') {
-        details.event = {
-          title: email.subject,
-          start: eventStart.toISOString(),
-          end: eventEnd.toISOString(),
-          location: eventLocation,
-          calendar: result.calendarName,
-          meetingUrl: meetingUrl?.url,
-          dialIn: conference?.dialIn,
-          meetingId: conference?.meetingId,
-          attachmentsSaved: savedAttachments.length,
-          attachments: savedAttachments.map((a) => ({
-            filename: a.filename,
-            size: a.size,
-            localPath: a.localPath,
-          })),
+        // 6. Add to calendar (shows dialog if confirm=true, dedup check is automatic)
+        const result = await localCalendarService.addEvent(
+          {
+            title: email.subject,
+            start: eventStart,
+            end: eventEnd,
+            location: eventLocation,
+            notes,
+            url: meetingUrl?.url,
+            urlLabel: meetingUrl?.label,
+            alarmMinutes,
+            attendeeCount: eventAttendees.length,
+            savedAttachments,
+            dialIn: conference?.dialIn,
+            meetingId: conference?.meetingId,
+            passcode: conference?.passcode,
+            conferenceProvider: conference?.provider,
+            icsUid,
+          },
+          calendarName,
+          {},
+        );
+
+        // 7. Build response
+        const details: Record<string, unknown> = {
+          status: result.status,
+          message: result.message,
         };
-      }
+        if (result.status === 'duplicate') {
+          details.duplicate = result.duplicate;
+          details.hint =
+            'Event already exists. Use skipDuplicateCheck or update the existing event.';
+        }
+        if (result.status === 'added') {
+          details.event = {
+            title: email.subject,
+            start: eventStart.toISOString(),
+            end: eventEnd.toISOString(),
+            location: eventLocation,
+            calendar: result.calendarName,
+            meetingUrl: meetingUrl?.url,
+            dialIn: conference?.dialIn,
+            meetingId: conference?.meetingId,
+            attachmentsSaved: savedAttachments.length,
+            attachments: savedAttachments.map((a) => ({
+              filename: a.filename,
+              size: a.size,
+              localPath: a.localPath,
+            })),
+          };
+        }
 
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(details, null, 2) }],
-      };
-    },
-  );
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(details, null, 2) }],
+        };
+      },
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // check_calendar_permissions
@@ -517,86 +516,86 @@ export default function registerCalendarTools(
   );
 
   // ---------------------------------------------------------------------------
-  // create_reminder
+  // create_reminder — write, behind readOnly
   // ---------------------------------------------------------------------------
 
-  server.registerTool(
-    'create_reminder',
-    {
-      title: 'Create reminder',
-      description: [
-        'Create a reminder in macOS Reminders.app from an email.',
-        'Shows a native confirmation dialog before adding.',
-        'Use for action items, deadlines, and follow-up tasks extracted from emails.',
-        'Use analyze_email_for_scheduling first to let the AI decide if a reminder is appropriate.',
-      ].join(' '),
-      inputSchema: z.object({
-        account: z.string().describe('Email account name'),
-        email_id: z.string().describe('Email ID from list_emails_metadata'),
-        mailbox: z.string().default('INBOX').describe('Mailbox containing the email'),
-        title: z.string().optional().describe('Reminder title (defaults to email subject)'),
-        notes: z
-          .string()
-          .optional()
-          .describe('Reminder body/notes (defaults to auto-built from email)'),
-        due_date: z
-          .string()
-          .optional()
-          .describe('ISO 8601 due date (e.g. 2026-02-20T10:00:00). Leave empty for no due date.'),
-        priority: z
-          .enum(['none', 'low', 'medium', 'high'])
-          .default('none')
-          .describe('Reminder priority'),
-        list_name: z.string().optional().describe('Reminders list name (default list if omitted)'),
-        confirm: z
-          .boolean()
-          .default(true)
-          .describe('Show native confirmation dialog before adding (default: true)'),
-      }),
-      annotations: { readOnlyHint: false, destructiveHint: false },
-    },
-    async ({
-      account,
-      email_id: emailId,
-      mailbox,
-      title,
-      notes,
-      due_date,
-      priority,
-      list_name,
-      confirm,
-    }) => {
-      const email = await imapService.getEmail(account, emailId, mailbox);
-      const bodyText = email.bodyText ?? '';
-      const bodyHtml = email.bodyHtml ?? '';
+  if (!readOnly) {
+    server.registerTool(
+      'create_reminder',
+      {
+        title: 'Create reminder',
+        description: [
+          'Create a reminder in macOS Reminders.app from an email.',
+          'Shows a native confirmation dialog before adding.',
+          'Use for action items, deadlines, and follow-up tasks extracted from emails.',
+          'Use analyze_email_for_scheduling first to let the AI decide if a reminder is appropriate.',
+        ].join(' '),
+        inputSchema: z.object({
+          account: z.string().describe('Email account name'),
+          email_id: z.string().describe('Email ID from list_emails_metadata'),
+          mailbox: z.string().default('INBOX').describe('Mailbox containing the email'),
+          title: z.string().optional().describe('Reminder title (defaults to email subject)'),
+          notes: z
+            .string()
+            .optional()
+            .describe('Reminder body/notes (defaults to auto-built from email)'),
+          due_date: z
+            .string()
+            .optional()
+            .describe('ISO 8601 due date (e.g. 2026-02-20T10:00:00). Leave empty for no due date.'),
+          priority: z
+            .enum(['none', 'low', 'medium', 'high'])
+            .default('none')
+            .describe('Reminder priority'),
+          list_name: z
+            .string()
+            .optional()
+            .describe('Reminders list name (default list if omitted)'),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false },
+      },
+      async ({
+        account,
+        email_id: emailId,
+        mailbox,
+        title,
+        notes,
+        due_date,
+        priority,
+        list_name,
+      }) => {
+        const email = await imapService.getEmail(account, emailId, mailbox);
+        const bodyText = email.bodyText ?? '';
+        const bodyHtml = email.bodyHtml ?? '';
 
-      const reminderTitle = title ?? email.subject;
-      const from = email.from.name
-        ? `${email.from.name} <${email.from.address}>`
-        : email.from.address;
-      const snippet = (bodyText !== '' ? bodyText : bodyHtml).substring(0, 400).trim();
-      const reminderNotes =
-        notes ??
-        [`\uD83D\uDCE7 From: ${from}`, `\uD83D\uDCCC Subject: ${email.subject}`, '', snippet]
-          .filter(Boolean)
-          .join('\n');
+        const reminderTitle = title ?? email.subject;
+        const from = email.from.name
+          ? `${email.from.name} <${email.from.address}>`
+          : email.from.address;
+        const snippet = (bodyText !== '' ? bodyText : bodyHtml).substring(0, 400).trim();
+        const reminderNotes =
+          notes ??
+          [`\uD83D\uDCE7 From: ${from}`, `\uD83D\uDCCC Subject: ${email.subject}`, '', snippet]
+            .filter(Boolean)
+            .join('\n');
 
-      const result = await remindersService.addReminder(
-        {
-          title: reminderTitle,
-          notes: reminderNotes,
-          dueDate: due_date,
-          priority,
-          listName: list_name,
-        },
-        { confirm },
-      );
+        const result = await remindersService.addReminder(
+          {
+            title: reminderTitle,
+            notes: reminderNotes,
+            dueDate: due_date,
+            priority,
+            listName: list_name,
+          },
+          {},
+        );
 
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-      };
-    },
-  );
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        };
+      },
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // analyze_email_for_scheduling

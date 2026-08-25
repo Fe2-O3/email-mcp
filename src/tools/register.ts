@@ -68,6 +68,7 @@ export default function registerAllTools(
     calendarService,
     localCalendarService,
     remindersService,
+    readOnly,
   );
   registerAnalyticsTools(server, imapService);
   registerHealthTools(server, connections, imapService);
