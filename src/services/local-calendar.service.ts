@@ -378,27 +378,48 @@ async function listCalendarsMacOS(): Promise<CalendarInfo[]> {
 
 async function findExistingEventMacOS(
   title: string,
-  _start: Date,
-  _icsUid?: string,
+  start: Date,
+  icsUid?: string,
 ): Promise<ExistingEventResult> {
   const searchTitle = escapeAS(title);
+  const searchStartMs = start.getTime();
+  const searchUid = icsUid ? escapeAS(icsUid) : '';
 
   const script = `
 set searchTitle to "${searchTitle}"
+set searchUid to "${searchUid}"
+set searchStartMs to ${searchStartMs}
 tell application "Calendar"
   repeat with c in calendars
     try
       set evList to (every event of c whose summary is searchTitle)
-      if (count of evList) > 0 then
-        set theEvent to item 1 of evList
-        set eventId to uid of theEvent
-        set calName to name of c
-        return "{\\"found\\":true,\\"eventId\\":\\"" & eventId & "\\",\\"calendarName\\":\\"" & calName & "\\"}"
-      end if
+      repeat with ev in evList
+        try
+          if searchUid is not "" then
+            if (uid of ev) is searchUid then
+              set eventId to uid of ev
+              set calName to name of c
+              return "{\\"found\\":true,\\"eventId\\":\\"" & eventId & "\\",\\"calendarName\\":\\"" & calName & "\\"}"
+            end if
+          else
+            set evStart to start date of ev
+            set evMs to (evStart - (date "Thursday, January 1, 1970 00:00:00")) * 1000
+            if evMs is not missing value and (my absNum(evMs - searchStartMs) < 60000) then
+              set eventId to uid of ev
+              set calName to name of c
+              return "{\\"found\\":true,\\"eventId\\":\\"" & eventId & "\\",\\"calendarName\\":\\"" & calName & "\\"}"
+            end if
+          end if
+        end try
+      end repeat
     end try
   end repeat
 end tell
 return "{\\"found\\":false}"
+on absNum(n)
+  if n < 0 then return -n
+  return n
+end absNum
 `;
 
   try {
