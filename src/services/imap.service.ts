@@ -1383,18 +1383,42 @@ export default class ImapService {
     const drafts = mailboxes.find((mb) => mb.specialUse === '\\Drafts');
     const draftsPath = drafts?.path ?? 'Drafts';
 
-    // Construct RFC 822 message
+    // Construct RFC 822 message — headers are attacker-influenced via subject/to/cc
+    const sanitizeHeader = (v: string): string => {
+      const out = v.split('\r').join(' ').split('\n').join(' ');
+      let clean = '';
+      for (const ch of out) {
+        const code = ch.charCodeAt(0);
+        if (code <= 0x1f || code === 0x7f) continue;
+        clean += ch;
+      }
+      return clean;
+    };
+    const encodeHeader = (v: string): string => {
+      const clean = sanitizeHeader(v);
+      let ascii = true;
+      for (const ch of clean) {
+        if (ch.charCodeAt(0) > 0x7e) {
+          ascii = false;
+          break;
+        }
+      }
+      if (ascii) return clean;
+      return `=?utf-8?B?${Buffer.from(clean, 'utf-8').toString('base64')}?=`;
+    };
     const headers = [
-      `From: ${account.fullName ? `"${account.fullName}" <${account.email}>` : account.email}`,
-      `To: ${options.to.join(', ')}`,
-      `Subject: ${options.subject}`,
+      `From: ${account.fullName ? `"${encodeHeader(account.fullName)}" <${account.email}>` : account.email}`,
+      `To: ${options.to.map((a) => sanitizeHeader(a)).join(', ')}`,
+      `Subject: ${encodeHeader(options.subject)}`,
       `Date: ${new Date().toUTCString()}`,
       `MIME-Version: 1.0`,
     ];
 
-    if (options.cc?.length) headers.push(`Cc: ${options.cc.join(', ')}`);
-    if (options.bcc?.length) headers.push(`Bcc: ${options.bcc.join(', ')}`);
-    if (options.inReplyTo) headers.push(`In-Reply-To: ${options.inReplyTo}`);
+    if (options.cc?.length)
+      headers.push(`Cc: ${options.cc.map((a) => sanitizeHeader(a)).join(', ')}`);
+    if (options.bcc?.length)
+      headers.push(`Bcc: ${options.bcc.map((a) => sanitizeHeader(a)).join(', ')}`);
+    if (options.inReplyTo) headers.push(`In-Reply-To: ${sanitizeHeader(options.inReplyTo)}`);
 
     const contentType = options.html ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8';
     headers.push(`Content-Type: ${contentType}`);
