@@ -85,6 +85,7 @@ export interface ExistingEventResult {
   eventId?: string;
   calendarName?: string;
   start?: string;
+  error?: string;
 }
 
 export interface CalendarInfo {
@@ -427,8 +428,9 @@ end absNum
       timeout: 10_000,
     });
     return JSON.parse(stdout.trim()) as ExistingEventResult;
-  } catch {
-    return { found: false };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { found: false, error: reason };
   }
 }
 
@@ -459,6 +461,7 @@ async function addEventMacOS(
       status: AddEventStatus;
       eventId?: string;
       calendarName?: string;
+      error?: string;
     };
     return {
       status: result.status,
@@ -663,6 +666,12 @@ export default class LocalCalendarService {
     // Duplicate detection (macOS only, can opt out)
     if (this.platform === 'darwin' && opts.skipDuplicateCheck !== true) {
       const existing = await findExistingEventMacOS(event.title, event.start, event.icsUid);
+      if (existing.error) {
+        return {
+          status: 'no_display',
+          message: `Duplicate check could not be completed: ${existing.error}. The event was not added to avoid creating a duplicate.`,
+        };
+      }
       if (existing.found) {
         return {
           status: 'duplicate',
