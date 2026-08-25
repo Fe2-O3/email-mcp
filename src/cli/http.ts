@@ -12,7 +12,7 @@
  *       email-mcp http --host 0.0.0.0 --port 8080 --token "$SECRET"
  */
 
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs/promises';
 import {
   createServer as createHttpServer,
@@ -113,13 +113,13 @@ function parseOptions(argv: string[]): HttpOptions {
   return opts;
 }
 
-/** Constant-time bearer-token check. */
+/** Constant-time bearer-token check — hashes to fixed length to avoid length leak. */
 function tokenMatches(header: string | undefined, token: string): boolean {
   const prefix = 'Bearer ';
   if (!header?.startsWith(prefix)) return false;
-  const provided = Buffer.from(header.slice(prefix.length));
-  const expected = Buffer.from(token);
-  return provided.length === expected.length && timingSafeEqual(provided, expected);
+  const provided = createHash('sha256').update(header.slice(prefix.length)).digest();
+  const expected = createHash('sha256').update(token).digest();
+  return timingSafeEqual(provided, expected);
 }
 
 export default async function runHttp(argv: string[]): Promise<void> {
