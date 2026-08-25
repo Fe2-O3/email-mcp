@@ -146,8 +146,13 @@ async function readJsonFile(filePath: string): Promise<Record<string, unknown>> 
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
     return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return {};
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {};
+    }
+    throw new Error(
+      `Failed to read ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
