@@ -241,7 +241,8 @@ export default class SchedulerService {
         scheduled.status = 'sending';
         scheduled.sendingAt = new Date().toISOString();
         scheduled.attempts += 1;
-        await fs.writeFile(lockPath, JSON.stringify(scheduled, null, 2));
+        await fs.writeFile(lockPath, JSON.stringify(scheduled, null, 2), { mode: 0o600 });
+        await fs.chmod(lockPath, 0o600).catch(() => {});
         // From here on, filePath is stale — use lockPath until we move to sent/
 
         // Send — preserve threading headers
@@ -262,7 +263,8 @@ export default class SchedulerService {
         scheduled.sentMessageId = sendResult.messageId;
 
         const sentPath = path.join(SCHEDULED_SENT_DIR, file);
-        await fs.writeFile(sentPath, JSON.stringify(scheduled, null, 2));
+        await fs.writeFile(sentPath, JSON.stringify(scheduled, null, 2), { mode: 0o600 });
+        await fs.chmod(sentPath, 0o600).catch(() => {});
         await fs.unlink(lockPath);
 
         // Delete draft (best-effort)
@@ -293,7 +295,8 @@ export default class SchedulerService {
             scheduled.lastError = errorMsg;
             // If it was in sending, clear sendingAt so it can be retried
             delete scheduled.sendingAt;
-            await fs.writeFile(p, JSON.stringify(scheduled, null, 2));
+            await fs.writeFile(p, JSON.stringify(scheduled, null, 2), { mode: 0o600 });
+            await fs.chmod(p, 0o600).catch(() => {});
             if (p !== filePath) {
               try {
                 await fs.rename(p, filePath);
@@ -316,14 +319,17 @@ export default class SchedulerService {
   // -------------------------------------------------------------------------
 
   private static async ensureDirs(): Promise<void> {
-    await fs.mkdir(SCHEDULED_DIR, { recursive: true });
-    await fs.mkdir(SCHEDULED_SENT_DIR, { recursive: true });
+    await fs.mkdir(SCHEDULED_DIR, { recursive: true, mode: 0o700 });
+    await fs.mkdir(SCHEDULED_SENT_DIR, { recursive: true, mode: 0o700 });
+    await fs.chmod(SCHEDULED_DIR, 0o700).catch(() => {});
+    await fs.chmod(SCHEDULED_SENT_DIR, 0o700).catch(() => {});
   }
 
   private static async writeScheduledFile(scheduled: ScheduledEmail): Promise<void> {
     await SchedulerService.ensureDirs();
     const filePath = path.join(SCHEDULED_DIR, `${scheduled.id}.json`);
-    await fs.writeFile(filePath, JSON.stringify(scheduled, null, 2));
+    await fs.writeFile(filePath, JSON.stringify(scheduled, null, 2), { mode: 0o600 });
+    await fs.chmod(filePath, 0o600).catch(() => {});
   }
 
   private static async readDir(dirPath: string): Promise<ScheduledEmail[]> {

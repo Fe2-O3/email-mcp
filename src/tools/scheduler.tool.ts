@@ -26,14 +26,23 @@ export default function registerSchedulerTools(
         'Schedule an email to be sent at a specific time in the future. The email is queued locally and sent automatically when the time arrives.',
       inputSchema: z.object({
         account: z.string().describe('Account name to send from'),
-        to: z.array(z.string()).min(1).describe('Recipient email addresses'),
+        to: z
+          .array(z.email({ pattern: z.regexes.html5Email }))
+          .min(1)
+          .describe('Recipient email addresses'),
         subject: z.string().describe('Email subject'),
         body: z.string().describe('Email body'),
         send_at: z
           .string()
           .describe("When to send (ISO 8601 datetime, e.g. '2025-02-20T09:00:00Z')"),
-        cc: z.array(z.string()).optional().describe('CC recipients'),
-        bcc: z.array(z.string()).optional().describe('BCC recipients'),
+        cc: z
+          .array(z.email({ pattern: z.regexes.html5Email }))
+          .optional()
+          .describe('CC recipients'),
+        bcc: z
+          .array(z.email({ pattern: z.regexes.html5Email }))
+          .optional()
+          .describe('BCC recipients'),
         html: z.boolean().default(false).describe('Send as HTML (default: false)'),
         in_reply_to: z.string().optional().describe('Message-ID to reply to'),
       }),
@@ -129,7 +138,7 @@ export default function registerSchedulerTools(
       description:
         'Cancel a scheduled email. Removes it from the queue and deletes the associated draft.',
       inputSchema: z.object({
-        schedule_id: z.string().describe('Schedule ID to cancel'),
+        schedule_id: z.string().uuid().describe('Schedule ID to cancel'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },

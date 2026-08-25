@@ -66,13 +66,13 @@ async function startServer(
 
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`server did not start: ${stderr}`)), BUDGET_MS);
-    child!.stderr.on('data', (c: Buffer) => {
+    child?.stderr.on('data', (c: Buffer) => {
       if (c.toString().includes('Streamable HTTP')) {
         clearTimeout(timer);
         resolve();
       }
     });
-    child!.once('exit', (code) => {
+    child?.once('exit', (code) => {
       clearTimeout(timer);
       reject(new Error(`server exited during startup (${code}): ${stderr}`));
     });
