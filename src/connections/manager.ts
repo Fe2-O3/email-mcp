@@ -89,11 +89,17 @@ export default class ConnectionManager implements IConnectionManager {
     return [...this.accounts.keys()];
   }
 
+  private imapPending = new Map<string, Promise<ImapFlow>>();
+  private smtpPending = new Map<string, Promise<Transporter>>();
+
   // -------------------------------------------------------------------------
   // IMAP
   // -------------------------------------------------------------------------
 
   async getImapClient(accountName: string): Promise<ImapFlow> {
+    const pending = this.imapPending.get(accountName);
+    if (pending) return pending;
+
     const existing = this.imapClients.get(accountName);
     if (existing?.usable) {
       return existing;
@@ -116,44 +122,53 @@ export default class ConnectionManager implements IConnectionManager {
 
     const account = this.getAccount(accountName);
 
-    // Build auth config based on auth type
-    let auth: { user: string; pass?: string; accessToken?: string };
-    if (account.oauth2 && this.oauthService) {
-      const accessToken = await this.oauthService.getAccessToken(account.oauth2);
-      auth = { user: account.username, accessToken };
-    } else {
-      auth = { user: account.username, pass: account.password };
-    }
-
-    const client = new ImapFlow({
-      host: account.imap.host,
-      port: account.imap.port,
-      secure: account.imap.tls,
-      tls: {
-        rejectUnauthorized: account.imap.verifySsl,
-      },
-      auth,
-      logger: false,
-      ...(account.imap.starttls ? { doSTARTTLS: true as const } : {}),
-    });
-
-    // Evict only if this exact client is still the pooled one. A newer client
-    // may already have replaced it, and deleting unconditionally would drop a
-    // live connection.
-    attachImapLifecycleHandlers(client, accountName, () => {
-      if (this.imapClients.get(accountName) === client) {
-        this.imapClients.delete(accountName);
+    const promise = (async () => {
+      // Build auth config based on auth type
+      let auth: { user: string; pass?: string; accessToken?: string };
+      if (account.oauth2 && this.oauthService) {
+        const accessToken = await this.oauthService.getAccessToken(account.oauth2);
+        auth = { user: account.username, accessToken };
+      } else {
+        auth = { user: account.username, pass: account.password };
       }
-    });
 
-    await client.connect();
-    await mcpLog(
-      'info',
-      'imap',
-      `Connected to ${account.imap.host}:${account.imap.port} for "${accountName}"`,
-    );
-    this.imapClients.set(accountName, client);
-    return client;
+      const client = new ImapFlow({
+        host: account.imap.host,
+        port: account.imap.port,
+        secure: account.imap.tls,
+        tls: {
+          rejectUnauthorized: account.imap.verifySsl,
+        },
+        auth,
+        logger: false,
+        ...(account.imap.starttls ? { doSTARTTLS: true as const } : {}),
+      });
+
+      // Evict only if this exact client is still the pooled one. A newer client
+      // may already have replaced it, and deleting unconditionally would drop a
+      // live connection.
+      attachImapLifecycleHandlers(client, accountName, () => {
+        if (this.imapClients.get(accountName) === client) {
+          this.imapClients.delete(accountName);
+        }
+      });
+
+      await client.connect();
+      await mcpLog(
+        'info',
+        'imap',
+        `Connected to ${account.imap.host}:${account.imap.port} for "${accountName}"`,
+      );
+      this.imapClients.set(accountName, client);
+      return client;
+    })();
+
+    this.imapPending.set(accountName, promise);
+    try {
+      return await promise;
+    } finally {
+      this.imapPending.delete(accountName);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -194,6 +209,9 @@ export default class ConnectionManager implements IConnectionManager {
     accountName: string,
     options?: { verify?: boolean },
   ): Promise<Transporter> {
+    const pending = this.smtpPending.get(accountName);
+    if (pending) return pending;
+
     const verify = options?.verify ?? false;
     const existing = this.smtpTransports.get(accountName);
     if (existing) {
@@ -215,27 +233,36 @@ export default class ConnectionManager implements IConnectionManager {
 
     const account = this.getAccount(accountName);
 
-    // Build auth config based on auth type
-    let auth: SmtpAuth;
-    if (account.oauth2 && this.oauthService) {
-      const accessToken = await this.oauthService.getAccessToken(account.oauth2);
-      auth = { type: 'OAuth2', user: account.username, accessToken };
-    } else {
-      auth = { user: account.username, pass: account.password };
+    const promise = (async () => {
+      // Build auth config based on auth type
+      let auth: SmtpAuth;
+      if (account.oauth2 && this.oauthService) {
+        const accessToken = await this.oauthService.getAccessToken(account.oauth2);
+        auth = { type: 'OAuth2', user: account.username, accessToken };
+      } else {
+        auth = { user: account.username, pass: account.password };
+      }
+
+      const transport = nodemailer.createTransport(
+        ConnectionManager.buildSmtpTransportOptions(account, auth),
+      );
+
+      await transport.verify();
+      await mcpLog(
+        'info',
+        'smtp',
+        `Connected to ${account.smtp.host}:${account.smtp.port} for "${accountName}"`,
+      );
+      this.smtpTransports.set(accountName, transport);
+      return transport;
+    })();
+
+    this.smtpPending.set(accountName, promise);
+    try {
+      return await promise;
+    } finally {
+      this.smtpPending.delete(accountName);
     }
-
-    const transport = nodemailer.createTransport(
-      ConnectionManager.buildSmtpTransportOptions(account, auth),
-    );
-
-    await transport.verify();
-    await mcpLog(
-      'info',
-      'smtp',
-      `Connected to ${account.smtp.host}:${account.smtp.port} for "${accountName}"`,
-    );
-    this.smtpTransports.set(accountName, transport);
-    return transport;
   }
 
   /**

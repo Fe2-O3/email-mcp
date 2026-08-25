@@ -37,8 +37,16 @@ export const OAuth2ConfigSchema = z.object({
   client_secret: z.string().min(1, 'OAuth2 client_secret is required'),
   refresh_token: z.string().min(1, 'OAuth2 refresh_token is required'),
   // Custom provider endpoints (only when provider = "custom")
-  token_url: z.string().url().optional(),
-  auth_url: z.string().url().optional(),
+  token_url: z
+    .string()
+    .url()
+    .refine((v) => v.startsWith('https://'), 'token_url must be https')
+    .optional(),
+  auth_url: z
+    .string()
+    .url()
+    .refine((v) => v.startsWith('https://'), 'auth_url must be https')
+    .optional(),
   scopes: z.array(z.string()).optional(),
 });
 

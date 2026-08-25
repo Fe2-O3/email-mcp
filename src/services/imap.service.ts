@@ -1788,7 +1788,7 @@ export default class ImapService {
     const attachmentParts = (() => {
       const parts: Array<{ filename: string; mimeType: string; size: number; partPath: string }> =
         [];
-      const walk = (node: unknown, partPath = ''): void => {
+      const _walk = (node: unknown, partPath = ''): void => {
         if (!node || typeof node !== 'object') return;
         const bs = node as Record<string, unknown>;
         const cur = (bs.part as string | undefined) ?? partPath;
@@ -1805,7 +1805,7 @@ export default class ImapService {
         if (Array.isArray(bs.childNodes)) {
           (bs.childNodes as unknown[]).forEach((child, i) => {
             const cp = cur ? `${cur}.${i + 1}` : String(i + 1);
-            walk(child, cp);
+            _walk(child, cp);
           });
         }
       };
@@ -2277,15 +2277,15 @@ export default class ImapService {
     try {
       const quota = await (
         client as unknown as {
-          getQuotaForMailbox: (path: string) => Promise<{
-            storage?: { usage?: number; limit?: number };
+          getQuota: (path: string) => Promise<{
+            storage?: { used?: number; limit?: number };
           } | null>;
         }
-      ).getQuotaForMailbox('INBOX');
+      ).getQuota('INBOX');
 
       if (!quota?.storage?.limit) return null;
 
-      const usedMb = Math.round((quota.storage.usage ?? 0) / 1024);
+      const usedMb = Math.round((quota.storage.used ?? 0) / 1024);
       const totalMb = Math.round(quota.storage.limit / 1024);
       return {
         usedMb,

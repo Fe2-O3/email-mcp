@@ -7,7 +7,7 @@
 
 /* eslint-disable n/no-sync -- CLI commands use execSync for launchctl/crontab */
 
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -154,9 +154,9 @@ async function runInstall(): Promise<void> {
         return;
       }
       const newCrontab = `${existing.trimEnd()}\n${cronLine}\n`;
-      execSync(`echo '${newCrontab}' | crontab -`, { stdio: 'pipe' });
+      execFileSync('crontab', ['-'], { input: newCrontab, stdio: 'pipe' });
     } catch {
-      execSync(`echo '${cronLine}' | crontab -`, { stdio: 'pipe' });
+      execFileSync('crontab', ['-'], { input: `${cronLine}\n`, stdio: 'pipe' });
     }
 
     console.log('✅ Installed Linux crontab scheduler');
