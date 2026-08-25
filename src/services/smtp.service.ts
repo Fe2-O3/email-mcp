@@ -57,7 +57,7 @@ export default class SmtpService {
     const messageId =
       options.messageId ?? `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`;
     const mailOptions = {
-      from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
+      from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
       bcc: options.bcc?.join(', '),
@@ -139,7 +139,7 @@ export default class SmtpService {
     const transport = await this.connections.getSmtpTransport(accountName);
 
     const mailOptions = {
-      from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
+      from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to: to.join(', '),
       cc: cc.length > 0 ? cc.join(', ') : undefined,
       subject,
@@ -241,7 +241,7 @@ export default class SmtpService {
       : [];
 
     const mailOptions = {
-      from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
+      from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
       subject,
@@ -394,7 +394,7 @@ export default class SmtpService {
     );
 
     const mailOptions = {
-      from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
+      from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to,
       cc,
       bcc,
