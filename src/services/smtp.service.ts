@@ -109,8 +109,8 @@ export default class SmtpService {
     const account = this.connections.getAccount(accountName);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
 
-    // Build recipient list
-    const to = [original.from.address];
+    // Build recipient list — Reply-To overrides From when present
+    const to = [original.replyTo?.address ?? original.from.address];
     const cc: string[] = [];
 
     if (options.replyAll) {

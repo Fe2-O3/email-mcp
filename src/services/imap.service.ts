@@ -407,10 +407,16 @@ async function messageToEmail(
     }
   }
 
+  const replyToParsed = parseAddresses(
+    (envelope.replyTo as Record<string, string>[] | undefined) ??
+      (envelope['reply-to'] as Record<string, string>[] | undefined),
+  )[0];
+
   return {
     ...meta,
     cc: parseAddresses(envelope.cc as Record<string, string>[]),
     bcc: parseAddresses(envelope.bcc as Record<string, string>[]),
+    replyTo: replyToParsed,
     bodyText,
     bodyHtml,
     messageId: (envelope.messageId as string) ?? '',

@@ -201,6 +201,7 @@ export interface AttachmentMeta {
 export interface Email extends EmailMeta {
   cc?: EmailAddress[];
   bcc?: EmailAddress[];
+  replyTo?: EmailAddress;
   bodyText?: string;
   bodyHtml?: string;
   messageId: string;
