@@ -1,3 +1,7 @@
+import net from 'node:net';
+
+import { isForbiddenAddress } from './webhook-guard.js';
+
 /** Input validation and sanitization utilities. */
 
 /**
@@ -52,17 +56,14 @@ export function validateWebhookUrl(url: string): void {
   const hostname = parsed.hostname.toLowerCase();
 
   // new URL('https://[::1]') stores hostname as '[::1]'
-  const bare = hostname.replace(/^\[|\]$/g, '');
-  if (bare === 'localhost' || bare === '::1' || bare === '0.0.0.0') {
+  const bare = hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (bare === 'localhost') {
     throw new Error(`Webhook URL must not point to a loopback or private address: ${bare}`);
   }
 
-  const ipv4Match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(bare);
-  if (ipv4Match) {
-    const [, a, b] = ipv4Match.map(Number);
-    if (a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
-      throw new Error(`Webhook URL must not point to a loopback or private address: ${bare}`);
-    }
+  // Any literal IP — use the authoritative range check.
+  if (net.isIP(bare) !== 0 && isForbiddenAddress(bare)) {
+    throw new Error(`Webhook URL must not point to a loopback or private address: ${bare}`);
   }
 }
 
