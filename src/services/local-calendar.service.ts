@@ -566,7 +566,7 @@ tell application "Calendar"
             end try
             if evLoc is missing value then set evLoc to ""
             if resultCount > 0 then set jsonResult to jsonResult & ","
-            set jsonResult to jsonResult & "{\\"id\\":\\"" & evId & "\\",\\"title\\":\\"" & evTitle & "\\",\\"start\\":\\"" & (evStart as text) & "\\",\\"end\\":\\"" & (evEnd as text) & "\\",\\"location\\":\\"" & evLoc & "\\",\\"calendar\\":\\"" & calName & "\\"}"
+            set jsonResult to jsonResult & "{\\"id\\":\\"" & my jsonEscape(evId) & "\\",\\"title\\":\\"" & my jsonEscape(evTitle) & "\\",\\"start\\":\\"" & (evStart as text) & "\\",\\"end\\":\\"" & (evEnd as text) & "\\",\\"location\\":\\"" & my jsonEscape(evLoc) & "\\",\\"calendar\\":\\"" & my jsonEscape(calName) & "\\"}"
             set resultCount to resultCount + 1
           end if
         end repeat
@@ -577,6 +577,18 @@ end tell
 
 set jsonResult to jsonResult & "]"
 return jsonResult
+on jsonEscape(s)
+  set AppleScript's text item delimiters to "\\"
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\\\"
+  set s to parts as text
+  set AppleScript's text item delimiters to """
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\""
+  set s to parts as text
+  set AppleScript's text item delimiters to ""
+  return s
+end jsonEscape
 `;
 
   try {
