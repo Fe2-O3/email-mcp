@@ -1819,11 +1819,20 @@ export default class ImapService {
       return parts;
     })();
 
+    // Pair each attachment meta to its part by occurrence order for that filename
+    const occurrenceCursor = new Map<string, number>();
+    const metaToPart = new Map<number, (typeof attachmentParts)[0]>();
+    attachmentMetas.forEach((meta, idx) => {
+      const occ = occurrenceCursor.get(meta.filename) ?? 0;
+      occurrenceCursor.set(meta.filename, occ + 1);
+      const candidates = attachmentParts.filter((p) => p.filename === meta.filename);
+      if (candidates[occ]) metaToPart.set(idx, candidates[occ]);
+    });
+
     const seenNames = new Map<string, number>();
     const results = await Promise.allSettled(
-      attachmentMetas.map(async (meta) => {
-        // Find the part for this specific attachment occurrence, not just by name
-        const part = attachmentParts.find((p) => p.filename === meta.filename);
+      attachmentMetas.map(async (meta, idx) => {
+        const part = metaToPart.get(idx);
         const partPath = part?.partPath;
         let downloaded: { contentBase64: string; size: number };
         if (partPath) {
@@ -1881,6 +1890,12 @@ export default class ImapService {
     );
 
     type FulfilledValue = (typeof results)[0] extends PromiseFulfilledResult<infer T> ? T : never;
+    const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    if (rejected.length > 0) {
+      // Surface failures — caller decides; don't silently drop attachments
+      const msgs = rejected.map((r) => String((r.reason as Error)?.message ?? r.reason)).join('; ');
+      throw new Error(`Failed to save ${rejected.length} attachment(s): ${msgs}`);
+    }
     return results
       .filter((r) => r.status === 'fulfilled')
       .map((r) => (r as PromiseFulfilledResult<FulfilledValue>).value);
