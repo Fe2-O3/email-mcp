@@ -140,9 +140,7 @@ export default class WatcherService {
         const accessToken = await this.oauthService.getAccessToken(state.account.oauth2);
         auth = { user: state.account.username, accessToken };
       } else if (state.account.oauth2) {
-        // Fallback when OAuthService not injected (e.g., tests) — try to use
-        // the stored access token if available via oauth2, otherwise fail
-        auth = { user: state.account.username, accessToken: state.account.password ?? '' };
+        throw new Error(`OAuth2 account ${state.account.name} requires OAuthService`);
       } else {
         auth = { user: state.account.username, pass: state.account.password };
       }
