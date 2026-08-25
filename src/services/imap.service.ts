@@ -61,6 +61,19 @@ function hasAttachments(bodyStructure: unknown): boolean {
   return false;
 }
 
+/**
+ * Calendar parts are surfaced through the calendar tools, not as attachments.
+ *
+ * Match the exact media type rather than a substring: an `application/*` type
+ * that merely contains the word "calendar" is an ordinary attachment and must
+ * not be hidden. The filename check catches calendar parts that arrive with a
+ * generic type such as `application/octet-stream`.
+ */
+function isCalendarPart(mimeType: string, filename: string): boolean {
+  const media = mimeType.toLowerCase().split(';')[0].trim();
+  return media === 'text/calendar' || filename.toLowerCase().endsWith('.ics');
+}
+
 function extractAttachments(bodyStructure: unknown): AttachmentMeta[] {
   const attachments: AttachmentMeta[] = [];
   if (!bodyStructure || typeof bodyStructure !== 'object') return attachments;
@@ -1755,9 +1768,8 @@ export default class ImapService {
         { uid: true },
       );
       if (!msg) return [];
-      // biome-ignore format: line too long; eslint implicit-arrow-linebreak prevents multi-line implicit return
       attachmentMetas = extractAttachments(msg.bodyStructure).filter(
-        (a) => a.size <= maxSizeBytes && !a.filename.toLowerCase().endsWith('.ics'),
+        (a) => a.size <= maxSizeBytes && !isCalendarPart(a.mimeType, a.filename),
       );
     } finally {
       lock.release();
@@ -2387,11 +2399,13 @@ export default class ImapService {
       else if (prefix) parts.push(prefix);
     }
 
-    // Check for .ics attachment
+    // Locate calendar parts. Must use the same predicate as the attachment
+    // filter: if the two disagree, a part can be excluded from attachments and
+    // never found as calendar, disappearing from both surfaces.
     if (disposition === 'attachment' && typeof s.dispositionParameters === 'object') {
       const params = s.dispositionParameters as Record<string, string>;
       const filename = params.filename ?? '';
-      if (filename.toLowerCase().endsWith('.ics')) {
+      if (isCalendarPart(String(s.type ?? ''), filename)) {
         const partId = s.part as string | undefined;
         if (partId) parts.push(partId);
         else if (prefix) parts.push(prefix);
