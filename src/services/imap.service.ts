@@ -2285,8 +2285,8 @@ export default class ImapService {
 
       if (!quota?.storage?.limit) return null;
 
-      const usedMb = Math.round((quota.storage.used ?? 0) / 1024);
-      const totalMb = Math.round(quota.storage.limit / 1024);
+      const usedMb = Math.round((quota.storage.used ?? 0) / 1024 / 1024);
+      const totalMb = Math.round(quota.storage.limit / 1024 / 1024);
       return {
         usedMb,
         totalMb,
