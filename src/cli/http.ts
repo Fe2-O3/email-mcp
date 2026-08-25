@@ -221,14 +221,33 @@ export default async function runHttp(argv: string[]): Promise<void> {
       // Refuse oversized bodies before the transport reads a byte. The
       // transport buffers request bodies without its own cap, so this is the
       // only bound on what one connection can make the process hold.
+      // Chunked requests have no content-length, so also count as we stream.
+      let received = 0;
+      const onData = (chunk: Buffer): void => {
+        received += chunk.length;
+        if (received > MAX_REQUEST_BODY_BYTES) {
+          if (!res.headersSent) {
+            res.writeHead(413, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: 'payload_too_large' }));
+          }
+          req.destroy();
+        }
+      };
+      req.on('data', onData);
+
       const contentLength = Number(req.headers['content-length'] ?? 0);
       if (contentLength > MAX_REQUEST_BODY_BYTES) {
+        req.off('data', onData);
         res.writeHead(413, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'payload_too_large' }));
         return;
       }
 
-      await transport.handleRequest(req, res);
+      try {
+        await transport.handleRequest(req, res);
+      } finally {
+        req.off('data', onData);
+      }
     })().catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[email-mcp] http request error: ${message}\n`);
