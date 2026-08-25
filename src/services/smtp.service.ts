@@ -82,6 +82,7 @@ export default class SmtpService {
 
     const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
+    this.recordDuplicate(accountName, options.to, options.subject);
     this.fileToSent(accountName, mailOptions);
 
     return {
@@ -303,8 +304,11 @@ export default class SmtpService {
           `If this is a deliberate resend, set allow_duplicate to true.`,
       );
     }
+  }
+
+  private recordDuplicate(accountName: string, to: string[], subject: string): void {
+    const key = `${accountName}|${to.slice().sort().join(',')}|${subject}`;
     this.recentSends.set(key, Date.now());
-    // The record exists to catch retries minutes apart, not to grow forever.
     if (this.recentSends.size > 1000) {
       const cutoff = Date.now() - SmtpService.DUPLICATE_SEND_WINDOW_MS;
       for (const [k, ts] of this.recentSends) {
