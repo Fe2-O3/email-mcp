@@ -127,6 +127,8 @@ export default class HooksService {
 
   private readonly notifier: NotifierService;
 
+  private boundOnNewEmail: ((event: NewEmailEvent) => void) | null = null;
+
   private readonly localCalendar: LocalCalendarService;
 
   private static readonly MAX_SAMPLING_PER_MIN = 10;
@@ -166,9 +168,10 @@ export default class HooksService {
 
     if (this.config.onNewEmail === 'none') return;
 
-    eventBus.on('email:new', (event: NewEmailEvent) => {
+    this.boundOnNewEmail = (event: NewEmailEvent) => {
       this.onNewEmail(event);
-    });
+    };
+    eventBus.on('email:new', this.boundOnNewEmail);
 
     // Rate limit reset every 60s
     this.rateResetTimer = setInterval(() => {
@@ -198,7 +201,10 @@ export default class HooksService {
       this.rateResetTimer = null;
     }
     this.notifier.stop();
-    eventBus.removeAllListeners('email:new');
+    if (this.boundOnNewEmail) {
+      eventBus.off('email:new', this.boundOnNewEmail);
+      this.boundOnNewEmail = null;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -446,7 +452,9 @@ export default class HooksService {
       // Latch off when the failure is structural (no sampling capability, or a
       // 2026-07-28-era connection with no server→client request channel) so we
       // stop re-attempting a doomed request every batch. Transient errors don't.
-      if (/sampl|capab|2026|not support|unsupported|method not found|-3260|-3204/i.test(errMsg)) {
+      if (
+        /sampl|capab|2026-07-28|not support|unsupported|method not found|-3260|-3204/i.test(errMsg)
+      ) {
         this.samplingUnavailable = true;
         await mcpLog(
           'notice',
