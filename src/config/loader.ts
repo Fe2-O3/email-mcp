@@ -144,8 +144,9 @@ async function loadFromFile(filePath: string = CONFIG_FILE): Promise<RawAppConfi
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = parseTOML(content);
     return parsed as unknown as RawAppConfig;
-  } catch {
-    return null;
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
+    throw new Error(`Configuration file at ${filePath} is invalid: ${(err as Error).message}`);
   }
 }
 
