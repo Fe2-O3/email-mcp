@@ -380,6 +380,7 @@ export interface ScheduledEmail {
   html: boolean;
   sendAt: string;
   createdAt: string;
+  sendingAt?: string;
   status: 'pending' | 'sending' | 'sent' | 'failed';
   attempts: number;
   lastError?: string;

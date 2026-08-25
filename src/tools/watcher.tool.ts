@@ -315,7 +315,7 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
           .optional()
           .describe('Which urgency levels trigger webhook dispatch'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       desktop,

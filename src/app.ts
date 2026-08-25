@@ -163,6 +163,17 @@ export function startBackgroundServices(
   let schedulerInterval: ReturnType<typeof setInterval> | undefined;
   let cacheInterval: ReturnType<typeof setInterval> | undefined;
 
+  if (config.settings.readOnly) {
+    return {
+      stop: async () => {
+        stopped = true;
+        if (schedulerInterval) clearInterval(schedulerInterval);
+        if (cacheInterval) clearInterval(cacheInterval);
+        syncEngine?.stop();
+      },
+    };
+  }
+
   hooksService.start(lowLevelServer);
   syncEngine?.start();
 

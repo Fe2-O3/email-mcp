@@ -11,7 +11,8 @@
  */
 
 import { execFile as execFileCb } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
+import { unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -464,7 +465,7 @@ async function addEventLinux(
   event: LocalCalendarEventInput,
   _calendarName?: string,
 ): Promise<AddEventResult> {
-  const tmpFile = join(tmpdir(), `email-mcp-event-${Date.now()}.ics`);
+  const tmpFile = join(tmpdir(), `email-mcp-event-${crypto.randomUUID()}.ics`);
   const ics = buildICS(event);
   await writeFile(tmpFile, ics, 'utf8');
 
@@ -480,6 +481,8 @@ async function addEventLinux(
       status: 'no_display',
       message: `Could not open calendar app (xdg-open failed): ${msg}`,
     };
+  } finally {
+    await unlink(tmpFile).catch(() => {});
   }
 }
 

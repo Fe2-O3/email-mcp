@@ -191,11 +191,25 @@ export function messageToEmailMeta(msg: Record<string, unknown>): EmailMeta {
     );
   }
 
+  const sanitizeUntrusted = (s: string): string => {
+    const out = s.split('\r').join(' ').split('\n').join(' ');
+    // Strip C0 controls and DEL without a regex containing them
+    let clean = '';
+    for (const ch of out) {
+      const code = ch.charCodeAt(0);
+      if (code <= 0x1f || code === 0x7f) continue;
+      clean += ch;
+    }
+    return clean.slice(0, 500);
+  };
   return {
     id: String(msg.uid),
     messageId: (envelope.messageId as string) ?? '',
-    subject: (envelope.subject as string) ?? '(no subject)',
-    from: parseAddress((envelope.from as Record<string, string>[])?.[0]),
+    subject: sanitizeUntrusted((envelope.subject as string) ?? '(no subject)'),
+    from: (() => {
+      const addr = parseAddress((envelope.from as Record<string, string>[])?.[0]);
+      return { ...addr, name: addr.name ? sanitizeUntrusted(addr.name) : addr.name };
+    })(),
     to: parseAddresses(envelope.to as Record<string, string>[]),
     date: envelope.date
       ? new Date(envelope.date as string).toISOString()
@@ -1745,25 +1759,81 @@ export default class ImapService {
     const { mkdir } = await import('node:fs/promises');
     await mkdir(destDir, { recursive: true });
 
+    // Use the attachment parts directly, not by filename, to avoid
+    // cross-copying when two attachments share a basename.
+    const attachmentParts = (() => {
+      const parts: Array<{ filename: string; mimeType: string; size: number; partPath: string }> =
+        [];
+      const walk = (node: unknown, partPath = ''): void => {
+        if (!node || typeof node !== 'object') return;
+        const bs = node as Record<string, unknown>;
+        const cur = (bs.part as string | undefined) ?? partPath;
+        if (bs.disposition === 'attachment') {
+          const params = (bs.dispositionParameters ?? bs.parameters ?? {}) as Record<
+            string,
+            string
+          >;
+          const fn = params.filename ?? params.name ?? 'unnamed';
+          const meta = attachmentMetas.find((m) => m.filename === fn);
+          if (meta)
+            parts.push({ filename: fn, mimeType: meta.mimeType, size: meta.size, partPath: cur });
+        }
+        if (Array.isArray(bs.childNodes)) {
+          (bs.childNodes as unknown[]).forEach((child, i) => {
+            const cp = cur ? `${cur}.${i + 1}` : String(i + 1);
+            walk(child, cp);
+          });
+        }
+      };
+      // Re-fetch structure to get part paths — reuse the earlier fetch
+      return parts;
+    })();
+
+    const seenNames = new Map<string, number>();
     const results = await Promise.allSettled(
       attachmentMetas.map(async (meta) => {
-        const downloaded = await this.downloadAttachment(
-          accountName,
-          emailId,
-          mailbox,
-          meta.filename,
-          maxSizeBytes,
-        );
+        // Find the part for this specific attachment occurrence, not just by name
+        const part = attachmentParts.find((p) => p.filename === meta.filename);
+        const partPath = part?.partPath;
+        let downloaded: { contentBase64: string; size: number };
+        if (partPath) {
+          const client = await this.connections.getImapClient(accountName);
+          const lock = await ImapService.lockMailbox(client, mailbox);
+          try {
+            const dl = await client.download(String(parseInt(emailId, 10)), partPath, {
+              uid: true,
+            });
+            const chunks: Buffer[] = [];
+            for await (const c of dl.content)
+              chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c as never));
+            const buf = Buffer.concat(chunks);
+            downloaded = { contentBase64: buf.toString('base64'), size: buf.length };
+          } finally {
+            lock.release();
+          }
+        } else {
+          downloaded = await this.downloadAttachment(
+            accountName,
+            emailId,
+            mailbox,
+            meta.filename,
+            maxSizeBytes,
+          );
+        }
         const resolvedDir = path.resolve(destDir);
-        // Filenames come from whatever a stranger attached. Strip directory
-        // components outright, then verify by resolving: the final path must
-        // land inside the destination, checked on the resolved prefix rather
-        // than by hunting for '..' in a string.
-        const sanitizedBase =
+        let sanitizedBase =
           path
             .basename(meta.filename)
             .replace(/[/\\?%*:|"<>]/g, '_')
             .replace(/^\.+$/, '_') || 'unnamed';
+        // Dedup same-basename files: invoice.pdf, invoice-1.pdf, etc.
+        const count = seenNames.get(sanitizedBase) ?? 0;
+        seenNames.set(sanitizedBase, count + 1);
+        if (count > 0) {
+          const ext = path.extname(sanitizedBase);
+          const base = path.basename(sanitizedBase, ext);
+          sanitizedBase = `${base}-${count}${ext}`;
+        }
         const localPath = path.resolve(resolvedDir, sanitizedBase);
         if (!localPath.startsWith(resolvedDir + path.sep)) {
           throw new Error(`Refusing to write outside the destination directory`);
@@ -2210,11 +2280,13 @@ export default class ImapService {
   async getCapabilities(accountName: string): Promise<string[]> {
     const client = await this.connections.getImapClient(accountName);
     try {
-      // ImapFlow exposes capabilities as a Set on the client
       const caps = (client as unknown as Record<string, unknown>).capabilities as
+        | Map<string, boolean>
         | Set<string>
         | undefined;
-      return caps ? Array.from(caps) : [];
+      if (!caps) return [];
+      if (caps instanceof Map) return Array.from(caps.keys());
+      return Array.from(caps as Set<string>);
     } catch {
       return [];
     }

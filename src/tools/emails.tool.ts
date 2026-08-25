@@ -282,6 +282,14 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
         );
 
         if (markRead) {
+          // markRead is a write even though get_email is otherwise a read.
+          // In read-only mode it must be refused, not silently ignored.
+          const config = await import('../config/loader.js').then((m) =>
+            m.loadConfig().catch(() => null),
+          );
+          if (config?.settings.readOnly) {
+            throw new Error('markRead is not allowed in read-only mode');
+          }
           await imapService.setFlags(account, emailId, mailbox, 'read');
         }
 

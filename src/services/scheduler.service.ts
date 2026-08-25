@@ -198,15 +198,20 @@ export default class SchedulerService {
         const content = await fs.readFile(filePath, 'utf-8');
         const scheduled = JSON.parse(content) as ScheduledEmail;
 
-        // Reset stale locks
-        if (scheduled.status === 'sending' && scheduled.lastError !== undefined) {
-          const lockAge = now - new Date(scheduled.createdAt).getTime();
-          if (lockAge > STALE_LOCK_MS) {
+        // Reset stale locks — a crash mid-send leaves the file in
+        // `sending` with no lastError and no way back to `pending`.
+        // Use the file's own age since it was marked sending (via sendingAt
+        // or, for old files, createdAt) and recover after the window.
+        if (scheduled.status === 'sending') {
+          const sendingAt = scheduled.sendingAt
+            ? new Date(scheduled.sendingAt).getTime()
+            : new Date(scheduled.createdAt).getTime();
+          if (now - sendingAt > STALE_LOCK_MS) {
             scheduled.status = 'pending';
+            scheduled.lastError = 'Recovered from stale sending lock';
+          } else {
+            continue;
           }
-        } else if (scheduled.status === 'sending') {
-          // Check if it's been sending too long (use sendAt as reference)
-          continue;
         }
 
         // Skip non-pending
@@ -224,12 +229,22 @@ export default class SchedulerService {
           continue;
         }
 
-        // Acquire lock
+        // Acquire lock — atomic via rename, so two processes cannot both
+        // claim the same file. The winner renames to .sending, the loser
+        // sees ENOENT on the original and skips.
+        const lockPath = `${filePath}.sending`;
+        try {
+          await fs.rename(filePath, lockPath);
+        } catch {
+          continue;
+        }
         scheduled.status = 'sending';
+        scheduled.sendingAt = new Date().toISOString();
         scheduled.attempts += 1;
-        await SchedulerService.writeScheduledFile(scheduled);
+        await fs.writeFile(lockPath, JSON.stringify(scheduled, null, 2));
+        // From here on, filePath is stale — use lockPath until we move to sent/
 
-        // Send
+        // Send — preserve threading headers
         const sendResult = await this.smtpService.sendEmail(scheduled.account, {
           to: scheduled.to,
           subject: scheduled.subject,
@@ -237,6 +252,8 @@ export default class SchedulerService {
           cc: scheduled.cc,
           bcc: scheduled.bcc,
           html: scheduled.html,
+          inReplyTo: scheduled.inReplyTo,
+          references: scheduled.references,
         });
 
         // Mark as sent and move to sent dir
@@ -246,7 +263,7 @@ export default class SchedulerService {
 
         const sentPath = path.join(SCHEDULED_SENT_DIR, file);
         await fs.writeFile(sentPath, JSON.stringify(scheduled, null, 2));
-        await fs.unlink(filePath);
+        await fs.unlink(lockPath);
 
         // Delete draft (best-effort)
         if (scheduled.draftMessageId && scheduled.draftMailbox) {
@@ -266,15 +283,24 @@ export default class SchedulerService {
         const errorMsg = err instanceof Error ? err.message : String(err);
         result.errors.push(`${file}: ${errorMsg}`);
 
-        // Mark as failed in the file
-        try {
-          const content = await fs.readFile(filePath, 'utf-8');
-          const scheduled = JSON.parse(content) as ScheduledEmail;
-          scheduled.status = scheduled.attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
-          scheduled.lastError = errorMsg;
-          await fs.writeFile(filePath, JSON.stringify(scheduled, null, 2));
-        } catch {
-          // If we can't even update the file, skip
+        // Mark as failed — the file may be at filePath (pre-lock) or lockPath (post-lock)
+        const toUpdate = [path.join(SCHEDULED_DIR, `${file}.sending`), filePath];
+        for (const p of toUpdate) {
+          try {
+            const content = await fs.readFile(p, 'utf-8');
+            const scheduled = JSON.parse(content) as ScheduledEmail;
+            scheduled.status = scheduled.attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
+            scheduled.lastError = errorMsg;
+            // If it was in sending, clear sendingAt so it can be retried
+            delete scheduled.sendingAt;
+            await fs.writeFile(p, JSON.stringify(scheduled, null, 2));
+            if (p !== filePath) {
+              try {
+                await fs.rename(p, filePath);
+              } catch {}
+            }
+            break;
+          } catch {}
         }
 
         result.failed += 1;

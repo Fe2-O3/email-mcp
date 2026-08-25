@@ -4,6 +4,8 @@
  * No MCP dependency — fully unit-testable.
  */
 
+import crypto from 'node:crypto';
+
 import type { Transporter } from 'nodemailer';
 import type { IConnectionManager } from '../connections/types.js';
 import { mcpLog } from '../logging.js';
@@ -40,6 +42,8 @@ export default class SmtpService {
        * email and the recipient sees both.
        */
       messageId?: string;
+      inReplyTo?: string;
+      references?: string[];
       /** Set on a deliberate resend to pass the duplicate-send guard. */
       allowDuplicate?: boolean;
     },
@@ -50,6 +54,8 @@ export default class SmtpService {
     const account = this.connections.getAccount(accountName);
     const transport = await this.connections.getSmtpTransport(accountName);
 
+    const messageId =
+      options.messageId ?? `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`;
     const mailOptions = {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to: options.to.join(', '),
@@ -57,7 +63,9 @@ export default class SmtpService {
       bcc: options.bcc?.join(', '),
       subject: options.subject,
       ...(options.html ? { html: options.body } : { text: options.body }),
-      ...(options.messageId ? { messageId: options.messageId } : {}),
+      messageId,
+      ...(options.inReplyTo ? { inReplyTo: options.inReplyTo } : {}),
+      ...(options.references ? { references: options.references.join(' ') } : {}),
       ...(options.attachments && options.attachments.length > 0
         ? {
             attachments: options.attachments.map((a) => ({
@@ -136,6 +144,7 @@ export default class SmtpService {
       subject,
       inReplyTo: original.messageId,
       references: references.join(' '),
+      messageId: `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`,
       ...(options.html ? { html: options.body } : { text: options.body }),
     };
 
@@ -235,6 +244,7 @@ export default class SmtpService {
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
       subject,
+      messageId: `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`,
       ...(options.html ? { html: fullBody } : { text: fullBody }),
       ...(attachments.length > 0 ? { attachments } : {}),
       disableFileAccess: true,
@@ -385,6 +395,7 @@ export default class SmtpService {
       cc,
       bcc,
       subject: draft.subject,
+      messageId: `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`,
       inReplyTo: draft.inReplyTo,
       references: draft.references?.join(' '),
       ...(draft.bodyHtml ? { html: draft.bodyHtml } : { text: draft.bodyText ?? '' }),
