@@ -109,6 +109,9 @@ export function validateLabelName(name: string): string {
   return trimmed;
 }
 
+/** Maximum allowed length for email bodies (shared across send/reply/forward/draft). */
+export const MAX_EMAIL_BODY_LENGTH = 5_000_000;
+
 /**
  * Validate that an input string does not exceed a maximum length.
  * @param input - The input string to check.

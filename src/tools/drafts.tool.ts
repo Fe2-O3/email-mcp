@@ -5,6 +5,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import audit from '../safety/audit.js';
+import { MAX_EMAIL_BODY_LENGTH, validateInputLength } from '../safety/validation.js';
 
 import type ImapService from '../services/imap.service.js';
 import type SmtpService from '../services/smtp.service.js';
@@ -30,7 +31,7 @@ export default function registerDraftTools(
           .default([])
           .describe('Recipient email addresses (can be empty for drafts)'),
         subject: z.string().describe('Email subject'),
-        body: z.string().describe('Email body content'),
+        body: z.string().max(MAX_EMAIL_BODY_LENGTH).describe('Email body content'),
         cc: z
           .array(z.email({ pattern: z.regexes.html5Email }))
           .optional()
@@ -46,6 +47,7 @@ export default function registerDraftTools(
     },
     async ({ account, to, subject, body, cc, bcc, html, in_reply_to: inReplyTo }) => {
       try {
+        validateInputLength(body, MAX_EMAIL_BODY_LENGTH, 'Body');
         const result = await imapService.saveDraft(account, {
           to,
           subject,

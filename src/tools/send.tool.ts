@@ -5,7 +5,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import audit from '../safety/audit.js';
-import { validateInputLength } from '../safety/validation.js';
+import { MAX_EMAIL_BODY_LENGTH, validateInputLength } from '../safety/validation.js';
 
 import type SmtpService from '../services/smtp.service.js';
 
@@ -32,7 +32,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .min(1)
           .describe('Recipient email addresses'),
         subject: z.string().describe('Email subject'),
-        body: z.string().describe('Email body content'),
+        body: z.string().max(MAX_EMAIL_BODY_LENGTH).describe('Email body content'),
         cc: z
           .array(z.email({ pattern: z.regexes.html5Email }))
           .optional()
@@ -62,7 +62,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
     async (params) => {
       try {
         validateInputLength(params.subject, 998, 'Subject');
-        validateInputLength(params.body, 5_000_000, 'Body');
+        validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
         const result = await smtpService.sendEmail(params.account, {
           ...params,
           attachments: params.attachments?.map((a) => ({
@@ -122,7 +122,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         account: z.string().describe('Account name from list_accounts'),
         emailId: z.string().describe('Email ID to reply to (from list_emails or get_email)'),
         mailbox: z.string().default('INBOX').describe('Mailbox where the original email is'),
-        body: z.string().describe('Reply body content'),
+        body: z.string().max(MAX_EMAIL_BODY_LENGTH).describe('Reply body content'),
         replyAll: z.boolean().default(false).describe('Reply to all recipients'),
         html: z.boolean().default(false).describe('Send as HTML'),
       }),
@@ -130,6 +130,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
     },
     async (params) => {
       try {
+        validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
         const result = await smtpService.replyToEmail(params.account, params);
         await audit.log(
           'reply_email',
@@ -184,7 +185,11 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .array(z.email({ pattern: z.regexes.html5Email }))
           .min(1)
           .describe('Forward to these recipients'),
-        body: z.string().optional().describe('Additional message above the forwarded content'),
+        body: z
+          .string()
+          .max(MAX_EMAIL_BODY_LENGTH)
+          .optional()
+          .describe('Additional message above the forwarded content'),
         cc: z
           .array(z.email({ pattern: z.regexes.html5Email }))
           .optional()
@@ -199,6 +204,9 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
     },
     async (params) => {
       try {
+        if (params.body !== undefined) {
+          validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
+        }
         const result = await smtpService.forwardEmail(params.account, {
           ...params,
           includeAttachments: params.include_attachments,
