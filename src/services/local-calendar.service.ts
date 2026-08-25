@@ -459,7 +459,6 @@ async function addEventMacOS(
       status: AddEventStatus;
       eventId?: string;
       calendarName?: string;
-      error?: string;
     };
     return {
       status: result.status,
@@ -585,6 +584,18 @@ on jsonEscape(s)
   set AppleScript's text item delimiters to """
   set parts to text items of s
   set AppleScript's text item delimiters to "\\""
+  set s to parts as text
+  set AppleScript's text item delimiters to linefeed
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\n"
+  set s to parts as text
+  set AppleScript's text item delimiters to return
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\r"
+  set s to parts as text
+  set AppleScript's text item delimiters to tab
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\t"
   set s to parts as text
   set AppleScript's text item delimiters to ""
   return s

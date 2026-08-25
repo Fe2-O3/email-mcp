@@ -320,7 +320,7 @@ tell application "Reminders"
               set compStr to "false"
               if isComp then set compStr to "true"
               if resultCount > 0 then set jsonResult to jsonResult & ","
-              set jsonResult to jsonResult & "{\\"id\\":\\"" & rId & "\\",\\"title\\":\\"" & rTitle & "\\",\\"dueDate\\":\\"" & rDue & "\\",\\"completed\\":" & compStr & ",\\"priority\\":\\"" & pLabel & "\\",\\"list\\":\\"" & listName & "\\"}"
+              set jsonResult to jsonResult & "{\\"id\\":\\"" & my jsonEscape(rId) & "\\",\\"title\\":\\"" & my jsonEscape(rTitle) & "\\",\\"dueDate\\":\\"" & my jsonEscape(rDue) & "\\",\\"completed\\":" & compStr & ",\\"priority\\":\\"" & my jsonEscape(pLabel) & "\\",\\"list\\":\\"" & my jsonEscape(listName) & "\\"}"
               set resultCount to resultCount + 1
             end if
           end if
@@ -332,6 +332,30 @@ end tell
 
 set jsonResult to jsonResult & "]"
 return jsonResult
+on jsonEscape(s)
+  set AppleScript's text item delimiters to "\\"
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\\\"
+  set s to parts as text
+  set AppleScript's text item delimiters to """
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\""
+  set s to parts as text
+  set AppleScript's text item delimiters to linefeed
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\n"
+  set s to parts as text
+  set AppleScript's text item delimiters to return
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\r"
+  set s to parts as text
+  set AppleScript's text item delimiters to tab
+  set parts to text items of s
+  set AppleScript's text item delimiters to "\\t"
+  set s to parts as text
+  set AppleScript's text item delimiters to ""
+  return s
+end jsonEscape
 `;
 
   try {
