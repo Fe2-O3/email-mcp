@@ -62,10 +62,11 @@ function getSmtpLabel(starttls: boolean, tls: boolean): string {
 // Reusable prompts
 // ---------------------------------------------------------------------------
 
-interface ServerSettings {
+export interface ServerSettings {
   imapHost: string;
   imapPort: number;
   imapTls: boolean;
+  imapStarttls: boolean;
   smtpHost: string;
   smtpPort: number;
   smtpTls: boolean;
@@ -75,7 +76,13 @@ interface ServerSettings {
   smtpPoolMaxMessages: number;
 }
 
-function resolveSmtpSecurityDefault(defaults?: Partial<ServerSettings>): string {
+export function resolveImapSecurityDefault(defaults?: Partial<ServerSettings>): string {
+  if (defaults?.imapStarttls) return 'starttls';
+  if (defaults?.imapTls ?? true) return 'tls';
+  return 'none';
+}
+
+export function resolveSmtpSecurityDefault(defaults?: Partial<ServerSettings>): string {
   if (defaults?.smtpStarttls) return 'starttls';
   if (defaults?.smtpTls ?? true) return 'tls';
   return 'none';
@@ -99,11 +106,16 @@ async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise
   });
   assertNotCancel(imapPortStr);
 
-  const imapTls = await confirm({
-    message: 'IMAP use TLS?',
-    initialValue: defaults?.imapTls ?? true,
+  const imapSecurity = await select({
+    message: 'IMAP security',
+    initialValue: resolveImapSecurityDefault(defaults),
+    options: [
+      { value: 'tls', label: 'TLS (port 993)' },
+      { value: 'starttls', label: 'STARTTLS (port 143)' },
+      { value: 'none', label: 'None (not recommended)' },
+    ],
   });
-  assertNotCancel(imapTls);
+  assertNotCancel(imapSecurity);
 
   const smtpHost = await text({
     message: 'SMTP host',
@@ -182,7 +194,8 @@ async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise
   return {
     imapHost,
     imapPort: parseInt(imapPortStr || '993', 10),
-    imapTls,
+    imapTls: imapSecurity === 'tls',
+    imapStarttls: imapSecurity === 'starttls',
     smtpHost,
     smtpPort: parseInt(smtpPortStr || '465', 10),
     smtpTls: smtpSecurity === 'tls',
@@ -267,7 +280,7 @@ async function resolveServerSettings(
   if (provider) {
     log.success(`Auto-detected: ${provider.name}`);
     log.info(
-      `  IMAP: ${provider.imap.host}:${provider.imap.port} (${provider.imap.tls ? 'TLS' : 'plain'})`,
+      `  IMAP: ${provider.imap.host}:${provider.imap.port} (${formatSecurity(provider.imap.tls, provider.imap.starttls)})`,
     );
     const smtpLabel = getSmtpLabel(provider.smtp.starttls, provider.smtp.tls);
     log.info(`  SMTP: ${provider.smtp.host}:${provider.smtp.port} (${smtpLabel})`);
@@ -287,6 +300,7 @@ async function resolveServerSettings(
         imapHost: provider.imap.host,
         imapPort: provider.imap.port,
         imapTls: provider.imap.tls,
+        imapStarttls: provider.imap.starttls,
         smtpHost: provider.smtp.host,
         smtpPort: provider.smtp.port,
         smtpTls: provider.smtp.tls,
@@ -305,8 +319,9 @@ async function resolveServerSettings(
 
 /**
  * Build a normalized AccountConfig for connection testing.
+ * @internal Exported for testing.
  */
-function buildTestAccount(
+export function buildTestAccount(
   identity: { name: string; email: string; fullName: string },
   creds: { username: string; password: string },
   server: ServerSettings,
@@ -321,7 +336,7 @@ function buildTestAccount(
       host: server.imapHost,
       port: server.imapPort,
       tls: server.imapTls,
-      starttls: !server.imapTls,
+      starttls: server.imapStarttls,
       verifySsl: true,
     },
     smtp: {
@@ -379,8 +394,9 @@ async function testConnections(account: AccountConfig): Promise<boolean> {
 
 /**
  * Build a RawAccountConfig from collected data.
+ * @internal Exported for testing.
  */
-function buildRawAccount(
+export function buildRawAccount(
   identity: { name: string; email: string; fullName: string },
   creds: { username: string; password: string },
   server: ServerSettings,
@@ -395,7 +411,7 @@ function buildRawAccount(
       host: server.imapHost,
       port: server.imapPort,
       tls: server.imapTls,
-      starttls: !server.imapTls,
+      starttls: server.imapStarttls,
       verify_ssl: true,
     },
     smtp: {
@@ -641,6 +657,7 @@ async function editAccount(nameArg?: string): Promise<void> {
     imapHost: current.imap.host,
     imapPort: current.imap.port,
     imapTls: current.imap.tls,
+    imapStarttls: current.imap.starttls,
     smtpHost: current.smtp.host,
     smtpPort: current.smtp.port,
     smtpTls: current.smtp.tls,
