@@ -1756,7 +1756,9 @@ export default class ImapService {
       );
       if (!msg) return [];
       // biome-ignore format: line too long; eslint implicit-arrow-linebreak prevents multi-line implicit return
-      attachmentMetas = extractAttachments(msg.bodyStructure).filter((a) => a.size <= maxSizeBytes && !a.mimeType.includes('calendar') && !a.filename.toLowerCase().endsWith('.ics'));
+      attachmentMetas = extractAttachments(msg.bodyStructure).filter(
+        (a) => a.size <= maxSizeBytes && !a.filename.toLowerCase().endsWith('.ics'),
+      );
     } finally {
       lock.release();
     }
