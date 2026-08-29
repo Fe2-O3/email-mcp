@@ -63,7 +63,7 @@ export async function buildServices(): Promise<AppServices> {
   const localCalendarService = new LocalCalendarService();
   const remindersService = new RemindersService();
   const schedulerService = new SchedulerService(smtpService, imapService);
-  const watcherService = new WatcherService(config.settings.watcher, config.accounts);
+  const watcherService = new WatcherService(config.settings.watcher, config.accounts, oauthService);
   const hooksService = new HooksService(config.settings.hooks, imapService);
 
   // The mirror is optional and must never block startup: if SQLite cannot be

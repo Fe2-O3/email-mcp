@@ -15,6 +15,7 @@ import { mcpLog } from '../logging.js';
 import type { AccountConfig, EmailMeta, WatcherConfig } from '../types/index.js';
 import eventBus from './event-bus.js';
 import { messageToEmailMeta } from './imap.service.js';
+import type OAuthService from './oauth.service.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,9 +53,12 @@ export default class WatcherService {
 
   private accounts: AccountConfig[];
 
-  constructor(config: WatcherConfig, accounts: AccountConfig[]) {
+  private oauthService?: OAuthService;
+
+  constructor(config: WatcherConfig, accounts: AccountConfig[], oauthService?: OAuthService) {
     this.config = config;
     this.accounts = accounts;
+    this.oauthService = oauthService;
   }
 
   async start(): Promise<void> {
@@ -131,9 +135,17 @@ export default class WatcherService {
     if (!state || state.stopped) return;
 
     try {
-      const auth = state.account.oauth2
-        ? { user: state.account.username, accessToken: state.account.password }
-        : { user: state.account.username, pass: state.account.password };
+      let auth: { user: string; pass?: string; accessToken?: string };
+      if (state.account.oauth2 && this.oauthService) {
+        const accessToken = await this.oauthService.getAccessToken(state.account.oauth2);
+        auth = { user: state.account.username, accessToken };
+      } else if (state.account.oauth2) {
+        // Fallback when OAuthService not injected (e.g., tests) — try to use
+        // the stored access token if available via oauth2, otherwise fail
+        auth = { user: state.account.username, accessToken: state.account.password ?? '' };
+      } else {
+        auth = { user: state.account.username, pass: state.account.password };
+      }
 
       const client = new ImapFlow({
         host: state.account.imap.host,
