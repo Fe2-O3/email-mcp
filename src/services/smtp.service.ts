@@ -369,6 +369,7 @@ export default class SmtpService {
 
     const to = draft.to.map((a) => a.address).join(', ');
     const cc = draft.cc?.map((a) => a.address).join(', ');
+    const bcc = draft.bcc?.map((a) => a.address).join(', ');
 
     // A draft saved with attachments must send with them. The draft's own
     // UID addresses its parts in the Drafts mailbox.
@@ -382,6 +383,7 @@ export default class SmtpService {
       from: account.fullName ? `"${account.fullName}" <${account.email}>` : account.email,
       to,
       cc,
+      bcc,
       subject: draft.subject,
       inReplyTo: draft.inReplyTo,
       references: draft.references?.join(' '),
