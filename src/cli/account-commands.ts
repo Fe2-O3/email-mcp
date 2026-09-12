@@ -25,6 +25,13 @@ import { CONFIG_FILE, configExists, loadRawConfig, saveConfig } from '../config/
 import type { RawAccountConfig, RawAppConfig } from '../config/schema.js';
 import { AppConfigFileSchema } from '../config/schema.js';
 import ConnectionManager from '../connections/manager.js';
+import {
+  isKeychainSentinel,
+  keychainAvailable,
+  keychainDelete,
+  keychainSet,
+  makeKeychainSentinel,
+} from '../security/keychain.js';
 import type { AccountConfig } from '../types/index.js';
 import ensureInteractive from './guard.js';
 import { detectProvider } from './providers.js';
@@ -506,6 +513,19 @@ async function addAccount(): Promise<void> {
 
   // 5. Build and save
   const newAccount = buildRawAccount(identity, creds, server);
+
+  // Store password in keychain if available (more secure than plain text)
+  if (await keychainAvailable()) {
+    try {
+      await keychainSet(identity.name, creds.password);
+      newAccount.password = makeKeychainSentinel(identity.name);
+      log.info('Password stored in macOS Keychain.');
+    } catch (err) {
+      log.warning(`Could not store password in Keychain: ${err}`);
+      log.info('Password saved in config file (less secure).');
+    }
+  }
+
   const config: RawAppConfig = existingConfig
     ? {
         ...existingConfig,
@@ -713,6 +733,19 @@ async function editAccount(nameArg?: string): Promise<void> {
 
   // Save updated account
   const updatedAccount = buildRawAccount(identity, creds, server);
+
+  // Store password in keychain if available
+  if ((await keychainAvailable()) && creds.password) {
+    try {
+      await keychainSet(identity.name, creds.password);
+      updatedAccount.password = makeKeychainSentinel(identity.name);
+      log.info('Password stored in macOS Keychain.');
+    } catch (err) {
+      log.warning(`Could not store password in Keychain: ${err}`);
+      log.info('Password saved in config file (less secure).');
+    }
+  }
+
   const updatedAccounts = [...accounts];
   updatedAccounts[accountIndex] = updatedAccount;
 
@@ -792,6 +825,12 @@ async function deleteAccount(nameArg?: string): Promise<void> {
   if (isCancel(confirmed) || !confirmed) {
     cancel('Deletion cancelled.');
     return;
+  }
+
+  // Remove from keychain if it was stored there
+  if ((await keychainAvailable()) && isKeychainSentinel(target.password)) {
+    await keychainDelete(target.name);
+    log.info(`Removed Keychain password for "${target.name}".`);
   }
 
   const updatedAccounts = accounts.filter((_, i) => i !== accountIndex);

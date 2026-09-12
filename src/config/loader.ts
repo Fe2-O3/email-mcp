@@ -2,12 +2,19 @@
  * Configuration loader.
  *
  * Precedence: environment variables → TOML config file → defaults.
+ * Passwords marked with `use_keychain:<name>` are resolved from macOS Keychain.
  */
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { parse as parseTOML, stringify as stringifyTOML } from 'smol-toml';
+import {
+  isKeychainSentinel,
+  keychainAvailable,
+  keychainGet,
+  keychainSentinelAccount,
+} from '../security/keychain.js';
 import type { AccountConfig, AppConfig, HookRule, OAuth2Config } from '../types/index.js';
 import type { RawAccountConfig, RawAppConfig } from './schema.js';
 import { AppConfigFileSchema } from './schema.js';
@@ -264,6 +271,37 @@ function normalizeConfig(raw: RawAppConfig): AppConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Keychain password resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk through accounts and resolve any keychain sentinel passwords.
+ * A sentinel looks like `use_keychain:<account-name>`.
+ * The actual password is fetched from macOS Keychain at runtime.
+ */
+async function resolveKeychainPasswords(accounts: AccountConfig[]): Promise<void> {
+  // Skip if keychain is not available (e.g. Linux, CI)
+  if (!(await keychainAvailable())) return;
+
+  for (const account of accounts) {
+    if (!isKeychainSentinel(account.password)) continue;
+
+    const keychainAccount = keychainSentinelAccount(account.password!);
+    const resolved = await keychainGet(keychainAccount);
+
+    if (resolved) {
+      account.password = resolved;
+    } else {
+      // Leave the sentinel in place — connection will fail with a clear error
+      console.error(
+        `Warning: Password for "${account.name}" is stored in keychain as "${keychainAccount}" ` +
+          `but was not found in macOS Keychain. Run 'email-mcp keychain migrate' to fix.`,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -290,14 +328,18 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
   const envConfig = loadFromEnv();
   if (envConfig) {
     const validated = AppConfigFileSchema.parse(envConfig);
-    return normalizeConfig(validated);
+    const config = normalizeConfig(validated);
+    await resolveKeychainPasswords(config.accounts);
+    return config;
   }
 
   // 2. Fall back to TOML config file
   const fileConfig = await loadFromFile(configPath);
   if (fileConfig) {
     const validated = AppConfigFileSchema.parse(fileConfig);
-    return normalizeConfig(validated);
+    const config = normalizeConfig(validated);
+    await resolveKeychainPasswords(config.accounts);
+    return config;
   }
 
   throw new Error(

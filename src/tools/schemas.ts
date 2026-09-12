@@ -18,6 +18,7 @@ export const emailAddressSchema = z.object({
 /** Mirrors `EmailMeta` (the list/search row). */
 export const emailMetaSchema = z.object({
   id: z.string(),
+  messageId: z.string(),
   subject: z.string(),
   from: emailAddressSchema,
   to: z.array(emailAddressSchema),

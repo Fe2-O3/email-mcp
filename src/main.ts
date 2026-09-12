@@ -38,6 +38,7 @@ Commands:
   test        Test connections for all or a specific account
   install     Register/unregister with MCP clients (Claude, Cursor, …)
   config      Config management (show, edit, path, init)
+  keychain    Password management (migrate, status, remove)
   scheduler   Email scheduling management (check, list, install, uninstall, status)
   notify      Test and diagnose desktop notifications
   help        Show this help message
@@ -60,6 +61,9 @@ Examples:
   email-mcp config edit              # Edit global settings
   email-mcp config path              # Print config file path
   email-mcp config init              # Create template config
+  email-mcp keychain status          # Show Keychain vs plain text passwords
+  email-mcp keychain migrate         # Move passwords to macOS Keychain
+  email-mcp keychain remove [name]   # Remove a password from Keychain
   email-mcp scheduler check          # Send overdue scheduled emails
   email-mcp scheduler install        # Install OS periodic check
   email-mcp notify test              # Send a test notification
@@ -181,6 +185,12 @@ async function main(): Promise<void> {
     case 'install': {
       const { default: runInstallCommand } = await import('./cli/install-commands.js');
       await runInstallCommand(process.argv[3]);
+      break;
+    }
+
+    case 'keychain': {
+      const { default: runKeychainCommand } = await import('./cli/keychain-commands.js');
+      await runKeychainCommand(process.argv[3], process.argv[4]);
       break;
     }
 
