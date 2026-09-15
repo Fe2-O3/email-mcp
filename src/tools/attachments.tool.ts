@@ -18,8 +18,9 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
       title: 'Download attachment',
       description:
         'Download an email attachment by filename. First use get_email to see available attachments and their filenames. ' +
-        'By default returns base64-encoded content for files ≤5MB. ' +
-        'If savePath is provided, writes the file to disk and returns only the path, size, and sha256 hash.',
+        'By default returns base64-encoded content for files up to 5MB. ' +
+        'For larger files, use savePath to write directly to disk (returns path + size + sha256). ' +
+        'Warning: downloading many large attachments without savePath will flood the model context.',
       inputSchema: z.object({
         account: z.string().describe('Account name from list_accounts'),
         id: z.string().describe('Email ID (UID) from list_emails or get_email'),

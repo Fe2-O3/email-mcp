@@ -1648,14 +1648,21 @@ export default class ImapService {
       const attachments = extractAttachments(msg.bodyStructure);
       const attachment = attachments.find((a) => a.filename === filename);
       if (!attachment) {
+        const available = attachments
+          .map((a) => `${a.filename} (${Math.round(a.size / 1024)}KB)`)
+          .join(', ');
         throw new Error(
-          `Attachment "${filename}" not found. Available: ${attachments.map((a) => a.filename).join(', ') || 'none'}`,
+          `Attachment "${filename}" not found. ` +
+            (available ? `Available attachments: ${available}` : 'This email has no attachments.'),
         );
       }
 
       if (attachment.size > maxSizeBytes) {
+        const sizeMB = Math.round(attachment.size / 1024 / 1024);
+        const limitMB = Math.round(maxSizeBytes / 1024 / 1024);
         throw new Error(
-          `Attachment "${filename}" is ${Math.round(attachment.size / 1024 / 1024)}MB, exceeds ${Math.round(maxSizeBytes / 1024 / 1024)}MB limit`,
+          `Attachment "${filename}" is ${sizeMB}MB, which exceeds the ${limitMB}MB limit. ` +
+            `Use savePath to write it directly to disk instead of loading into context.`,
         );
       }
 
