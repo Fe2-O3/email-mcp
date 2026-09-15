@@ -32,7 +32,8 @@ export async function keychainSet(accountName: string, password: string): Promis
     // Entry may not exist — that is fine
   }
 
-  // -U updates if item already exists, -T "" removes default app trust
+  // -U updates if item already exists.
+  // -T adds the security CLI as trusted so reading doesn't pop a dialog.
   await execFileAsync('security', [
     'add-generic-password',
     '-s',
@@ -43,7 +44,7 @@ export async function keychainSet(accountName: string, password: string): Promis
     password,
     '-U',
     '-T',
-    '',
+    '/usr/bin/security',
   ]);
 }
 
