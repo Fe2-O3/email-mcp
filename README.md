@@ -214,6 +214,9 @@ Every fix links to the upstream issue it resolves.
 | **Quota display** | Report quota in MB not KB |
 | **Connection rotation** | IMAP connections rotate every 30 minutes to prevent buffer accumulation |
 | **Cache eviction** | Label strategy caches evicted after 5 minutes to prevent unbounded growth |
+| **password_command** | Resolve passwords via external command (1Password, Bitwarden, pass, Keychain) |
+| **Stats resource fix** | Use STATUS + SEARCH instead of full envelope fetch for cheap mailbox counters |
+| **find_email_folder perf** | Search likely folders first (INBOX, Sent, Drafts) and stop at first match |
 
 ---
 
@@ -274,6 +277,35 @@ host = "smtp.gmail.com"
 port = 465
 tls = true
 ```
+
+### Password Command
+
+Instead of storing passwords in plaintext, resolve them from an external command at startup:
+
+```toml
+[[accounts]]
+name = "personal"
+email = "you@gmail.com"
+
+# macOS Keychain
+password_command = "security find-generic-password -s email-mcp-personal -w"
+
+# Bitwarden CLI
+# password_command = "bw get password personal-email"
+
+# 1Password CLI
+# password_command = "op read 'op://Private/personal-email/password'"
+
+# pass (Unix password manager)
+# password_command = "pass show email/personal"
+```
+
+- The command runs once at startup via `/bin/sh -c`, in parallel across accounts
+- Your vault must already be unlocked (no interactive prompts)
+- The command is killed after 10 seconds
+- Password must go to stdout; anything on stderr may appear in error messages
+- If both `password` and `password_command` are set, `password_command` wins
+- Rotating the password requires restarting the server
 
 ### macOS Keychain
 
@@ -404,6 +436,24 @@ See [SECURITY.md](SECURITY.md) for the full security policy and reporting instru
 ## Acknowledgments
 
 Built on top of the excellent work by [@codefuturist](https://github.com/codefuturist) on [email-mcp](https://github.com/codefuturist/email-mcp). The upstream project provides a comprehensive MCP email server with 49 tools, 7 prompts, and 6 resources.
+
+### Contributors Whose Work Was Incorporated
+
+This fork incorporates fixes and features from the following upstream contributors. Thank you for your work.
+
+| Contributor | What Was Incorporated |
+|---|---|
+| **[@rsilvestre](https://github.com/rsilvestre)** | [`password_command`](https://github.com/codefuturist/email-mcp/pull/82) (resolve passwords via external command), [stats resource fix](https://github.com/codefuturist/email-mcp/pull/93) (cheap mailbox counters), [`find_email_folder` perf](https://github.com/codefuturist/email-mcp/pull/94) (stop at first match, search likely folders first) |
+| **[@b0j-an](https://github.com/b0j-an)** | [Attachment support on send](https://github.com/codefuturist/email-mcp/pull/77) (carry attachments on forward, send, and draft paths), [Sent folder copy](https://github.com/codefuturist/email-mcp/pull/78) (file sent messages after send/reply/forward) |
+| **[@majkelooo](https://github.com/majkelooo)** | [Stdio exit fix](https://github.com/codefuturist/email-mcp/pull/61) (exit server when client closes stdin), [Sent folder filing](https://github.com/codefuturist/email-mcp/pull/80) (archive sent messages) |
+| **[@Seger85](https://github.com/Seger85)** | [Sender authentication signals](https://github.com/codefuturist/email-mcp/pull/70) (DMARC/SPF/DKIM exposure), [IMAP error handling](https://github.com/codefuturist/email-mcp/pull/64) (safe error/close event handling), [HTTP session lifecycle](https://github.com/codefuturist/email-mcp/pull/63) (bound Streamable HTTP sessions) |
+| **[@ElectricCookie](https://github.com/ElectricCookie)** | [Attachment download dir](https://github.com/codefuturist/email-mcp/pull/65) (save downloads to configured directory) |
+| **[@Fe2-O3](https://github.com/Fe2-O3)** | [GBNF-safe schemas](https://github.com/codefuturist/email-mcp/pull/74) (remove lookahead regex that breaks llama.cpp) |
+| **[@adi-singh13](https://github.com/adi-singh13)** | [AgentMail provider](https://github.com/codefuturist/email-mcp/pull/49) (alternative email provider — not incorporated, different protocol) |
+
+### Issue Reporters
+
+Thanks to everyone who filed issues that identified bugs fixed in this fork: [#12](https://github.com/codefuturist/email-mcp/issues/12), [#20](https://github.com/codefuturist/email-mcp/issues/20), [#45](https://github.com/codefuturist/email-mcp/issues/45), [#52](https://github.com/codefuturist/email-mcp/issues/52), [#55](https://github.com/codefuturist/email-mcp/issues/55), [#57](https://github.com/codefuturist/email-mcp/issues/57), [#58](https://github.com/codefuturist/email-mcp/issues/58), [#59](https://github.com/codefuturist/email-mcp/issues/59), [#60](https://github.com/codefuturist/email-mcp/issues/60), [#62](https://github.com/codefuturist/email-mcp/issues/62), [#66](https://github.com/codefuturist/email-mcp/issues/66), [#71](https://github.com/codefuturist/email-mcp/issues/71), [#79](https://github.com/codefuturist/email-mcp/issues/79), [#91](https://github.com/codefuturist/email-mcp/issues/91), [#92](https://github.com/codefuturist/email-mcp/issues/92), [#95](https://github.com/codefuturist/email-mcp/issues/95), [#96](https://github.com/codefuturist/email-mcp/issues/96).
 
 
 ---
