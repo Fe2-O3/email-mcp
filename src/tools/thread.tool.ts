@@ -9,6 +9,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import type ImapService from '../services/imap.service.js';
+import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,8 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
         'Returns all related messages. Does NOT mark emails as seen. ' +
         'Use format="text" to strip HTML, or format="stripped" to also remove quoted replies. ' +
         'Use newestFirst=true to show the most recent message in full and older messages as header-only summaries. ' +
-        'Use get_email first to obtain the message_id.',
+        'Use get_email first to obtain the message_id. ' +
+        'Each message carries a Bulk line when it is list or machine-generated mail.',
       inputSchema: z.object({
         account: z.string().describe('Account name from list_accounts'),
         message_id: z.string().describe('Message-ID header value (from get_email)'),
@@ -129,6 +131,10 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
           parts.push(`To: ${email.to.map((a) => a.address).join(', ')}`);
           parts.push(`Date: ${email.date}`);
           parts.push(`Subject: ${email.subject}`);
+          const bulkLine = formatBulk(email.bulk);
+          if (bulkLine) {
+            parts.push(`Bulk: ${bulkLine}`);
+          }
 
           if (email.attachments.length > 0) {
             parts.push(`📎 ${email.attachments.map((a) => a.filename).join(', ')}`);

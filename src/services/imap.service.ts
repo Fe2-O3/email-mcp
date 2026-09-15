@@ -30,6 +30,7 @@ import {
   extractAuthenticationResults,
   parseAuthSignals,
 } from '../utils/auth-results.js';
+import { BULK_HEADER_FIELDS, classifyBulk, parseHeaderBlock } from '../utils/bulk-headers.js';
 import { imapCommand } from '../utils/imap-error.js';
 import type { ReconnectEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
@@ -181,19 +182,11 @@ export function messageToEmailMeta(msg: Record<string, unknown>): EmailMeta {
   // Extract non-system flags as labels (IMAP keywords)
   const labels = [...flags].filter((f) => !f.startsWith('\\'));
 
-  // Extract preview from source buffer
-  let preview: string | undefined;
-  if (msg.source && Buffer.isBuffer(msg.source)) {
-    const rawText = msg.source.toString('utf-8');
-    // Try to extract body text after the header blank line
-    const bodyStart = rawText.indexOf('\r\n\r\n');
-    if (bodyStart >= 0) {
-      preview = rawText
-        .slice(bodyStart + 4, bodyStart + 204)
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-  }
+  // BODY.PEEK[HEADER.FIELDS (...)] comes back as a raw buffer.
+  const bulk =
+    msg.headers && Buffer.isBuffer(msg.headers)
+      ? classifyBulk(parseHeaderBlock(msg.headers.toString('utf-8')))
+      : undefined;
 
   // Every fetch in this service passes `{ uid: true }`, so a missing UID means
   // the server broke protocol. Falling back to `msg.seq` would mint an id that
@@ -233,7 +226,7 @@ export function messageToEmailMeta(msg: Record<string, unknown>): EmailMeta {
     answered: flags.has('\\Answered'),
     hasAttachments: hasAttachments(msg.bodyStructure),
     labels,
-    preview,
+    bulk,
   };
 }
 
@@ -332,30 +325,6 @@ function selectBodyPart(parts: TextPart[]): TextPart | undefined {
  * Continuation lines (leading space or tab) are unfolded onto the preceding
  * header, so a long References or Subject split across lines survives intact.
  */
-function parseHeaders(raw: unknown): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (!Buffer.isBuffer(raw)) return headers;
-
-  const text = raw.toString('utf-8');
-  const headerEnd = text.indexOf('\r\n\r\n');
-  const section = headerEnd >= 0 ? text.slice(0, headerEnd) : text;
-
-  let currentKey: string | undefined;
-  section.split(/\r?\n/).forEach((line) => {
-    if (/^[ \t]/.test(line)) {
-      if (currentKey) headers[currentKey] += ` ${line.trim()}`;
-      return;
-    }
-    const colonIdx = line.indexOf(':');
-    if (colonIdx > 0) {
-      currentKey = line.slice(0, colonIdx).trim().toLowerCase();
-      headers[currentKey] = line.slice(colonIdx + 1).trim();
-    }
-  });
-
-  return headers;
-}
-
 async function messageToEmail(
   msg: Record<string, unknown>,
   client: ImapFlow,
@@ -370,7 +339,11 @@ async function messageToEmail(
   // Headers come from a HEADER fetch. `source` would work too, but it pulls
   // the entire message — base64 attachments and all — to read a few hundred
   // bytes of header.
-  const headers = parseHeaders(msg.headers);
+  // parseHeaderBlock unfolds RFC 5322 continuation lines; naive line
+  // splitting truncates folded fields such as List-Unsubscribe.
+  const headers = parseHeaderBlock(
+    Buffer.isBuffer(msg.headers) ? msg.headers.toString('utf-8') : '',
+  );
 
   // Always download body parts; never read them out of `source`. Raw source
   // is transfer-encoded (quoted-printable, base64) with soft line breaks, so
@@ -438,6 +411,10 @@ async function messageToEmail(
     references: headers.references?.split(/\s+/).filter(Boolean),
     attachments: extractAttachments(msg.bodyStructure),
     headers,
+    // Recomputed from the full header set rather than reusing meta.bulk, which
+    // a full fetch leaves unset — the targeted HEADER.FIELDS fetch only happens
+    // on listings.
+    bulk: classifyBulk(headers),
   };
 }
 
@@ -707,7 +684,7 @@ export default class ImapService {
           envelope: true,
           flags: true,
           bodyStructure: true,
-          source: { start: 0, maxLength: 256 },
+          headers: BULK_HEADER_FIELDS,
         },
         { uid: true },
       )) {
@@ -973,7 +950,7 @@ export default class ImapService {
           envelope: true,
           flags: true,
           bodyStructure: true,
-          source: { start: 0, maxLength: 256 },
+          headers: BULK_HEADER_FIELDS,
         },
         { uid: true },
       )) {
