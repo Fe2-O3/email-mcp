@@ -20,6 +20,7 @@ import type {
   EmailStats,
   LabelInfo,
   Mailbox,
+  MailboxSnapshot,
   PaginatedResult,
   QuotaInfo,
   SenderStat,
@@ -1065,6 +1066,27 @@ export default class ImapService {
   // Find real folder for an email
   // -------------------------------------------------------------------------
 
+  /** Folders a message is most likely to be in, in the order worth searching. */
+  private static readonly LIKELY_SPECIAL_USE = ['\\Sent', '\\Drafts', '\\Archive'];
+
+  /**
+   * Order mailboxes so the first match is the one a caller would want to act
+   * on, since the search stops there.
+   */
+  private static orderByLikelihood<T extends { path: string; specialUse?: string }>(
+    mailboxes: T[],
+  ): T[] {
+    const rank = (mailbox: T): number => {
+      if (mailbox.path === 'INBOX') return 0;
+      const specialIndex = mailbox.specialUse
+        ? ImapService.LIKELY_SPECIAL_USE.indexOf(mailbox.specialUse)
+        : -1;
+      return specialIndex === -1 ? ImapService.LIKELY_SPECIAL_USE.length + 1 : specialIndex + 1;
+    };
+    // Stable within a rank, so the server's own ordering is otherwise kept.
+    return [...mailboxes].sort((a, b) => rank(a) - rank(b));
+  }
+
   async findEmailFolder(
     accountName: string,
     emailId: string,
@@ -1105,9 +1127,20 @@ export default class ImapService {
       return true;
     });
 
-    // 3. Search each real mailbox for the Message-ID (sequential — each needs its own lock)
+    // 3. Search for the Message-ID, stopping at the first hit.
+    //
+    // Each folder costs a SELECT and a header SEARCH, and header SEARCH is
+    // typically an unindexed server-side scan. Continuing after a match spent
+    // that on every remaining folder to produce a list the caller was told to
+    // take the first entry of.
+    //
+    // Likely folders go first so the one hit is also the useful one: a message
+    // is far more often in INBOX or Sent than in an archive label, and on a
+    // label-based server it is in several folders at once.
+    const searchOrder = ImapService.orderByLikelihood(realMailboxes);
+
     const folders: string[] = [];
-    const searchMailbox = async (mbPath: string): Promise<void> => {
+    const findInMailbox = async (mbPath: string): Promise<boolean> => {
       try {
         const lock = await client.getMailboxLock(mbPath);
         try {
@@ -1115,20 +1148,22 @@ export default class ImapService {
             { header: { 'message-id': messageId } },
             { uid: true },
           );
-          if (results && Array.isArray(results) && results.length > 0) {
-            folders.push(mbPath);
-          }
+          return Array.isArray(results) && results.length > 0;
         } finally {
           lock.release();
         }
       } catch {
         // Skip folders that can't be selected or searched (e.g. \Noselect, INBOX on some providers)
+        return false;
       }
     };
     // eslint-disable-next-line no-restricted-syntax
-    for (const mb of realMailboxes) {
+    for (const mb of searchOrder) {
       // eslint-disable-next-line no-await-in-loop
-      await searchMailbox(mb.path);
+      if (await findInMailbox(mb.path)) {
+        folders.push(mb.path);
+        break;
+      }
     }
 
     return { folders, messageId };
@@ -2284,6 +2319,42 @@ export default class ImapService {
     } finally {
       lock.release();
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Mailbox snapshot (cheap counters)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Mailbox counters without scanning the mailbox.
+   *
+   * STATUS answers the totals directly, and counting today's arrivals needs
+   * only the length of a SEARCH result — no envelopes, no body structure. Two
+   * round trips, whatever the mailbox holds.
+   */
+  async getMailboxSnapshot(accountName: string, mailbox = 'INBOX'): Promise<MailboxSnapshot> {
+    const client = await this.connections.getImapClient(accountName);
+    const safeMailbox = sanitizeMailboxName(mailbox);
+
+    const status = await client.status(safeMailbox, { messages: true, unseen: true });
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const lock = await client.getMailboxLock(safeMailbox);
+    let receivedToday = 0;
+    try {
+      const todayUids = await client.search({ since: startOfToday }, { uid: true });
+      receivedToday = Array.isArray(todayUids) ? todayUids.length : 0;
+    } finally {
+      lock.release();
+    }
+
+    return {
+      total: status.messages ?? 0,
+      unread: status.unseen ?? 0,
+      receivedToday,
+    };
   }
 
   // -------------------------------------------------------------------------

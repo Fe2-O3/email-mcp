@@ -16,6 +16,7 @@ import {
   keychainSentinelAccount,
 } from '../security/keychain.js';
 import type { AccountConfig, AppConfig, HookRule, OAuth2Config } from '../types/index.js';
+import resolvePasswordCommand from './password-command.js';
 import type { RawAccountConfig, RawAppConfig } from './schema.js';
 import { AppConfigFileSchema } from './schema.js';
 import { CONFIG_FILE, xdg } from './xdg.js';
@@ -27,6 +28,7 @@ import { CONFIG_FILE, xdg } from './xdg.js';
 function loadFromEnv(): RawAppConfig | null {
   const email = process.env.MCP_EMAIL_ADDRESS;
   const password = process.env.MCP_EMAIL_PASSWORD;
+  const passwordCommand = process.env.MCP_EMAIL_PASSWORD_COMMAND;
   const imapHost = process.env.MCP_EMAIL_IMAP_HOST;
   const smtpHost = process.env.MCP_EMAIL_SMTP_HOST;
 
@@ -34,9 +36,9 @@ function loadFromEnv(): RawAppConfig | null {
     return null;
   }
 
-  // Need either password or OAuth2 env vars
+  // Need a password, a password command, or OAuth2 env vars
   const oauth2Provider = process.env.MCP_EMAIL_OAUTH2_PROVIDER;
-  if (!password && !oauth2Provider) {
+  if (!password && !passwordCommand && !oauth2Provider) {
     return null;
   }
 
@@ -117,6 +119,7 @@ function loadFromEnv(): RawAppConfig | null {
         full_name: process.env.MCP_EMAIL_FULL_NAME,
         username: process.env.MCP_EMAIL_USERNAME,
         password,
+        password_command: passwordCommand,
         oauth2,
         imap: {
           host: imapHost,
@@ -173,13 +176,21 @@ function normalizeOAuth2(raw: NonNullable<RawAccountConfig['oauth2']>): OAuth2Co
   };
 }
 
-function normalizeAccount(raw: RawAccountConfig): AccountConfig {
+async function normalizeAccount(raw: RawAccountConfig): Promise<AccountConfig> {
+  // password_command wins over an inline password: the explicit, more secure
+  // field must not be silently defeated by a plaintext line left behind
+  // during migration.
+  const password = raw.password_command
+    ? await resolvePasswordCommand(raw.password_command, raw.name)
+    : raw.password;
+
   return {
     name: raw.name,
     email: raw.email,
     fullName: raw.full_name,
     username: raw.username ?? raw.email,
-    password: raw.password,
+    password,
+    passwordCommand: raw.password_command,
     oauth2: raw.oauth2 ? normalizeOAuth2(raw.oauth2) : undefined,
     imap: {
       host: raw.imap.host,
@@ -226,7 +237,7 @@ function normalizeHookRule(raw: {
   };
 }
 
-function normalizeConfig(raw: RawAppConfig): AppConfig {
+async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
   return {
     settings: {
       rateLimit: raw.settings.rate_limit,
@@ -266,7 +277,7 @@ function normalizeConfig(raw: RawAppConfig): AppConfig {
         calendarConfirm: raw.settings.hooks.calendar_confirm ?? true,
       },
     },
-    accounts: raw.accounts.map(normalizeAccount),
+    accounts: await Promise.all(raw.accounts.map(normalizeAccount)),
   };
 }
 
@@ -328,7 +339,7 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
   const envConfig = loadFromEnv();
   if (envConfig) {
     const validated = AppConfigFileSchema.parse(envConfig);
-    const config = normalizeConfig(validated);
+    const config = await normalizeConfig(validated);
     await resolveKeychainPasswords(config.accounts);
     return config;
   }
@@ -337,7 +348,7 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
   const fileConfig = await loadFromFile(configPath);
   if (fileConfig) {
     const validated = AppConfigFileSchema.parse(fileConfig);
-    const config = normalizeConfig(validated);
+    const config = await normalizeConfig(validated);
     await resolveKeychainPasswords(config.accounts);
     return config;
   }

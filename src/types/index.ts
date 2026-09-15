@@ -65,6 +65,8 @@ export interface AccountConfig {
   fullName?: string;
   username: string;
   password?: string;
+  /** Command that produced `password`. Diagnostic only — never the secret. */
+  passwordCommand?: string;
   oauth2?: OAuth2Config;
   imap: ImapConfig;
   smtp: SmtpConfig;
@@ -346,6 +348,16 @@ export interface EmailStats {
   dailyVolume: DailyVolume[];
   hasAttachmentsCount: number;
   avgPerDay: number;
+}
+
+/** Cheap mailbox counters, from STATUS plus one SEARCH. */
+export interface MailboxSnapshot {
+  /** Messages in the mailbox. */
+  total: number;
+  /** Unread messages in the mailbox. */
+  unread: number;
+  /** Messages whose internal date falls today. */
+  receivedToday: number;
 }
 
 export interface QuotaInfo {
