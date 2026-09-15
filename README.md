@@ -1,192 +1,119 @@
+# Email MCP Server (imap-wizard)
 
----
-
-# Email MCP Server
-
-[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
-[![license](https://img.shields.io/github/license/codefuturist/email-mcp.svg?style=flat-square)](LICENSE)
+[![license](https://img.shields.io/github/license/Fe2-O3/email-mcp.svg?style=flat-square)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@codefuturist/email-mcp.svg?style=flat-square)](https://www.npmjs.com/package/@codefuturist/email-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/@codefuturist/email-mcp.svg?style=flat-square)](https://www.npmjs.com/package/@codefuturist/email-mcp)
-[![CI](https://img.shields.io/github/actions/workflow/status/codefuturist/email-mcp/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/codefuturist/email-mcp/actions/workflows/ci.yml)
 
-An MCP (Model Context Protocol) server providing comprehensive email capabilities via IMAP and SMTP.
+A hardened fork of [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) with 50+ bug fixes, security hardening, and new features on top of the upstream `modernize/sdk-v2-2026-07-28` branch.
 
-Enables AI assistants to read, search, send, manage, schedule, and analyze emails across multiple accounts. Exposes 49 tools, 7 prompts, and 6 resources over the MCP protocol with OAuth2 support _(experimental)_, email scheduling, calendar extraction, analytics, provider-aware label management, real-time IMAP IDLE watcher with AI-powered triage, customizable presets and static rules, and a guided setup wizard.
+Built on **MCP TypeScript SDK v2** (spec revision 2026-07-28). Serves over **stdio** for local clients or **Streamable HTTP** for networked access.
 
-Built on the MCP TypeScript SDK v2 (spec revision 2026-07-28), it serves over **stdio** for local clients or **Streamable HTTP** for networked access — existing stdio configurations keep working unchanged.
+> **Upstream status:** The original maintainer has not merged any PRs since May 2026.
+> This fork ships the fixes that are sitting in the upstream issue and PR backlog,
+> plus additional hardening and features.
 
-## Highlights
+## What's Different
 
-| Feature | email-mcp | Typical MCP email |
-|---------|:---------:|:-----------------:|
-| Multi-account | ✅ | ❌ |
-| Send / reply / forward | ✅ | ✅ |
-| Drafts & templates | ✅ | ❌ |
-| Labels & bulk ops | ✅ provider-aware | ❌ |
-| Schedule future emails | ✅ | ❌ |
-| Real-time IMAP IDLE watcher | ✅ | ❌ |
-| AI triage with presets | ✅ | ❌ |
-| Desktop & webhook alerts | ✅ | ❌ |
-| Calendar (ICS) extraction | ✅ | ❌ |
-| Email analytics | ✅ | ❌ |
-| OAuth2 (Gmail / M365) | ✅ _experimental_ | ❌ |
-| Guided setup wizard | ✅ auto-detect | ❌ |
-| Streamable HTTP transport | ✅ | ❌ |
+This fork fixes **20+ open upstream issues** and adds security, reliability, and feature improvements that are not in the published npm package.
 
-## Table of Contents
+### Bugs Fixed
 
-- [Highlights](#highlights)
-- [Security](#security)
-- [Background](#background)
-- [Install](#install)
-- [Usage](#usage)
-- [API](#api)
-- [Maintainers](#maintainers)
-- [Contributing](#contributing)
-- [License](#license)
+| Upstream Issue | Fix | Commit |
+|---|---|---|
+| [#12](https://github.com/codefuturist/email-mcp/issues/12) `download_attachment` returns base64, no disk save | Added `savePath` parameter — writes file to disk, returns path + size + sha256 | `e3dae2b` |
+| [#20](https://github.com/codefuturist/email-mcp/issues/20), [#54](https://github.com/codefuturist/email-mcp/issues/54), [#92](https://github.com/codefuturist/email-mcp/issues/92) Sent mail never saved to Sent folder | Files sent messages into Sent via IMAP APPEND after SMTP send | `2759a5f`, `093de64` |
+| [#45](https://github.com/codefuturist/email-mcp/issues/45) `forward_email` ignores html flag | Honours the html flag on forward_email | `105f52f` |
+| [#52](https://github.com/codefuturist/email-mcp/issues/52) send_email / send_draft do not support attachments | Attachments on forward, send, and draft paths | `50da135` |
+| [#57](https://github.com/codefuturist/email-mcp/issues/57) Unhandled error event crashes process on socket timeout | Attach error/close handlers to every ImapFlow client | `1b145eb` |
+| [#58](https://github.com/codefuturist/email-mcp/issues/58) Every tool call fails on llama.cpp models | Drop lookahead regex from recipient validation (GBNF-safe schemas) | `0d731f6` |
+| [#59](https://github.com/codefuturist/email-mcp/issues/59) Ordering by UID instead of date | Order list_emails and search_emails by date across the whole match set | `a8c55f0` |
+| [#60](https://github.com/codefuturist/email-mcp/issues/60) stdio server never exits when client closes stdin (orphaned processes) | Exit stdio server when the client closes stdin | `552d016` |
+| [#62](https://github.com/codefuturist/email-mcp/issues/62) send_email retried call indistinguishable from new email | Make retried sends identifiable and refuse accidental duplicates | `ae6afa2` |
+| [#66](https://github.com/codefuturist/email-mcp/issues/66), [#95](https://github.com/codefuturist/email-mcp/issues/95) get_email returns raw MIME / misses real body | Decode message bodies; fetch both halves of multipart/alternative and prefer the richer text | `439a1e5`, `3149e51` |
+| [#71](https://github.com/codefuturist/email-mcp/issues/71), [#91](https://github.com/codefuturist/email-mcp/issues/91) Search returns zero results on broken IMAP4rev2 (Strato) | Fail loudly when a server's SEARCH answers with garbage | `1927a74` |
+| [#96](https://github.com/codefuturist/email-mcp/issues/96) Non-ASCII characters in save_draft subject not RFC 2047 encoded | Build drafts via MailComposer to encode headers and body | `71b10df` |
+| [#79](https://github.com/codefuturist/email-mcp/issues/79) read_only does not gate background services | Keep calendar writes behind readOnly gate | `f05f7ab` |
+| [#81](https://github.com/codefuturist/email-mcp/issues/81) SIEVE filter editing | Not addressed (feature request) | — |
+| [#10](https://github.com/codefuturist/email-mcp/issues/10) messageId missing from emailMetaSchema | Add messageId to schema to fix list_emails / search_emails rejection | `e3dae2b` |
 
-## Security
+### Security Hardening
 
-- All connections use TLS/STARTTLS encryption
-- Passwords are never logged; audit trail records operations without credentials
-- Token-bucket rate limiter prevents abuse (configurable per account)
-- OAuth2 XOAUTH2 authentication for Gmail and Microsoft 365 _(experimental)_
-- Attachment downloads capped at 5 MB with base64 encoding
+| Area | What Changed | Commit |
+|---|---|---|
+| Header injection | Encode sender name via address object to prevent SMTP header injection | `7455f40` |
+| Token timing attacks | Constant-time token compare via hash to hide length | `e936590` |
+| OAuth token misuse | Never use password as OAuth access token in watcher | `edd640b` |
+| Private IP SSRF | Block 169.254, CGNAT and other private ranges via webhook guard | `77f2aaa` |
+| OAuth endpoint | Enforce HTTPS for OAuth endpoints | `519a305` |
+| Scheduler security | Validate emails, UUID schedule_id, secure file perms | `3344c5d` |
+| Config permissions | Write credentials readable only by their owner | `881f52c` |
+| Webhook dispatch | Pin webhook dispatch to the validated address; resolve and range-check destinations | `d901ba3`, `044b4c7` |
+| HTTP security | Require a token even on loopback; bound request bodies | `c8695bc`, `d5f3165` |
+| Draft headers | Sanitize draft headers and harden remaining services | `f993dc5` |
 
-## Background
+### New Features
 
-Most MCP email implementations provide only basic read/send. This server aims to be a full-featured email client for AI assistants, covering the entire lifecycle: reading, composing, managing, scheduling, and analyzing email — all from a single MCP server.
-
-Key design decisions:
-
-- **XDG-compliant config** — TOML at `~/.config/email-mcp/config.toml`
-- **Multi-account** — Operate across multiple IMAP/SMTP accounts simultaneously
-- **Layered services** — Business logic is decoupled from MCP wiring for testability
-- **Provider auto-detection** — Gmail, Outlook, Yahoo, iCloud, Fastmail, ProtonMail, Zoho, GMX
+| Feature | Description | Commit |
+|---|---|---|
+| **MCP SDK v2** | Migrated to MCP TypeScript SDK v2 (spec revision 2026-07-28) with structured output | `a309a67` |
+| **Streamable HTTP** | Networked transport mode alongside stdio | `9a04f65` |
+| **Offline cache** | Local mirror for offline-capable email access | `29106e8` |
+| **Sender authentication** | Expose DMARC/SPF/DKIM signals via `get_email_security` | `f09e06e` |
+| **Attachment savePath** | Save attachments to disk instead of flooding base64 into context | `e3dae2b` |
+| **Sent folder filing** | IMAP APPEND after send, reply, forward, and draft send | `2759a5f`, `093de64` |
+| **Attachment support** | Carry attachments on forward, send, and draft paths | `50da135` |
+| **Duplicate send guard** | Make retried sends identifiable and refuse accidental duplicates | `ae6afa2` |
+| **Reply-To awareness** | Reply goes to Reply-To header when present | `52aa1dd` |
+| **Bcc handling** | Send Bcc recipients when sending a saved draft | `1515fa0` |
+| **Quota display** | Report quota in MB not KB | `e4ae358` |
+| **Calendar fixes** | Fail closed on duplicate check; escape JSON in AppleScript; media type filtering | `ed8c442`, `d59ce82`, `6919aa1` |
 
 ## Install
 
-Requires Node.js ≥ 22.
+Requires Node.js >= 22.
 
 ```bash
-# Run directly (no install needed)
-npx @codefuturist/email-mcp setup
-# or
-pnpm dlx @codefuturist/email-mcp setup
+# From this fork (local checkout)
+cd imap-wizard && pnpm install && pnpm build
 
-# Or install globally
-npm install -g @codefuturist/email-mcp
-# or
-pnpm add -g @codefuturist/email-mcp
-```
-
-### Docker
-
-No Node.js required — just Docker.
-
-```bash
-# Latest stable release
-docker pull ghcr.io/codefuturist/email-mcp:latest
-
-# Pin to an exact version (immutable)
-docker pull ghcr.io/codefuturist/email-mcp:0.2.3
-
-# Auto-update patches within a minor version
-docker pull ghcr.io/codefuturist/email-mcp:0.2
-
-# Track a major version (won't cross breaking-change boundary)
-docker pull ghcr.io/codefuturist/email-mcp:0
-
-# Pin to an exact git commit (immutable, CI traceability)
-docker pull ghcr.io/codefuturist/email-mcp:sha-abc1234
-
-# Or build from source
-docker build -t ghcr.io/codefuturist/email-mcp .
-```
-
-> **Tag convention:** Tags follow bare semver (no `v` prefix), matching Docker ecosystem standards (e.g. `node:24`, `nginx:1.25`). The `latest` tag is only updated on stable releases, never pre-releases.
-
-> **Note:** By default, the server uses stdio transport. Config must be created on the host first
-> (via `npx @codefuturist/email-mcp setup` or manually) and mounted into the container.
-
-## Usage
-
-### Setup
-
-```bash
-# Add an email account interactively (recommended)
-email-mcp account add
-
-# Or use the legacy alias
-email-mcp setup
-
-# Or create a template config manually
-email-mcp config init
-```
-
-The setup wizard auto-detects server settings, tests connections, saves config, and outputs the MCP client config snippet.
-
-### Test Connections
-
-```bash
-email-mcp test            # all accounts
-email-mcp test personal   # specific account
+# Or run directly
+node dist/main.js setup
 ```
 
 ### Configure Your MCP Client
 
-The snippets below use the default **stdio** transport, best for local desktop clients. For networked or remote access over **Streamable HTTP**, see [Streamable HTTP (networked)](#streamable-http-networked) below.
-
-**Recommended — use the guided installer** (auto-detects Claude Desktop, VS Code, Cursor, Windsurf):
-
-```bash
-email-mcp install
-```
-
-Or add manually using the snippets below.
-
-<details>
-<summary><strong>Claude Desktop</strong></summary>
-
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "email": {
-      "command": "npx",
-      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
+      "command": "node",
+      "args": ["/path/to/imap-wizard/dist/main.js", "stdio"]
     }
   }
 }
 ```
-</details>
 
-<details>
-<summary><strong>VS Code (GitHub Copilot)</strong></summary>
+**Claude Code:**
 
-**Option 1 — Extensions gallery (easiest):**
-1. Open the Extensions view (<kbd>⇧⌘X</kbd> / <kbd>Ctrl+Shift+X</kbd>)
-2. Search `@mcp email-mcp`
-3. Click **Install** (user-wide) or right-click → **Install in Workspace**
+```bash
+claude mcp add email -- node /path/to/imap-wizard/dist/main.js stdio
+```
 
-**Option 2 — Workspace config** (`.vscode/mcp.json`, committed to source control):
+**Cursor** — edit `~/.cursor/mcp.json`:
 
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "email": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
+      "command": "node",
+      "args": ["/path/to/imap-wizard/dist/main.js", "stdio"]
     }
   }
 }
 ```
 
-**Option 3 — User config** (`settings.json`, applies to all workspaces):
-
-Open the Command Palette → **Preferences: Open User Settings (JSON)** and add:
+**VS Code (GitHub Copilot)** — add to `settings.json`:
 
 ```json
 {
@@ -194,230 +121,44 @@ Open the Command Palette → **Preferences: Open User Settings (JSON)** and add:
     "servers": {
       "email": {
         "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@codefuturist/email-mcp", "stdio"]
+        "command": "node",
+        "args": ["/path/to/imap-wizard/dist/main.js", "stdio"]
       }
     }
   }
 }
 ```
-</details>
 
-<details>
-<summary><strong>Cursor</strong></summary>
-
-Edit `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "email": {
-      "command": "npx",
-      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>Windsurf</strong></summary>
-
-Edit `~/.codeium/windsurf/mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "email": {
-      "command": "npx",
-      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>Zed</strong></summary>
-
-Edit `~/.config/zed/settings.json`:
-
-```json
-{
-  "context_servers": {
-    "email": {
-      "command": {
-        "path": "npx",
-        "args": ["-y", "@codefuturist/email-mcp", "stdio"]
-      }
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>Mistral Vibe</strong></summary>
-
-Add to `~/.vibe/config.toml`:
+**Codex** — add to `~/.codex/config.toml`:
 
 ```toml
-[[mcp_servers]]
-name = "email-mcp"
-transport = "stdio"
-command = "npx"
-args = ["-y", "@codefuturist/email-mcp", "stdio"]
+[mcp_servers.email]
+command = "node"
+args = ["/path/to/imap-wizard/dist/main.js", "stdio"]
 ```
 
-To pass credentials directly instead of using a config file, use the `env` field:
-
-```toml
-[[mcp_servers]]
-name = "email-mcp"
-transport = "stdio"
-command = "npx"
-args = ["-y", "@codefuturist/email-mcp", "stdio"]
-env = { "EMAIL_ACCOUNTS" = "<your-accounts-json>" }
-```
-
-MCP tools are exposed as `email-mcp_<tool_name>` (e.g. `email-mcp_list_emails`). Restart Vibe after editing the config.
-
-</details>
-
-<details>
-<summary><strong>Docker (any MCP client)</strong></summary>
-
-Run the server in a container — mount your config directory read-only:
+**Streamable HTTP (networked):**
 
 ```bash
-docker run --rm -i \
-  -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro \
-  ghcr.io/codefuturist/email-mcp
+node dist/main.js http --port 8080
 ```
 
-For MCP client configuration (e.g. Claude Desktop):
+## Usage
 
-```json
-{
-  "mcpServers": {
-    "email": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-v", "~/.config/email-mcp:/home/node/.config/email-mcp:ro",
-        "ghcr.io/codefuturist/email-mcp"
-      ]
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>Single-account via environment variables (no config file needed)</strong></summary>
-
-```json
-{
-  "mcpServers": {
-    "email": {
-      "command": "npx",
-      "args": ["-y", "@codefuturist/email-mcp", "stdio"],
-      "env": {
-        "MCP_EMAIL_ADDRESS": "you@gmail.com",
-        "MCP_EMAIL_PASSWORD": "your-app-password",
-        "MCP_EMAIL_IMAP_HOST": "imap.gmail.com",
-        "MCP_EMAIL_SMTP_HOST": "smtp.gmail.com"
-      }
-    }
-  }
-}
-```
-</details>
-
-### Streamable HTTP (networked)
-
-By default the server speaks MCP over **stdio**, ideal for local desktop clients (see the snippets above). For networked or remote access, run it as a **Streamable HTTP** server instead:
+### Setup
 
 ```bash
-email-mcp http --port 8080
-```
+# Add an email account interactively
+node dist/main.js account add
 
-This serves MCP at `http://127.0.0.1:8080/mcp`, with a health probe at `GET /healthz`.
-
-#### Flags & environment variables
-
-| Flag | Environment variable | Default | Description |
-|------|----------------------|---------|-------------|
-| `--host <addr>` | `EMAIL_MCP_HTTP_HOST` | `127.0.0.1` | Address to bind |
-| `--port <n>` | `EMAIL_MCP_HTTP_PORT` | `8080` | Port to listen on |
-| `--path <path>` | `EMAIL_MCP_HTTP_PATH` | `/mcp` | HTTP path serving MCP |
-| `--token <secret>` | `EMAIL_MCP_HTTP_TOKEN` | — | Require `Authorization: Bearer <secret>` on every request |
-| `--allowed-hosts a,b,c` | `EMAIL_MCP_HTTP_ALLOWED_HOSTS` | _loopback names + bind host_ | Comma-separated `Host` header allowlist (DNS-rebinding protection); `*` disables the check |
-| `--insecure` | — | `false` | Allow binding a non-loopback host without a token |
-
-#### Security
-
-- **Token auth** — When a token is set, every request must send `Authorization: Bearer <token>`.
-- **Non-loopback bind guard** — Binding a non-loopback host (e.g. `0.0.0.0`) **without** a token is refused unless `--insecure` is passed. Use `--insecure` only when TLS and authentication are terminated by an upstream reverse proxy.
-- **DNS-rebinding protection** — The `Host` header is validated against an allowlist (loopback names plus the bind host by default). Set `EMAIL_MCP_HTTP_ALLOWED_HOSTS` to your public domain, or `*` to disable the check when a proxy already enforces it.
-
-#### Client configuration
-
-For clients that support the Streamable HTTP transport:
-
-```json
-{
-  "mcpServers": {
-    "email": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:8080/mcp"
-    }
-  }
-}
-```
-
-When a token is configured, add an `Authorization: Bearer <token>` header if your client supports custom headers.
-
-#### Docker
-
-```bash
-docker compose --profile http up
-```
-
-Requires `EMAIL_MCP_HTTP_TOKEN` to be set; the image `EXPOSE`s port `8080`.
-
-### CLI Commands
-
-```
-email-mcp [command]
-
-Commands:
-  stdio                     Run as MCP server over stdio (default)
-  http                      Run as MCP server over Streamable HTTP (networked)
-  account list              List all configured accounts
-  account add               Add a new email account interactively
-  account edit [name]       Edit an existing account
-  account delete [name]     Remove an account
-  setup                     Alias for 'account add'
-  test                      Test connections for all or a specific account
-  install                   Register email-mcp with MCP clients interactively
-  install status            Show registration status for detected clients
-  install remove            Unregister email-mcp from MCP clients
-  config show               Show config (passwords masked)
-  config edit               Edit global settings (rate limit, read-only)
-  config path               Print config file path
-  config init               Create template config
-  scheduler check           Process pending scheduled emails
-  scheduler list            Show all scheduled emails
-  scheduler install         Install OS-level scheduler (launchd/crontab)
-  scheduler uninstall       Remove OS-level scheduler
-  scheduler status          Show scheduler installation status
-  help                      Show help
+# Test connections
+node dist/main.js test            # all accounts
+node dist/main.js test personal   # specific account
 ```
 
 ### Configuration
 
-Located at `$XDG_CONFIG_HOME/email-mcp/config.toml` (default: `~/.config/email-mcp/config.toml`).
+Located at `~/.config/email-mcp/config.toml`:
 
 ```toml
 [settings]
@@ -427,7 +168,7 @@ rate_limit = 10  # max emails per minute per account
 name = "personal"
 email = "you@gmail.com"
 full_name = "Your Name"
-password = "your-app-password"
+password = "use_keychain:personal"  # or plain text
 
 [accounts.imap]
 host = "imap.gmail.com"
@@ -438,274 +179,55 @@ tls = true
 host = "smtp.gmail.com"
 port = 465
 tls = true
-starttls = false
-verify_ssl = true
-
-[accounts.smtp.pool]
-enabled = true
-max_connections = 1
-max_messages = 100
 ```
 
-#### OAuth2 _(experimental)_
+### Keychain Support
 
-> **Note:** OAuth2 support is experimental. Token refresh and provider-specific flows may require additional testing in your environment.
+Passwords are stored in macOS Keychain using sentinel values:
 
 ```toml
-[[accounts]]
-name = "work"
-email = "you@company.com"
-full_name = "Your Name"
-
-[accounts.oauth2]
-provider = "google"            # or "microsoft"
-client_id = "your-client-id"
-client_secret = "your-client-secret"
-refresh_token = "your-refresh-token"
-
-[accounts.imap]
-host = "imap.gmail.com"
-port = 993
-tls = true
-
-[accounts.smtp]
-host = "smtp.gmail.com"
-port = 465
-tls = true
-
-[accounts.smtp.pool]
-enabled = true
-max_connections = 1
-max_messages = 100
+password = "use_keychain:my-account-name"
 ```
-
-#### Environment Variables
-
-For single-account setups (overrides config file):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MCP_EMAIL_ADDRESS` | *required* | Email address |
-| `MCP_EMAIL_PASSWORD` | *required* | Password or app password |
-| `MCP_EMAIL_IMAP_HOST` | *required* | IMAP server hostname |
-| `MCP_EMAIL_SMTP_HOST` | *required* | SMTP server hostname |
-| `MCP_EMAIL_ACCOUNT_NAME` | `default` | Account name |
-| `MCP_EMAIL_FULL_NAME` | — | Display name |
-| `MCP_EMAIL_USERNAME` | *email* | Login username |
-| `MCP_EMAIL_IMAP_PORT` | `993` | IMAP port |
-| `MCP_EMAIL_IMAP_TLS` | `true` | IMAP TLS |
-| `MCP_EMAIL_SMTP_PORT` | `465` | SMTP port |
-| `MCP_EMAIL_SMTP_TLS` | `true` | SMTP TLS |
-| `MCP_EMAIL_SMTP_STARTTLS` | `false` | SMTP STARTTLS |
-| `MCP_EMAIL_SMTP_VERIFY_SSL` | `true` | Verify SSL certificates |
-| `MCP_EMAIL_SMTP_POOL_ENABLED` | `true` | Enable SMTP transport pooling |
-| `MCP_EMAIL_SMTP_POOL_MAX_CONNECTIONS` | `1` | Max pooled SMTP connections |
-| `MCP_EMAIL_SMTP_POOL_MAX_MESSAGES` | `100` | Max messages per pooled connection |
-| `MCP_EMAIL_RATE_LIMIT` | `10` | Max sends per minute |
-
-### Email Scheduling
-
-The scheduler enables future email delivery with a layered architecture:
-
-1. **MCP auto-check** — Processes the queue on server startup and every 60 seconds while the MCP server is running
-2. **CLI** — `email-mcp scheduler check` for manual or cron-based processing
-3. **OS-level daemon** — `email-mcp scheduler install` sets up launchd (macOS) or crontab (Linux) to run every minute, independently of the MCP server
-
-> **Important — the daemon must be installed for reliable delivery.**
-> Without it, scheduled emails only fire while an AI client is actively connected.
-> Your machine also needs to be running at the scheduled time; if it's asleep or
-> off, the daemon will process overdue emails on next wake/startup. Failed sends
-> are retried up to **3 times** before being marked `failed`.
-
-#### Setting up the daemon
 
 ```bash
-# Install (macOS launchd / Linux crontab — runs every minute)
-email-mcp scheduler install
-
-# Verify it's running
-email-mcp scheduler status
-
-# View pending / sent / failed scheduled emails
-email-mcp scheduler list
-
-# Trigger a manual check immediately
-email-mcp scheduler check
-
-# Remove the daemon
-email-mcp scheduler uninstall
+node dist/main.js keychain status    # show which accounts use keychain
+node dist/main.js keychain migrate   # move all passwords to keychain
 ```
 
-Scheduled emails are stored as JSON files in `~/.local/state/email-mcp/scheduled/` with status-based locking. Each entry tracks attempts (max 3) and the last error, so you can inspect failures with `scheduler list`.
+### CLI Commands
 
-### Real-time Watcher & AI Hooks
-
-The IMAP IDLE watcher monitors configured mailboxes in real-time using persistent IDLE connections (separate from tool connections). When new emails arrive:
-
-1. **Static rules** — Pattern-match on from/to/subject → apply labels, flag, or mark read instantly (no AI)
-2. **AI triage** — Remaining emails are analyzed via MCP sampling with a customizable preset prompt
-3. **Notify mode** — Falls back to logging if AI triage is disabled
-
-Configure in `config.toml`:
-
-```toml
-[settings.watcher]
-enabled = true
-folders = ["INBOX"]
-idle_timeout = 1740     # 29 minutes (IMAP spec max is 30)
-
-[settings.hooks]
-on_new_email = "triage" # "triage" | "notify" | "none"
-preset = "inbox-zero"   # "inbox-zero" | "gtd" | "priority-focus" | "notification-only" | "custom"
-auto_label = true       # apply AI-suggested labels
-auto_flag = true        # flag urgent emails
-batch_delay = 5         # seconds to batch before triage
-
-# User context — appended to preset's AI prompt
-custom_instructions = """
-I'm a software engineer. Emails from @mycompany.com are always high priority.
-Newsletters I read: TL;DR, Hacker Newsletter.
-"""
-
-# Static rules — run BEFORE AI, skip AI if matched
-[[settings.hooks.rules]]
-name = "GitHub Notifications"
-match = { from = "*@github.com" }
-actions = { labels = ["Dev"], mark_read = true }
-
-[[settings.hooks.rules]]
-name = "Newsletter Archive"
-match = { from = "*@substack.com|*@buttondown.email" }
-actions = { labels = ["Newsletter"] }
-
-[[settings.hooks.rules]]
-name = "VIP Contacts"
-match = { from = "ceo@company.com|cto@company.com" }
-actions = { flag = true, labels = ["VIP"] }
 ```
+node dist/main.js [command]
 
-#### Presets
-
-| Preset | Focus | Suggested Labels |
-|--------|-------|------------------|
-| `inbox-zero` | Aggressive categorization + archiving | Newsletter, Notification, Updates, Finance, Social, Promo |
-| `gtd` | Getting Things Done contexts | @Action, @Waiting, @Reference, @Someday, @Delegated |
-| `priority-focus` | Simple priority classification (default) | _(none — just priority + flag)_ |
-| `notification-only` | No AI triage, just log | _(none)_ |
-| `custom` | User defines full system prompt | User-defined |
-
-#### Static Rules
-
-Static rules use glob-style patterns (`*@github.com`) with `|` as OR separator (`*@github.com|*@gitlab.com`). All conditions within a match are AND'd. First matching rule wins.
-
-Available actions: `labels` (string array), `flag` (boolean), `mark_read` (boolean), `alert` (boolean — forces desktop notification).
-
-#### Alerts
-
-Urgency-based multi-channel notification routing — grab attention for important emails even when you're not looking at the chat. All channels are **opt-in** and disabled by default.
-
-| Priority | Desktop | Sound | MCP Log Level | Webhook |
-|----------|---------|-------|---------------|---------|
-| `urgent` | ✅ Banner | 🔊 Alert | `alert` | ✅ |
-| `high` | ✅ Banner | 🔇 Silent | `warning` | ✅ |
-| `normal` | ❌ | ❌ | `info` | ❌ |
-| `low` | ❌ | ❌ | `debug` | ❌ |
-
-```toml
-[settings.hooks.alerts]
-desktop = true              # OS-level notifications (macOS/Linux/Windows)
-sound = true                # play sound for urgent emails
-urgency_threshold = "high"  # minimum priority to trigger desktop alert
-webhook_url = "https://ntfy.sh/my-email-alerts"  # optional: Slack, Discord, ntfy.sh, etc.
-webhook_events = ["urgent", "high"]
+Commands:
+  stdio                     Run as MCP server over stdio (default)
+  http                      Run as MCP server over Streamable HTTP
+  account list              List all configured accounts
+  account add               Add a new email account interactively
+  account edit [name]       Edit an existing account
+  account delete [name]     Remove an account
+  test                      Test connections for all or a specific account
+  install                   Register with MCP clients interactively
+  install status            Show registration status
+  install remove            Unregister from MCP clients
+  config show               Show config (passwords masked)
+  config edit               Edit global settings
+  config path               Print config file path
+  config init               Create template config
+  keychain status           Show keychain migration status
+  keychain migrate          Move all passwords to macOS Keychain
+  keychain remove [name]    Remove a password from Keychain
+  scheduler check           Process pending scheduled emails
+  scheduler list            Show all scheduled emails
+  scheduler install         Install OS-level scheduler (launchd/crontab)
+  scheduler uninstall       Remove OS-level scheduler
+  scheduler status          Show scheduler installation status
+  help                      Show help
 ```
-
-**Supported platforms:** macOS (Notification Center via `osascript`), Linux (`notify-send`), Windows (PowerShell toast). Zero npm dependencies — uses native OS commands.
-
-**Notification setup by platform:**
-
-<details>
-<summary>macOS</summary>
-
-Desktop notifications use `osascript` (built-in). The terminal app running the MCP server needs notification permission:
-
-1. Open **System Settings → Notifications & Focus**
-2. Find your terminal app (Terminal, iTerm2, VS Code, Cursor, etc.)
-3. Enable **Allow Notifications** and choose **Banners** or **Alerts**
-4. Ensure **Focus** / Do Not Disturb is not blocking notifications
-
-Use `check_notification_setup` to diagnose and `test_notification` to verify.
-</details>
-
-<details>
-<summary>Linux</summary>
-
-Requires `notify-send` from `libnotify`. For sound alerts, `paplay` is also needed:
-
-```bash
-# Ubuntu / Debian
-sudo apt install libnotify-bin pulseaudio-utils
-
-# Fedora
-sudo dnf install libnotify pulseaudio-utils
-
-# Arch
-sudo pacman -S libnotify
-```
-
-Desktop notifications require a running display server (X11/Wayland) — they will not work in headless/SSH sessions.
-</details>
-
-<details>
-<summary>Windows</summary>
-
-Uses PowerShell toast notifications (built-in):
-
-1. Open **Settings → System → Notifications**
-2. Ensure **Notifications** is turned on
-3. Set **Focus Assist** to allow notifications
-4. If using Windows Terminal, ensure its notifications are enabled
-</details>
-
-**AI-configurable:** The AI can check, test, and configure notifications at runtime:
-- `check_notification_setup` — diagnose platform support and show setup instructions
-- `test_notification` — send a test notification to verify everything works
-- `configure_alerts` — enable/disable desktop, sound, threshold, webhook (with optional persist to config file)
-
-**Webhook payload:**
-```json
-{
-  "event": "email.urgent",
-  "account": "work",
-  "sender": { "name": "John CEO", "address": "ceo@company.com" },
-  "subject": "Q4 Review Due Today",
-  "priority": "urgent",
-  "labels": ["VIP"],
-  "rule": "VIP Contacts",
-  "timestamp": "2026-02-18T11:30:00Z"
-}
-```
-
-Static rules can force desktop notifications with `alert = true`, regardless of urgency threshold:
-```toml
-[[settings.hooks.rules]]
-name = "VIP Contacts"
-match = { from = "ceo@company.com" }
-actions = { flag = true, alert = true, labels = ["VIP"] }
-```
-
-Features:
-- **Auto-reconnect** — Exponential backoff (1s → 60s) on connection failures
-- **Batching** — Groups arrivals within a configurable delay to reduce AI calls
-- **Rate limiting** — Max 10 sampling calls per minute
-- **Graceful degradation** — Falls back to notify mode if client doesn't support sampling
-- **Resource subscriptions** — Pushes `notifications/resources/updated` for unread counts
 
 ## API
 
 ### Tools (49)
-
-> **Structured output:** `list_emails`, `search_emails`, `get_email_status`, and `list_mailboxes` also return machine-readable results (`outputSchema` + `structuredContent`) alongside the human-readable text, for clients that consume typed tool output.
 
 #### Read (14)
 
@@ -716,10 +238,10 @@ Features:
 | `list_emails` | Paginated email listing with date, sender, subject, and flag filters |
 | `get_email` | Read full email content with attachment metadata |
 | `get_emails` | Fetch full content of multiple emails in a single call (max 20) |
-| `get_email_status` | Get read/flag/label state of an email without fetching the body |
+| `get_email_status` | Get read/flag/label state without fetching the body |
 | `search_emails` | Search by keyword across subject, sender, and body |
-| `download_attachment` | Download an email attachment by filename |
-| `find_email_folder` | Discover the real folder(s) an email resides in (resolves virtual folders) |
+| `download_attachment` | Download attachment by filename, optionally save to disk with `savePath` |
+| `find_email_folder` | Discover the real folder(s) an email resides in |
 | `extract_contacts` | Extract unique contacts from recent email headers |
 | `get_thread` | Reconstruct a conversation thread via References/In-Reply-To |
 | `list_templates` | List available email templates |
@@ -730,9 +252,9 @@ Features:
 
 | Tool | Description |
 |------|-------------|
-| `send_email` | Send a new email (plain text or HTML, CC/BCC) |
+| `send_email` | Send a new email (plain text or HTML, CC/BCC, attachments) |
 | `reply_email` | Reply with proper threading (In-Reply-To, References) |
-| `forward_email` | Forward with original content quoted |
+| `forward_email` | Forward with original content quoted (respects html flag) |
 | `save_draft` | Save an email draft to the Drafts folder |
 | `send_draft` | Send an existing draft and remove from Drafts |
 | `apply_template` | Apply a template with variable substitution |
@@ -757,7 +279,7 @@ Features:
 | Tool | Description |
 |------|-------------|
 | `list_labels` | Discover available labels (auto-detects provider strategy) |
-| `add_label` | Add a label to an email (ProtonMail folders, Gmail X-GM-LABELS, or IMAP keywords) |
+| `add_label` | Add a label to an email |
 | `remove_label` | Remove a label from an email |
 | `create_label` | Create a new label |
 | `delete_label` | Delete a label |
@@ -766,116 +288,96 @@ Features:
 
 | Tool | Description |
 |------|-------------|
-| `get_watcher_status` | Show IMAP IDLE connections, folders being monitored, and last-seen UIDs |
-| `list_presets` | List available AI triage presets with descriptions and suggested labels |
-| `get_hooks_config` | Show current hooks configuration — preset, rules, and custom instructions |
+| `get_watcher_status` | Show IMAP IDLE connections, monitored folders, last-seen UIDs |
+| `list_presets` | List available AI triage presets |
+| `get_hooks_config` | Show current hooks configuration |
 | `configure_alerts` | Update alert/notification settings at runtime |
-| `check_notification_setup` | Diagnose desktop notification support and provide setup instructions |
-| `test_notification` | Send a test notification to verify OS permissions are configured |
+| `check_notification_setup` | Diagnose desktop notification support |
+| `test_notification` | Send a test notification |
 
 #### Calendar & Reminders (6)
 
 | Tool | Description |
 |------|-------------|
 | `extract_calendar` | Extract ICS/iCalendar events from an email |
-| `analyze_email_for_scheduling` | Analyze an email to detect events and reminder-worthy content |
-| `add_to_calendar` | Add an email event to the local calendar (macOS/Linux) |
-| `create_reminder` | Create a reminder in macOS Reminders.app from an email |
+| `analyze_email_for_scheduling` | Detect events and reminder-worthy content |
+| `add_to_calendar` | Add an email event to the local calendar |
+| `create_reminder` | Create a reminder from an email |
 | `list_calendars` | List all available local calendars |
 | `check_calendar_permissions` | Check whether the local calendar is accessible |
+
+#### Security (1)
+
+| Tool | Description |
+|------|-------------|
+| `get_email_security` | Expose DMARC/SPF/DKIM sender authentication signals |
 
 ### Prompts (7)
 
 | Prompt | Description |
 |--------|-------------|
-| `triage_inbox` | Categorize and prioritize unread emails with suggested actions |
-| `summarize_thread` | Summarize an email conversation thread |
-| `compose_reply` | Draft a context-aware reply to an email |
-| `draft_from_context` | Compose a new email from provided context and instructions |
-| `extract_action_items` | Extract actionable tasks from email threads |
-| `summarize_meetings` | Summarize upcoming calendar events from emails |
-| `cleanup_inbox` | Suggest emails to archive, delete, or unsubscribe from |
+| `triage_inbox` | Categorize and prioritize unread emails |
+| `summarize_thread` | Summarize a conversation thread |
+| `compose_reply` | Draft a context-aware reply |
+| `draft_from_context` | Compose from provided context |
+| `extract_action_items` | Extract actionable tasks |
+| `summarize_meetings` | Summarize calendar events from emails |
+| `cleanup_inbox` | Suggest emails to archive, delete, or unsubscribe |
 
 ### Resources (6)
 
 | Resource | URI | Description |
 |----------|-----|-------------|
-| Accounts | `email://accounts` | List of configured accounts |
-| Mailboxes | `email://{account}/mailboxes` | Folder tree for an account |
-| Unread | `email://{account}/unread` | Unread email summary |
-| Templates | `email://templates` | Available email templates |
-| Stats | `email://{account}/stats` | Email statistics snapshot |
+| Accounts | `email://accounts` | Configured accounts |
+| Mailboxes | `email://{account}/mailboxes` | Folder tree |
+| Unread | `email://{account}/unread` | Unread summary |
+| Templates | `email://templates` | Email templates |
+| Stats | `email://{account}/stats` | Statistics snapshot |
 | Scheduled | `email://scheduled` | Pending scheduled emails |
 
-### Provider Auto-Detection
-
-| Provider | Domains |
-|----------|---------|
-| Gmail | gmail.com |
-| Outlook / Hotmail | outlook.com, hotmail.com, live.com |
-| Yahoo Mail | yahoo.com, ymail.com |
-| iCloud | icloud.com, me.com, mac.com |
-| Fastmail | fastmail.com |
-| ProtonMail Bridge | proton.me, protonmail.com |
-| Zoho Mail | zoho.com |
-| GMX | gmx.com, gmx.de, gmx.net |
-
-### Architecture
+## Architecture
 
 ```
 src/
 ├── main.ts                — Entry point and subcommand routing
 ├── server.ts              — MCP server factory
 ├── logging.ts             — MCP protocol logging bridge
+├── app.ts                 — Streamable HTTP server
 ├── cli/                   — Interactive CLI commands
-│   ├── account-commands.ts — Account CRUD (list, add, edit, delete)
-│   ├── setup.ts           — Legacy setup alias → account add
-│   ├── test.ts            — Connection tester
-│   ├── config-commands.ts — Config management (show, edit, path, init)
-│   ├── install-commands.ts — MCP client registration (install, status, remove)
-│   ├── providers.ts       — Provider auto-detection + OAuth2 endpoints (experimental)
+│   ├── account-commands.ts — Account CRUD with Keychain support
+│   ├── keychain-commands.ts — Keychain status/migrate/remove
+│   ├── http.ts            — Streamable HTTP server
 │   └── scheduler.ts       — Scheduler CLI
 ├── config/                — Configuration layer
 │   ├── xdg.ts             — XDG Base Directory paths
 │   ├── schema.ts          — Zod validation schemas
-│   └── loader.ts          — Config loader (TOML + env vars)
+│   └── loader.ts          — Config loader with Keychain resolution
 ├── connections/
-│   └── manager.ts         — Lazy persistent IMAP/SMTP with OAuth2 (experimental)
+│   └── manager.ts         — Lazy persistent IMAP/SMTP with OAuth2
 ├── services/              — Business logic
-│   ├── imap.service.ts    — IMAP operations
-│   ├── label-strategy.ts  — Provider-aware label strategy (ProtonMail/Gmail/IMAP keywords)
-│   ├── smtp.service.ts    — SMTP operations
-│   ├── template.service.ts — Email template engine
-│   ├── oauth.service.ts   — OAuth2 token management (experimental)
-│   ├── calendar.service.ts — ICS/iCalendar parsing
-│   ├── scheduler.service.ts — Email scheduling queue
-│   ├── watcher.service.ts — IMAP IDLE real-time watcher with auto-reconnect
-│   ├── hooks.service.ts   — AI triage via MCP sampling + static rules + auto-labeling/flagging
-│   ├── notifier.service.ts — Multi-channel notification dispatcher (desktop/sound/webhook)
-│   ├── presets.ts         — Built-in hook presets (inbox-zero, gtd, priority-focus, etc.)
-│   └── event-bus.ts       — Typed EventEmitter for internal email events
-├── tools/                 — MCP tool definitions (42)
+│   ├── imap.service.ts    — IMAP operations (with date ordering, multipart fix)
+│   ├── smtp.service.ts    — SMTP operations (with sent folder filing, dedup)
+│   ├── watcher.service.ts — IMAP IDLE watcher
+│   ├── hooks.service.ts   — AI triage + static rules
+│   ├── scheduler.service.ts — Email scheduling
+│   ├── cache/             — Offline-capable local mirror
+│   └── ...
+├── security/
+│   └── keychain.ts        — macOS Keychain wrapper
+├── safety/                — Audit trail, rate limiter, webhook guard
+├── tools/                 — MCP tool definitions (49)
 ├── prompts/               — MCP prompt definitions (7)
 ├── resources/             — MCP resource definitions (6)
-├── safety/                — Audit trail and rate limiter
 └── types/                 — Shared TypeScript types
 ```
 
-## Maintainers
-
-[@codefuturist](https://github.com/codefuturist)
-
-## Contributing
-
-PRs accepted. Please conform to the [standard-readme](https://github.com/RichardLitt/standard-readme) specification when editing this README.
+## Development
 
 ```bash
-# Development workflow
 pnpm install
 pnpm typecheck   # type check
 pnpm check       # lint and format
 pnpm build       # build
-pnpm start       # run
 ```
 
 ### Testing
@@ -886,13 +388,9 @@ pnpm test:integration  # against a throwaway GreenMail server (Docker required)
 pnpm smoke             # every MCP tool against a real configured account
 ```
 
-`pnpm smoke` drives all tools over stdio the way a client does, which reaches
-what GreenMail cannot: provider quirks, real-world MIME, and the macOS
-Calendar bridges. It needs a working account, so it is not part of CI. Writes
-stay inside a scratch folder and a draft it creates itself; it does not touch
-Calendar, Reminders, notifications, or `reply_email`, which would send mail to
-a real correspondent. Pass `E2E_ACCOUNT=<name>` to choose an account, otherwise
-it uses the first one configured.
+## Acknowledgments
+
+This fork is built on top of the excellent work by [@codefuturist](https://github.com/codefuturist) on [email-mcp](https://github.com/codefuturist/email-mcp). The upstream project provides a comprehensive MCP email server with 49 tools, 7 prompts, and 6 resources.
 
 
 ## License
