@@ -8,16 +8,15 @@
 
 ## Reporting a Vulnerability
 
-**Please do not report security vulnerabilities through public GitHub
-issues.**
+**Please do not report security vulnerabilities through public GitHub issues.**
 
-GitHub's private vulnerability reporting is not enabled for this repository
-yet. Until then:
+Use one of these private channels:
 
-- **Maintainers of the project:** use the maintainer's private contact
-  channel, or open a draft advisory once private reporting is switched on.
-- **Everyone else:** describe the issue without exploit details in a direct
-  message to a maintainer, and we will follow up.
+- **GitHub Private Vulnerability Reporting** — Enabled on this repository.
+  Go to the **Security** tab → **Report a vulnerability** to submit a private
+  advisory. GitHub will notify the maintainers directly.
+- **Email** — If you prefer email, send details to the maintainer's private
+  contact channel. Do not include exploit code in the initial report.
 
 You should receive an acknowledgement within a few days. If the issue is
 confirmed, a fix will be released as soon as possible.
@@ -44,6 +43,10 @@ project includes several security measures:
   configuration and notification testing.
 - **Input validation** — all tool inputs are validated with Zod schemas;
   request bodies over the size cap are refused.
+- **Connection rotation** — IMAP connections are rotated every 30 minutes
+  to prevent buffer accumulation and stale state.
+- **Cache eviction** — label strategy caches are evicted after 5 minutes
+  to prevent unbounded growth.
 
 ## Best Practices for Users
 

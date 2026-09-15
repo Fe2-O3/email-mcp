@@ -58,11 +58,16 @@ function attachImapLifecycleHandlers(client: ImapFlow, label: string, onDead?: (
 export default class ConnectionManager implements IConnectionManager {
   private imapClients = new Map<string, ImapFlow>();
 
+  private imapClientCreatedAt = new Map<string, number>();
+
   private smtpTransports = new Map<string, Transporter>();
 
   private accounts = new Map<string, AccountConfig>();
 
   private oauthService?: OAuthService;
+
+  /** Connections older than this are closed and recreated on next use. */
+  private static readonly CONNECTION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
   constructor(accounts: AccountConfig[], oauthService?: OAuthService) {
     accounts.forEach((account) => {
@@ -102,12 +107,26 @@ export default class ConnectionManager implements IConnectionManager {
 
     const existing = this.imapClients.get(accountName);
     if (existing?.usable) {
-      return existing;
+      // Rotate connections that have been open too long to prevent buffer accumulation.
+      const createdAt = this.imapClientCreatedAt.get(accountName) ?? 0;
+      if (Date.now() - createdAt < ConnectionManager.CONNECTION_MAX_AGE_MS) {
+        return existing;
+      }
+      // Connection is stale — close and recreate below.
+      this.imapClients.delete(accountName);
+      this.imapClientCreatedAt.delete(accountName);
+      try {
+        existing.close();
+      } catch {
+        /* ignore */
+      }
+      eventBus.emit('imap:reconnect', { account: accountName });
     }
 
     // Clean up stale connection
     if (existing) {
       this.imapClients.delete(accountName);
+      this.imapClientCreatedAt.delete(accountName);
       try {
         existing.close();
       } catch {
@@ -150,6 +169,7 @@ export default class ConnectionManager implements IConnectionManager {
       attachImapLifecycleHandlers(client, accountName, () => {
         if (this.imapClients.get(accountName) === client) {
           this.imapClients.delete(accountName);
+          this.imapClientCreatedAt.delete(accountName);
         }
       });
 
@@ -160,6 +180,7 @@ export default class ConnectionManager implements IConnectionManager {
         `Connected to ${account.imap.host}:${account.imap.port} for "${accountName}"`,
       );
       this.imapClients.set(accountName, client);
+      this.imapClientCreatedAt.set(accountName, Date.now());
       return client;
     })();
 
@@ -413,6 +434,7 @@ export default class ConnectionManager implements IConnectionManager {
           .catch(() => {})
           .then(() => {
             this.imapClients.delete(name);
+            this.imapClientCreatedAt.delete(name);
           }),
       );
     });

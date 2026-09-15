@@ -445,9 +445,12 @@ async function messageToEmail(
 // ---------------------------------------------------------------------------
 
 export default class ImapService {
-  private labelStrategies = new Map<string, LabelStrategy>();
+  private labelStrategies = new Map<string, { strategy: LabelStrategy; ts: number }>();
 
   private labelStrategyPending = new Map<string, Promise<LabelStrategy>>();
+
+  /** Label strategies are evicted after 5 minutes to prevent stale cache growth. */
+  private static readonly LABEL_STRATEGY_TTL_MS = 5 * 60 * 1000;
 
   private readonly onReconnect: (event: ReconnectEvent) => void;
 
@@ -495,7 +498,10 @@ export default class ImapService {
 
   private async getLabelStrategy(accountName: string): Promise<LabelStrategy> {
     const cached = this.labelStrategies.get(accountName);
-    if (cached) return cached;
+    if (cached && Date.now() - cached.ts < ImapService.LABEL_STRATEGY_TTL_MS) {
+      return cached.strategy;
+    }
+    if (cached) this.labelStrategies.delete(accountName);
 
     // Deduplicate concurrent detection for the same account. A failed attempt
     // must not stay cached: the entry is cleared when detection settles with a
@@ -508,7 +514,7 @@ export default class ImapService {
       try {
         const client = await this.connections.getImapClient(accountName);
         const strategy = await detectLabelStrategy(client);
-        this.labelStrategies.set(accountName, strategy);
+        this.labelStrategies.set(accountName, { strategy, ts: Date.now() });
         return strategy;
       } finally {
         // Clear on settle, success or failure: a rejected detection must not
