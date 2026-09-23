@@ -15,6 +15,14 @@ export const emailAddressSchema = z.object({
   address: z.string(),
 });
 
+/** Mirrors `BulkSignal` (newsletter / automated classification). */
+export const bulkSignalSchema = z.object({
+  kind: z.enum(['newsletter', 'automated']),
+  listId: z.string().optional(),
+  unsubscribe: z.string().optional(),
+  oneClick: z.boolean(),
+});
+
 /** Mirrors `EmailMeta` (the list/search row). */
 export const emailMetaSchema = z.object({
   id: z.string(),
@@ -28,7 +36,7 @@ export const emailMetaSchema = z.object({
   answered: z.boolean(),
   hasAttachments: z.boolean(),
   labels: z.array(z.string()),
-  preview: z.string().optional(),
+  bulk: bulkSignalSchema.optional(),
 });
 
 /** Structured result for `list_emails` / `search_emails`. */

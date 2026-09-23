@@ -106,25 +106,16 @@ export default class ConnectionManager implements IConnectionManager {
     if (pending) return pending;
 
     const existing = this.imapClients.get(accountName);
-    if (existing?.usable) {
-      // Rotate connections that have been open too long to prevent buffer accumulation.
-      const createdAt = this.imapClientCreatedAt.get(accountName) ?? 0;
-      if (Date.now() - createdAt < ConnectionManager.CONNECTION_MAX_AGE_MS) {
-        return existing;
-      }
-      // Connection is stale — close and recreate below.
-      this.imapClients.delete(accountName);
-      this.imapClientCreatedAt.delete(accountName);
-      try {
-        existing.close();
-      } catch {
-        /* ignore */
-      }
-      eventBus.emit('imap:reconnect', { account: accountName });
-    }
-
-    // Clean up stale connection
     if (existing) {
+      if (existing.usable) {
+        const createdAt = this.imapClientCreatedAt.get(accountName) ?? 0;
+        if (Date.now() - createdAt < ConnectionManager.CONNECTION_MAX_AGE_MS) {
+          return existing;
+        }
+        // Rotation: open too long, buffers accumulate — fall through to the
+        // shared cleanup below and recreate.
+      }
+      // Connection is stale (too old) or unusable — close and recreate below.
       this.imapClients.delete(accountName);
       this.imapClientCreatedAt.delete(accountName);
       try {

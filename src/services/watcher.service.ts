@@ -13,6 +13,7 @@
 import { ImapFlow } from 'imapflow';
 import { mcpLog } from '../logging.js';
 import type { AccountConfig, EmailMeta, WatcherConfig } from '../types/index.js';
+import { BULK_HEADER_FIELDS } from '../utils/bulk-headers.js';
 import eventBus from './event-bus.js';
 import { messageToEmailMeta } from './imap.service.js';
 import type OAuthService from './oauth.service.js';
@@ -271,6 +272,7 @@ export default class WatcherService {
           envelope: true,
           flags: true,
           bodyStructure: true,
+          headers: BULK_HEADER_FIELDS,
         },
         // Third arg is what makes `searchRange` a UID range. The `uid` in the
         // query above only asks for the UID to be included in the response.
