@@ -131,7 +131,8 @@ describe('http loopback token', () => {
       expect(withAuth.status).not.toBe(401);
 
       // File mode 0o600
-      const tokenPath = path.join(sandbox!, 'config', 'email-mcp', 'http-token');
+      if (sandbox === undefined) throw new Error('test sandbox missing');
+      const tokenPath = path.join(sandbox, 'config', 'email-mcp', 'http-token');
       const stat = await fs.stat(tokenPath);
       expect(stat.mode & 0o777).toBe(0o600);
 

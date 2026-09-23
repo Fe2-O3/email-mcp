@@ -62,7 +62,9 @@ async function keychainStatus(): Promise<void> {
   for (const acct of accounts) {
     let storage: string;
     if (isKeychainSentinel(acct.password)) {
-      const keychainName = acct.password!.slice('use_keychain:'.length);
+      const pwd = acct.password;
+      if (pwd === undefined) continue; // unreachable: sentinel check fails on undefined
+      const keychainName = pwd.slice('use_keychain:'.length);
       // Verify it actually exists in keychain
       const found = await keychainGet(keychainName);
       storage = found ? 'Keychain (OK)' : 'Keychain (MISSING)';
@@ -134,7 +136,9 @@ async function keychainMigrate(): Promise<void> {
 
   for (const acct of needsMigration) {
     try {
-      await keychainSet(acct.name, acct.password!);
+      const pwd = acct.password;
+      if (!pwd || isKeychainSentinel(pwd)) continue;
+      await keychainSet(acct.name, pwd);
       acct.password = makeKeychainSentinel(acct.name);
       migrated++;
     } catch (err) {

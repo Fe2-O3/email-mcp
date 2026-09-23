@@ -297,7 +297,9 @@ async function resolveKeychainPasswords(accounts: AccountConfig[]): Promise<void
   for (const account of accounts) {
     if (!isKeychainSentinel(account.password)) continue;
 
-    const keychainAccount = keychainSentinelAccount(account.password!);
+    const pwd = account.password;
+    if (pwd === undefined) continue; // unreachable: sentinel check fails on undefined
+    const keychainAccount = keychainSentinelAccount(pwd);
     const resolved = await keychainGet(keychainAccount);
 
     if (resolved) {

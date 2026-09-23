@@ -53,15 +53,24 @@ describe('webhook DNS pinning', () => {
     // server's address and verify the dispatcher uses THAT pin, not a fresh
     // hostile answer.
     const originalRequest = http.request.bind(http);
+    type LookupFn = (
+      hostname: string,
+      options: unknown,
+      cb: (err: unknown, result: unknown) => void,
+    ) => void;
     const spy = vi
       .spyOn(http, 'request')
       .mockImplementation(
-        (url: string | URL, opts: any, cb?: (res: http.IncomingMessage) => void) => {
+        (
+          url: string | URL,
+          opts?: http.RequestOptions,
+          cb?: (res: http.IncomingMessage) => void,
+        ) => {
           // Capture what lookup would return
-          if (opts && opts.lookup) {
-            const lookup = opts.lookup;
-            lookup('rebind.example.invalid', { all: false }, (_err: unknown, addr: string) => {
-              seenAddresses.push(addr);
+          const lookup = opts?.lookup as unknown as LookupFn | undefined;
+          if (lookup) {
+            lookup('rebind.example.invalid', { all: false }, (_err: unknown, addr: unknown) => {
+              seenAddresses.push(addr as string);
             });
             // Also test the all:true path
             lookup('rebind.example.invalid', { all: true }, (_err: unknown, addrs: unknown) => {
@@ -70,7 +79,7 @@ describe('webhook DNS pinning', () => {
             });
           }
           // Use real request for the rest, but with our pinned lookup
-          return originalRequest(url as string, opts, cb as never);
+          return originalRequest(url as string, opts as never, cb as never);
         },
       );
 
