@@ -471,6 +471,61 @@ export default class CacheStore {
     });
   }
 
+  /**
+   * Delete messages older than a cutoff (epoch milliseconds on internal_date).
+   *
+   * Enforces the `window_days` mirror cap: without it the sync engine fetches
+   * `1:*` forever and the local mirror grows without bound.
+   *
+   * @returns how many messages were discarded.
+   */
+  pruneOlderThan(account: string, mailbox: string, uidValidity: string, cutoffMs: number): number {
+    return this.transaction(() => {
+      const { changes } = this.db
+        .prepare(`
+          DELETE FROM message
+          WHERE account = ? AND mailbox = ? AND uid_validity = ? AND internal_date < ?
+        `)
+        .run(account, mailbox, uidValidity, cutoffMs);
+
+      return Number(changes);
+    });
+  }
+
+  /**
+   * Delete the oldest messages first, across every mailbox.
+   *
+   * Enforces the `max_size_mb` backstop. Oldest-first keeps the mirror useful
+   * for recent mail while the budget holds, and a bounded chunk per call keeps
+   * any single sync from stalling on a huge delete.
+   *
+   * @returns how many messages were discarded.
+   */
+  pruneOldest(limit: number): number {
+    return this.transaction(() => {
+      const { changes } = this.db
+        .prepare(`
+          DELETE FROM message WHERE rowid IN (
+            SELECT rowid FROM message ORDER BY internal_date ASC LIMIT ?
+          )
+        `)
+        .run(limit);
+
+      return Number(changes);
+    });
+  }
+
+  /**
+   * Reclaim freed pages so `sizeBytes()` reflects the prune.
+   *
+   * SQLite keeps deleted rows as freelist pages, which `page_count` still
+   * counts — without this the size guard would never observe its own work.
+   * Called only when a sync actually discarded messages.
+   */
+  vacuum(): void {
+    this.db.exec('VACUUM');
+  }
+
   // -------------------------------------------------------------------------
   // Mailbox state
   // -------------------------------------------------------------------------

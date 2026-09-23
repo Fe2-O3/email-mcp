@@ -355,6 +355,73 @@ describe('SyncEngine', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Retention caps (window_days / max_size_mb)
+  // -------------------------------------------------------------------------
+
+  describe('retention caps', () => {
+    function buildWithRetention(retention: { windowDays?: number; maxSizeMb?: number }) {
+      client = createMockClient();
+      return new SyncEngine(createConnections(client), store, retention);
+    }
+
+    it('drops mail older than window_days after a sync', async () => {
+      engine = buildWithRetention({ windowDays: 90 });
+      client.fetch.mockImplementation(
+        messagesFrom({ uid: 1, internalDate: new Date('2020-01-01') }),
+      );
+      client.search.mockResolvedValue([1]);
+      client.mailbox.exists = 1;
+
+      const result = await engine.syncMailbox('work', 'INBOX');
+
+      expect(result.ok).toBe(true);
+      expect(result.pruned).toBe(1);
+      expect(store.getMessage('work', 'INBOX', 1, '100')).toBeUndefined();
+    });
+
+    it('keeps recent mail inside the window', async () => {
+      engine = buildWithRetention({ windowDays: 90 });
+      client.fetch.mockImplementation(messagesFrom({ uid: 1, internalDate: new Date() }));
+      client.search.mockResolvedValue([1]);
+      client.mailbox.exists = 1;
+
+      const result = await engine.syncMailbox('work', 'INBOX');
+
+      expect(result.pruned).toBe(0);
+      expect(store.getMessage('work', 'INBOX', 1, '100')).toBeDefined();
+    });
+
+    it('prunes oldest-first when the mirror exceeds max_size_mb', async () => {
+      // A hundredth of a kilobyte: any real database page exceeds it, so the
+      // backstop must fire no matter how small the fixture is.
+      engine = buildWithRetention({ maxSizeMb: 0.0001 });
+      client.fetch.mockImplementation(messagesFrom({ uid: 1 }, { uid: 2 }));
+      client.search.mockResolvedValue([1, 2]);
+      client.mailbox.exists = 2;
+
+      const result = await engine.syncMailbox('work', 'INBOX');
+
+      expect(result.ok).toBe(true);
+      expect(result.pruned).toBeGreaterThan(0);
+      expect(store.countMessages('work', 'INBOX')).toBe(0);
+    });
+
+    it('applies no caps when none are configured', async () => {
+      engine = build();
+      client.fetch.mockImplementation(
+        messagesFrom({ uid: 1, internalDate: new Date('2020-01-01') }),
+      );
+      client.search.mockResolvedValue([1]);
+      client.mailbox.exists = 1;
+
+      const result = await engine.syncMailbox('work', 'INBOX');
+
+      expect(result.pruned).toBe(0);
+      expect(store.getMessage('work', 'INBOX', 1, '100')).toBeDefined();
+    });
+  });
+
   describe('resilience', () => {
     it('leaves existing rows in place when a sync fails', async () => {
       engine = build();

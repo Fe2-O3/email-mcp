@@ -74,7 +74,10 @@ export async function buildServices(): Promise<AppServices> {
   if (config.settings.cache.enabled) {
     try {
       cacheStore = new CacheStore(CACHE_DB);
-      syncEngine = new SyncEngine(connections, cacheStore);
+      syncEngine = new SyncEngine(connections, cacheStore, {
+        windowDays: config.settings.cache.windowDays,
+        maxSizeMb: config.settings.cache.maxSizeMb,
+      });
     } catch (err) {
       cacheStore = undefined;
       syncEngine = undefined;

@@ -50,6 +50,8 @@ export interface SyncResult {
   stored: number;
   /** Messages removed because the server no longer lists them. */
   removed: number;
+  /** Messages discarded by the local size/age caps (never server deletions). */
+  pruned: number;
   /** True when the mailbox was purged and rebuilt from scratch. */
   epochReset: boolean;
   error?: string;
@@ -130,6 +132,14 @@ function toCachedMessage(
 // Engine
 // ---------------------------------------------------------------------------
 
+/** Local retention caps, mirroring CacheConfig. Zero or negative disables a cap. */
+export interface SyncRetention {
+  /** Mirror only mail newer than this many days (0 = no limit). */
+  windowDays?: number;
+  /** Backstop on mirror size in megabytes. */
+  maxSizeMb?: number;
+}
+
 export default class SyncEngine {
   private tiers = new Map<string, SyncTier>();
 
@@ -152,6 +162,7 @@ export default class SyncEngine {
   constructor(
     private connections: IConnectionManager,
     private store: CacheStore,
+    private retention: SyncRetention = {},
   ) {
     this.onReconnect = ({ account }) => {
       this.tiers.delete(account);
@@ -261,6 +272,7 @@ export default class SyncEngine {
       mailbox,
       stored: 0,
       removed: 0,
+      pruned: 0,
       epochReset: false,
     };
 
@@ -321,6 +333,8 @@ export default class SyncEngine {
           lastSyncedAt: Date.now(),
         });
 
+        result.pruned = this.enforceRetention(account, mailbox, uidValidity);
+
         result.ok = true;
       } finally {
         lock.release();
@@ -331,6 +345,45 @@ export default class SyncEngine {
     }
 
     return result;
+  }
+
+  /**
+   * Enforce the local retention caps after a successful sync.
+   *
+   * Pruning never fails the sync: the mirror just stays slightly over budget
+   * until the next run, which beats losing a good sync to a maintenance error.
+   * VACUUM runs only when something was actually discarded, so steady-state
+   * syncs pay nothing for the caps.
+   *
+   * @returns how many messages were discarded.
+   */
+  private enforceRetention(account: string, mailbox: string, uidValidity: string): number {
+    let pruned = 0;
+
+    try {
+      const windowDays = this.retention.windowDays ?? 0;
+      if (windowDays > 0) {
+        const cutoff = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+        pruned += this.store.pruneOlderThan(account, mailbox, uidValidity, cutoff);
+      }
+
+      const maxSizeMb = this.retention.maxSizeMb ?? 0;
+      if (maxSizeMb > 0 && this.store.sizeBytes() > maxSizeMb * 1024 * 1024) {
+        // One bounded chunk per sync; a hugely over-budget mirror converges
+        // over successive syncs instead of stalling one of them.
+        pruned += this.store.pruneOldest(2000);
+      }
+
+      if (pruned > 0) this.store.vacuum();
+    } catch (err) {
+      void mcpLog(
+        'warning',
+        'cache',
+        `Retention pass skipped for ${account}/${mailbox}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return pruned;
   }
 
   /**
