@@ -4,8 +4,8 @@
 
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
 [![MCP SDK v2](https://img.shields.io/badge/MCP-SDK%20v2-8B5CF6?style=flat-square)](https://modelcontextprotocol.io)
-[![Node.js 22+](https://img.shields.io/badge/Node.js-22+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 
 A hardened fork of [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) with **75 commits** of fixes, security hardening, and new features. Built on **MCP TypeScript SDK v2** (spec revision 2026-07-28).
 
@@ -58,6 +58,12 @@ The wizard auto-detects your email provider (Gmail, Outlook, Yahoo, iCloud, Host
 ```bash
 node dist/main.js test
 ```
+
+### 3b. If it fails, check these three first
+
+* **Setup says invalid file:** open the path from `node dist/main.js config path`, fix the named line, run `test` again.
+* **Search looks wrong:** `list_emails` and `search_emails` sort by date now. Pass `sort: uid` only when you need old order.
+* **Send looks lost:** sent mail files into Sent by itself. Check Sent for the same message ID before you resend.
 
 ### 4. Connect your AI client
 
@@ -180,6 +186,17 @@ Every fix links to the upstream issue it resolves.
 | [#96](https://github.com/codefuturist/email-mcp/issues/96) | Non-ASCII characters in save_draft subject not RFC 2047 encoded | Build drafts via MailComposer to encode headers and body |
 | [#79](https://github.com/codefuturist/email-mcp/issues/79) | read_only does not gate background services | Keep calendar writes behind readOnly gate |
 | [#55](https://github.com/codefuturist/email-mcp/issues/55) | Memory leak in long-running process (OOM after 6 days) | Connection rotation (30min) + cache eviction (5min TTL) |
+| — | `list_emails` / `search_emails` rejected every row by output schema | Include `messageId` in list schema and lock schema to domain type |
+| — | Broken setup file reported as "no configuration found" | Report the file as invalid with the reason instead of starting first-time setup |
+| — | IMAP STARTTLS setting never reached the client; plain servers could not be set up | Apply STARTTLS to IMAP and offer TLS, STARTTLS, and plain as three choices |
+| — | Watcher never signed in OAuth2 accounts so Gmail/Microsoft watch silently failed | Sign the watcher in through the OAuth service |
+| — | `send_draft` dropped every hidden copy recipient | Send hidden copy recipients when sending a saved draft |
+| — | Same-name attachments overwrote each other and resolved to the first part | Save by occurrence, keep both files, and report failed saves |
+| — | `reply_email` ignored Reply-To | Reply to Reply-To when present |
+| — | Calendar duplicate check matched title alone; failed checks created doubles | Require same start time or invite ID and refuse to add when the check fails |
+| — | Calendar lists broke on quotes; a timeout looked like an empty calendar | Escape list output and throw timeouts with the fix |
+| — | Health showed capability pairs; quota always showed as missing | Read capability names and report quota in MB from bytes |
+| — | Retry guard saved the attempt before sending, blocking the real retry | Save the retry record only after success; `allow_duplicate` overrides |
 
 ### Security Hardening
 
@@ -195,6 +212,7 @@ Every fix links to the upstream issue it resolves.
 | **Webhook dispatch** | Pin webhook dispatch to validated address; resolve and range-check destinations |
 | **HTTP security** | Require a token even on loopback; bound request bodies |
 | **Draft headers** | Sanitize draft headers and harden remaining services |
+| **Keychain calls** | Run only the system keychain tool at its fixed path |
 | **Security reporting** | Private vulnerability reporting enabled via GitHub Security Advisories |
 
 ### New Features
@@ -215,6 +233,11 @@ Every fix links to the upstream issue it resolves.
 | **Connection rotation** | IMAP connections rotate every 30 minutes to prevent buffer accumulation |
 | **Cache eviction** | Label strategy caches evicted after 5 minutes to prevent unbounded growth |
 | **password_command** | Resolve passwords via external command (1Password, Bitwarden, pass, Keychain) |
+| **Bulk mail sorting** | Flag bulk mail from headers so triage can skip it fast |
+| **Three setup modes** | Pick TLS, STARTTLS, or plain per server in the setup wizard |
+| **Clear setup errors** | A broken setup file names the problem instead of restarting setup |
+| **OAuth watching** | Watch Gmail and Microsoft accounts through sign-in, not passwords |
+| **Clear attachment errors** | Failed saves name the file and the reason instead of going quiet |
 | **Stats resource fix** | Use STATUS + SEARCH instead of full envelope fetch for cheap mailbox counters |
 | **find_email_folder perf** | Search likely folders first (INBOX, Sent, Drafts) and stop at first match |
 
