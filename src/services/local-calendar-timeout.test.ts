@@ -91,4 +91,31 @@ describe('list_events timeout handling', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ id: '1', title: 'Standup' });
   });
+
+  it('addresses one calendar directly when calendar_name is given', async () => {
+    const service = new LocalCalendarService();
+    await service.listEvents({ calendarName: 'Work' });
+
+    const script = (behavior.calls[0]?.[1] as string[] | undefined)?.[1] ?? '';
+    expect(script).not.toContain('repeat with c in calendars');
+    expect(script).toContain('tell calendar "Work"');
+  });
+
+  it('keeps looping all calendars when no calendar is named', async () => {
+    const service = new LocalCalendarService();
+    await service.listEvents({});
+
+    const script = (behavior.calls[0]?.[1] as string[] | undefined)?.[1] ?? '';
+    expect(script).toContain('repeat with c in calendars');
+  });
+
+  it('keeps title and limit filters on the direct path', async () => {
+    const service = new LocalCalendarService();
+    await service.listEvents({ calendarName: 'Work', title: 'Standup', limit: 5 });
+
+    const script = (behavior.calls[0]?.[1] as string[] | undefined)?.[1] ?? '';
+    expect(script).toContain('tell calendar "Work"');
+    expect(script).toContain('set titleFilter to "Standup"');
+    expect(script).toContain('set maxResults to 5');
+  });
 });

@@ -524,7 +524,30 @@ async function listEventsMacOS(opts: ListEventsOptions): Promise<CalendarEventSu
   const fromDate = opts.from ? new Date(opts.from) : defaultFrom;
   const toDate = opts.to ? new Date(opts.to) : defaultTo;
 
-  const script = `
+  interface ListEventsScriptOptions {
+    limit: number;
+    /** Already escapeAS-escaped title substring, '' when unfiltered. */
+    titleFilter: string;
+    /** Already escapeAS-escaped calendar name, '' when unfiltered. */
+    calFilter: string;
+    fromDate: Date;
+    toDate: Date;
+  }
+
+  /**
+   * Build the osascript source for list_events.
+   *
+   * When a calendar name is given the query addresses that calendar directly
+   * (`tell calendar "Name"`) instead of looping over every calendar. The loop
+   * form makes Calendar.app evaluate the date predicate once per calendar,
+   * which is what pushes large setups past the query timeout.
+   *
+   * @internal Script shape is covered by execFile-capture tests.
+   */
+  function buildListEventsScript(opts: ListEventsScriptOptions): string {
+    const { limit, titleFilter, calFilter, fromDate, toDate } = opts;
+
+    const header = `
 set fromDate to current date
 ${dateToAppleScriptLines('fromDate', fromDate).slice(1).join('\n')}
 
@@ -536,14 +559,11 @@ set resultCount to 0
 set maxResults to ${limit}
 set titleFilter to "${titleFilter}"
 set calFilter to "${calFilter}"
+`;
 
-tell application "Calendar"
-  repeat with c in calendars
-    if resultCount ≥ maxResults then exit repeat
-    set calName to name of c
-    if calFilter is "" or calName is calFilter then
-      try
-        set evList to (every event of c whose start date ≥ fromDate and start date ≤ toDate)
+    // Shared row emission: identical in both query shapes so the JSON output
+    // never drifts between them. AppleScript ignores the indentation.
+    const emitRows = `
         repeat with ev in evList
           if resultCount ≥ maxResults then exit repeat
           set evTitle to summary of ev
@@ -571,12 +591,36 @@ tell application "Calendar"
             set jsonResult to jsonResult & "{\\"id\\":\\"" & my jsonEscape(evId) & "\\",\\"title\\":\\"" & my jsonEscape(evTitle) & "\\",\\"start\\":\\"" & (evStart as text) & "\\",\\"end\\":\\"" & (evEnd as text) & "\\",\\"location\\":\\"" & my jsonEscape(evLoc) & "\\",\\"calendar\\":\\"" & my jsonEscape(calName) & "\\"}"
             set resultCount to resultCount + 1
           end if
-        end repeat
+        end repeat`;
+
+    const loopBody = `
+tell application "Calendar"
+  repeat with c in calendars
+    if resultCount ≥ maxResults then exit repeat
+    set calName to name of c
+    if calFilter is "" or calName is calFilter then
+      try
+        set evList to (every event of c whose start date ≥ fromDate and start date ≤ toDate)
+${emitRows}
       end try
     end if
   end repeat
 end tell
+`;
 
+    const directBody = `
+tell application "Calendar"
+  tell calendar "${calFilter}"
+    set calName to "${calFilter}"
+    try
+      set evList to (every event whose start date ≥ fromDate and start date ≤ toDate)
+${emitRows}
+    end try
+  end tell
+end tell
+`;
+
+    const footer = `
 set jsonResult to jsonResult & "]"
 return jsonResult
 on jsonEscape(s)
@@ -604,6 +648,11 @@ on jsonEscape(s)
   return s
 end jsonEscape
 `;
+
+    return header + (calFilter !== '' ? directBody : loopBody) + footer;
+  }
+
+  const script = buildListEventsScript({ limit, titleFilter, calFilter, fromDate, toDate });
 
   try {
     const { stdout } = await execFile('osascript', ['-e', script], {
