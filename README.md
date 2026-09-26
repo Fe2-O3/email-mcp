@@ -7,7 +7,7 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 
-A hardened fork of [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) with **75 commits** of fixes, security hardening, and new features. Built on **MCP TypeScript SDK v2** (spec revision 2026-07-28).
+A hardened fork of [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) with **77 commits** of fixes, security hardening, and new features. Built on **MCP TypeScript SDK v2** (spec revision 2026-07-28).
 
 **49 tools. 7 prompts. 6 resources. One server.**
 
@@ -31,7 +31,7 @@ The upstream email-mcp is a great project with a comprehensive feature set. But 
 | **Private IP SSRF** | ❌ | ✅ Blocked |
 | **Keychain support** | ❌ Plain text | ✅ macOS Keychain |
 
-**75 commits ahead of upstream. Every open bug issue resolved.**
+**77 commits ahead of upstream. Every open bug issue resolved.**
 
 ---
 
@@ -477,7 +477,6 @@ This fork incorporates fixes and features from the following upstream contributo
 ### Issue Reporters
 
 Thanks to everyone who filed issues that identified bugs fixed in this fork: [#12](https://github.com/codefuturist/email-mcp/issues/12), [#20](https://github.com/codefuturist/email-mcp/issues/20), [#45](https://github.com/codefuturist/email-mcp/issues/45), [#52](https://github.com/codefuturist/email-mcp/issues/52), [#55](https://github.com/codefuturist/email-mcp/issues/55), [#57](https://github.com/codefuturist/email-mcp/issues/57), [#58](https://github.com/codefuturist/email-mcp/issues/58), [#59](https://github.com/codefuturist/email-mcp/issues/59), [#60](https://github.com/codefuturist/email-mcp/issues/60), [#62](https://github.com/codefuturist/email-mcp/issues/62), [#66](https://github.com/codefuturist/email-mcp/issues/66), [#71](https://github.com/codefuturist/email-mcp/issues/71), [#79](https://github.com/codefuturist/email-mcp/issues/79), [#91](https://github.com/codefuturist/email-mcp/issues/91), [#92](https://github.com/codefuturist/email-mcp/issues/92), [#95](https://github.com/codefuturist/email-mcp/issues/95), [#96](https://github.com/codefuturist/email-mcp/issues/96).
-
 
 ---
 
