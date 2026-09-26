@@ -7,7 +7,7 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 
-A hardened fork of [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) with **77 commits** of fixes, security hardening, and new features. Built on **MCP TypeScript SDK v2** (spec revision 2026-07-28).
+A hardened fork of [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) with **74 commits** of fixes, security hardening, and new features. Built on **MCP TypeScript SDK v2** (spec revision 2026-07-28).
 
 **49 tools. 7 prompts. 6 resources. One server.**
 
@@ -31,7 +31,7 @@ The upstream email-mcp is a great project with a comprehensive feature set. But 
 | **Private IP SSRF** | ❌ | ✅ Blocked |
 | **Keychain support** | ❌ Plain text | ✅ macOS Keychain |
 
-**77 commits ahead of upstream. Every open bug issue resolved.**
+**74 commits ahead of upstream. Every open bug issue resolved.**
 
 ---
 
