@@ -456,6 +456,35 @@ export default class ImapService {
   }
 
   /**
+   * Fetch a whole-match UID set in bounded chunks, streamed as one sequence.
+   *
+   * Hostinger rejects a UID FETCH whose argument token is too long: joining
+   * every UID of a 25k-message mailbox makes a ~142 KB command, the server
+   * answers `BAD: Too long argument`, and the caller sees the useless
+   * "Command failed" instead of results. Chunking keeps each command far
+   * below any plausible line limit while callers consume a flat stream, so
+   * single-fetch call semantics (for-await over messages) stay unchanged.
+   */
+  private static async *fetchUidChunks(
+    client: ImapFlow,
+    uids: number[],
+    query: Parameters<ImapFlow['fetch']>[1],
+    options: Parameters<ImapFlow['fetch']>[2],
+  ): AsyncGenerator<unknown> {
+    // ~400 five-digit UIDs plus commas ≈ 2.4 KB per command — orders of
+    // magnitude under the observed 142 KB failure, and large enough that a
+    // 65k-message date sort stays ~160 round trips.
+    const CHUNK = 400;
+    for (let i = 0; i < uids.length; i += CHUNK) {
+      const range = uids.slice(i, i + CHUNK).join(',');
+      // eslint-disable-next-line no-restricted-syntax
+      for await (const msg of client.fetch(range, query, options)) {
+        yield msg;
+      }
+    }
+  }
+
+  /**
    * Lock a caller-supplied mailbox path.
    *
    * Trims and rejects the IMAP wildcards `*` and `%` first. Prefer this over
@@ -604,8 +633,9 @@ export default class ImapService {
       if (options.hasAttachment !== undefined && uids.length > 0) {
         const filteredUids: number[] = [];
         // eslint-disable-next-line no-restricted-syntax
-        for await (const msg of client.fetch(
-          uids.join(','),
+        for await (const msg of ImapService.fetchUidChunks(
+          client,
+          uids,
           { uid: true, bodyStructure: true },
           { uid: true },
         )) {
@@ -637,8 +667,9 @@ export default class ImapService {
       if (sort === 'date') {
         const uidDates = new Map<number, number>();
         // eslint-disable-next-line no-restricted-syntax
-        for await (const msg of client.fetch(
-          uids.join(','),
+        for await (const msg of ImapService.fetchUidChunks(
+          client,
+          uids,
           { uid: true, internalDate: true },
           { uid: true },
         )) {
@@ -872,11 +903,11 @@ export default class ImapService {
       // Post-filter for has_attachment if requested (IMAP doesn't have native support)
       if (options.hasAttachment !== undefined && uids.length > 0) {
         const filteredUids: number[] = [];
-        const checkRange = uids.join(',');
 
         // eslint-disable-next-line no-restricted-syntax
-        for await (const msg of client.fetch(
-          checkRange,
+        for await (const msg of ImapService.fetchUidChunks(
+          client,
+          uids,
           { uid: true, bodyStructure: true },
           { uid: true },
         )) {
@@ -905,8 +936,9 @@ export default class ImapService {
       if ((options.sort ?? 'date') === 'date') {
         const uidDates = new Map<number, number>();
         // eslint-disable-next-line no-restricted-syntax
-        for await (const msg of client.fetch(
-          uids.join(','),
+        for await (const msg of ImapService.fetchUidChunks(
+          client,
+          uids,
           { uid: true, internalDate: true },
           { uid: true },
         )) {
@@ -2220,7 +2252,6 @@ export default class ImapService {
         };
       }
 
-      const range = uids.join(',');
       const senderMap = new Map<string, { email: string; name?: string; count: number }>();
       const dailyMap = new Map<string, number>();
       let unread = 0;
@@ -2228,8 +2259,9 @@ export default class ImapService {
       let withAttachments = 0;
 
       // eslint-disable-next-line no-restricted-syntax
-      for await (const msg of client.fetch(
-        range,
+      for await (const msg of ImapService.fetchUidChunks(
+        client,
+        uids,
         {
           uid: true,
           envelope: true,
