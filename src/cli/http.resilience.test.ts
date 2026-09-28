@@ -35,9 +35,26 @@ afterEach(async () => {
   }
 });
 
+/** Ask the OS for a port nobody holds, instead of guessing one that may be taken. */
+function reservePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const addr = probe.address();
+      if (typeof addr !== 'object' || addr === null) {
+        probe.close(() => reject(new Error('could not reserve a port')));
+        return;
+      }
+      const chosen = addr.port;
+      probe.close(() => resolve(chosen));
+    });
+  });
+}
+
 async function startServer(): Promise<{ port: number; token: string }> {
   sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'email-mcp-http-resilience-'));
-  port = 20_000 + Math.floor(Math.random() * 20_000);
+  port = await reservePort();
   let token = '';
 
   child = spawn(process.execPath, ['--import', 'tsx', ENTRY, 'http', '--port', String(port)], {
