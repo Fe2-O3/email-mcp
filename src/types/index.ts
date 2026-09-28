@@ -152,6 +152,8 @@ export interface CacheConfig {
 export interface AppConfig {
   settings: {
     rateLimit: number;
+    /** Seconds without an MCP request before the stdio server exits; 0 disables. */
+    idleExit: number;
     readOnly: boolean;
     cache: CacheConfig;
     watcher: WatcherConfig;

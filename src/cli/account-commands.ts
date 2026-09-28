@@ -534,6 +534,7 @@ async function addAccount(): Promise<void> {
     : {
         settings: {
           rate_limit: 10,
+          idle_exit: 1800,
           read_only: false,
           cache: {
             enabled: true,

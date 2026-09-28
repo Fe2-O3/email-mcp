@@ -115,6 +115,26 @@ async function waitForExit(proc: ChildProcessWithoutNullStreams, ms: number): Pr
   });
 }
 
+/**
+ * Environment for the sandboxed child: confines every read and write to the
+ * sandbox (so the test cannot see a developer's real config or touch a real
+ * scheduled-mail queue) and satisfies config validation. No tool is invoked
+ * and the watcher is off, so no socket is ever opened to these hosts.
+ */
+function sandboxEnv(dir: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    XDG_CONFIG_HOME: path.join(dir, 'config'),
+    XDG_DATA_HOME: path.join(dir, 'data'),
+    XDG_STATE_HOME: path.join(dir, 'state'),
+    MCP_EMAIL_ADDRESS: 'test@example.invalid',
+    MCP_EMAIL_PASSWORD: 'unused',
+    MCP_EMAIL_IMAP_HOST: 'imap.example.invalid',
+    MCP_EMAIL_SMTP_HOST: 'smtp.example.invalid',
+    MCP_EMAIL_WATCHER_ENABLED: 'false',
+  };
+}
+
 describe('stdio server lifecycle', () => {
   it(
     'exits when the client closes stdin',
@@ -123,27 +143,37 @@ describe('stdio server lifecycle', () => {
 
       child = spawn(process.execPath, ['--import', 'tsx', ENTRY, 'stdio'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          // Confine every read and write to the sandbox, so the test cannot see
-          // a developer's real config or touch a real scheduled-mail queue.
-          XDG_CONFIG_HOME: path.join(sandbox, 'config'),
-          XDG_DATA_HOME: path.join(sandbox, 'data'),
-          XDG_STATE_HOME: path.join(sandbox, 'state'),
-          // Only satisfy config validation. No tool is invoked and the watcher is
-          // off, so no socket is ever opened to these hosts.
-          MCP_EMAIL_ADDRESS: 'test@example.invalid',
-          MCP_EMAIL_PASSWORD: 'unused',
-          MCP_EMAIL_IMAP_HOST: 'imap.example.invalid',
-          MCP_EMAIL_SMTP_HOST: 'smtp.example.invalid',
-          MCP_EMAIL_WATCHER_ENABLED: 'false',
-        },
+        env: sandboxEnv(sandbox),
       });
 
       await handshakeAndWaitForReady(child);
 
       child.stdin.end();
 
+      await expect(waitForExit(child, LIFECYCLE_BUDGET_MS)).resolves.toBe(0);
+    },
+    LIFECYCLE_BUDGET_MS * 2,
+  );
+
+  it(
+    'exits on its own after idle_exit seconds with no client requests',
+    async () => {
+      sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'email-mcp-lifecycle-'));
+
+      child = spawn(process.execPath, ['--import', 'tsx', ENTRY, 'stdio'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...sandboxEnv(sandbox),
+          // Shrink the default 1800s to something a test can observe.
+          MCP_EMAIL_IDLE_EXIT: '2',
+        },
+      });
+
+      await handshakeAndWaitForReady(child);
+
+      // stdin stays open on purpose: the idle timer is the only thing that can
+      // end this connection, so an exit proves the valve fires (and that it
+      // takes the graceful path — exit code 0, same as client-driven EOF).
       await expect(waitForExit(child, LIFECYCLE_BUDGET_MS)).resolves.toBe(0);
     },
     LIFECYCLE_BUDGET_MS * 2,

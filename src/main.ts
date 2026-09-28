@@ -11,7 +11,7 @@
  *   scheduler Email scheduling management
  */
 
-import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import type { BackgroundHandle } from './app.js';
 import { buildServer, buildServices, startBackgroundServices } from './app.js';
@@ -76,6 +76,37 @@ async function runServer(): Promise<void> {
   let background: BackgroundHandle | undefined;
   let started = false;
 
+  // Idle exit — settings.idle_exit seconds without an inbound MCP message and
+  // the process takes itself down, so a host that keeps a session open forever
+  // (resumed chats, forgotten terminals) does not pin a child for days. EOF
+  // above stays the primary lifecycle signal; this is the backstop for hosts
+  // that never close the pipe. 0 disables.
+  const idleExitSec = services.config.settings.idleExit;
+  let lastActivity = Date.now();
+
+  // Tap the transport's message handler through an accessor rather than a
+  // one-time wrap: serveStdio assigns `transport.onmessage` itself, and an
+  // accessor keeps the tap installed even if the handler is reassigned later
+  // (era pinning routes through the queue, but a future SDK could rewire it).
+  // The getter rebuilds the wrapper per call so `lastActivity` is stamped at
+  // delivery time, not at assignment time.
+  const transport = new StdioServerTransport();
+  type TransportOnMessage = NonNullable<StdioServerTransport['onmessage']>;
+  let deliver: TransportOnMessage | undefined;
+  Object.defineProperty(transport, 'onmessage', {
+    configurable: true,
+    get(): TransportOnMessage | undefined {
+      if (!deliver) return undefined;
+      return (message) => {
+        lastActivity = Date.now();
+        deliver?.(message);
+      };
+    },
+    set(next: TransportOnMessage | undefined) {
+      deliver = next;
+    },
+  });
+
   // serveStdio owns the transport: it selects the protocol era from the
   // opening exchange, pins one instance from the factory for the connection,
   // and serves both 2025- and 2026-era clients (legacy shim, default). For
@@ -83,14 +114,17 @@ async function runServer(): Promise<void> {
   // background services the first time the factory builds a server — parity
   // with the old post-`initialized` hook, minus the stateful handshake dance
   // the 2026-07-28 spec removed.
-  const handle = serveStdio(() => {
-    const server = buildServer(services);
-    if (!started) {
-      started = true;
-      background = startBackgroundServices(services, server.server);
-    }
-    return server;
-  });
+  const handle = serveStdio(
+    () => {
+      const server = buildServer(services);
+      if (!started) {
+        started = true;
+        background = startBackgroundServices(services, server.server);
+      }
+      return server;
+    },
+    { transport },
+  );
 
   // Graceful shutdown.
   //
@@ -142,6 +176,27 @@ async function runServer(): Promise<void> {
   process.on('SIGINT', () => requestShutdown('SIGINT'));
   process.on('SIGTERM', () => requestShutdown('SIGTERM'));
   process.on('SIGHUP', () => requestShutdown('SIGHUP'));
+
+  if (idleExitSec > 0) {
+    const idleMs = idleExitSec * 1_000;
+    // Check often enough that short values fire close to their deadline (the
+    // lifecycle test runs at 2s) and rarely enough that a 30-minute default
+    // costs a handful of ticks: at most one tick of overshoot.
+    const timer = setInterval(
+      () => {
+        if (Date.now() - lastActivity < idleMs) return;
+        clearInterval(timer);
+        process.stderr.write(
+          `[email-mcp] no MCP requests for ${idleExitSec}s — exiting (settings.idle_exit = 0 keeps the server running)\n`,
+        );
+        requestShutdown(`idle ${idleExitSec}s`);
+      },
+      Math.max(1_000, Math.min(idleMs, 30_000)),
+    );
+    // Unref'd: the idle valve must never be the handle that keeps the process
+    // alive — the same rule the shutdown grace valve follows above.
+    timer.unref();
+  }
 }
 
 async function main(): Promise<void> {

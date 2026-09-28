@@ -36,6 +36,7 @@ function createConfig(): AppConfig {
   return {
     settings: {
       rateLimit: 10,
+      idleExit: 1800,
       readOnly: false,
       cache: {
         enabled: false,

@@ -44,6 +44,7 @@ function createConfig(readOnly: boolean): AppConfig {
   return {
     settings: {
       rateLimit: 10,
+      idleExit: 1800,
       readOnly,
       cache: {
         enabled: true,

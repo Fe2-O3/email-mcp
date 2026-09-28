@@ -151,6 +151,9 @@ export const CacheConfigSchema = z.object({
 
 export const SettingsSchema = z.object({
   rate_limit: z.number().int().min(1).default(10),
+  // Seconds without an MCP request before the stdio server exits on its own.
+  // 0 disables. The default keeps idle children from outliving their sessions.
+  idle_exit: z.number().int().min(0).max(86_400).default(1800),
   read_only: z.boolean().default(false),
   cache: CacheConfigSchema.default({
     enabled: true,
@@ -189,6 +192,7 @@ export const SettingsSchema = z.object({
 export const AppConfigFileSchema = z.object({
   settings: SettingsSchema.default({
     rate_limit: 10,
+    idle_exit: 1800,
     read_only: false,
     cache: {
       enabled: true,
