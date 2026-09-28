@@ -24,11 +24,14 @@ export const SmtpConfigSchema = z.object({
       max_connections: z.number().int().min(1).default(1),
       max_messages: z.number().int().min(1).default(100),
     })
-    .default({
+    // Factory defaults: a static object here would be one shared instance
+    // across every parse in the process — a mutation on one parsed config
+    // would poison later loads (ported from upstream bf09dcc).
+    .default(() => ({
       enabled: true,
       max_connections: 1,
       max_messages: 100,
-    }),
+    })),
 });
 
 export const OAuth2ConfigSchema = z.object({
@@ -72,7 +75,7 @@ export const AccountConfigSchema = z
 
 export const WatcherConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  folders: z.array(z.string()).default(['INBOX']),
+  folders: z.array(z.string()).default(() => ['INBOX']),
   idle_timeout: z.number().int().min(60).max(1740).default(1740),
 });
 
@@ -101,7 +104,9 @@ export const AlertsConfigSchema = z.object({
   sound: z.boolean().default(false),
   urgency_threshold: z.enum(['urgent', 'high', 'normal', 'low']).default('high'),
   webhook_url: z.string().default(''),
-  webhook_events: z.array(z.enum(['urgent', 'high', 'normal', 'low'])).default(['urgent', 'high']),
+  webhook_events: z
+    .array(z.enum(['urgent', 'high', 'normal', 'low']))
+    .default((): ('urgent' | 'high' | 'normal' | 'low')[] => ['urgent', 'high']),
 });
 
 export const HooksConfigSchema = z.object({
@@ -114,14 +119,16 @@ export const HooksConfigSchema = z.object({
   batch_delay: z.number().int().min(1).max(60).default(5),
   custom_instructions: z.string().optional(),
   system_prompt: z.string().optional(),
-  rules: z.array(HookRuleSchema).default([]),
-  alerts: AlertsConfigSchema.default({
-    desktop: false,
-    sound: false,
-    urgency_threshold: 'high',
-    webhook_url: '',
-    webhook_events: ['urgent', 'high'],
-  }),
+  rules: z.array(HookRuleSchema).default(() => []),
+  alerts: AlertsConfigSchema.default(
+    (): z.infer<typeof AlertsConfigSchema> => ({
+      desktop: false,
+      sound: false,
+      urgency_threshold: 'high',
+      webhook_url: '',
+      webhook_events: ['urgent', 'high'],
+    }),
+  ),
   auto_calendar: z.boolean().default(false),
   calendar_name: z.string().default(''),
   calendar_alarm_minutes: z.number().int().min(0).max(1440).default(15),
@@ -138,7 +145,7 @@ export const HooksConfigSchema = z.object({
 export const CacheConfigSchema = z.object({
   enabled: z.boolean().default(true),
   /** Mailboxes synced proactively. Others are still cached when read. */
-  mailboxes: z.array(z.string()).default(['INBOX']),
+  mailboxes: z.array(z.string()).default(() => ['INBOX']),
   /** How far back to mirror. 0 means no limit. */
   window_days: z.number().int().min(0).default(90),
   /** Newest N messages to prefetch bodies for; the rest cache on read. */
@@ -155,59 +162,21 @@ export const SettingsSchema = z.object({
   // 0 disables. The default keeps idle children from outliving their sessions.
   idle_exit: z.number().int().min(0).max(86_400).default(1800),
   read_only: z.boolean().default(false),
-  cache: CacheConfigSchema.default({
+  cache: CacheConfigSchema.default(() => ({
     enabled: true,
     mailboxes: ['INBOX'],
     window_days: 90,
     body_messages: 500,
     max_size_mb: 500,
     sync_interval: 300,
-  }),
-  watcher: WatcherConfigSchema.default({
+  })),
+  watcher: WatcherConfigSchema.default(() => ({
     enabled: false,
     folders: ['INBOX'],
     idle_timeout: 1740,
-  }),
-  hooks: HooksConfigSchema.default({
-    on_new_email: 'notify',
-    preset: 'priority-focus',
-    auto_label: false,
-    auto_flag: false,
-    batch_delay: 5,
-    rules: [],
-    alerts: {
-      desktop: false,
-      sound: false,
-      urgency_threshold: 'high',
-      webhook_url: '',
-      webhook_events: ['urgent', 'high'],
-    },
-    auto_calendar: false,
-    calendar_name: '',
-    calendar_alarm_minutes: 15,
-    calendar_confirm: true,
-  }),
-});
-
-export const AppConfigFileSchema = z.object({
-  settings: SettingsSchema.default({
-    rate_limit: 10,
-    idle_exit: 1800,
-    read_only: false,
-    cache: {
-      enabled: true,
-      mailboxes: ['INBOX'],
-      window_days: 90,
-      body_messages: 500,
-      max_size_mb: 500,
-      sync_interval: 300,
-    },
-    watcher: {
-      enabled: false,
-      folders: ['INBOX'],
-      idle_timeout: 1740,
-    },
-    hooks: {
+  })),
+  hooks: HooksConfigSchema.default(
+    (): z.infer<typeof HooksConfigSchema> => ({
       on_new_email: 'notify',
       preset: 'priority-focus',
       auto_label: false,
@@ -225,8 +194,50 @@ export const AppConfigFileSchema = z.object({
       calendar_name: '',
       calendar_alarm_minutes: 15,
       calendar_confirm: true,
-    },
-  }),
+    }),
+  ),
+});
+
+export const AppConfigFileSchema = z.object({
+  settings: SettingsSchema.default(
+    (): z.infer<typeof SettingsSchema> => ({
+      rate_limit: 10,
+      idle_exit: 1800,
+      read_only: false,
+      cache: {
+        enabled: true,
+        mailboxes: ['INBOX'],
+        window_days: 90,
+        body_messages: 500,
+        max_size_mb: 500,
+        sync_interval: 300,
+      },
+      watcher: {
+        enabled: false,
+        folders: ['INBOX'],
+        idle_timeout: 1740,
+      },
+      hooks: {
+        on_new_email: 'notify',
+        preset: 'priority-focus',
+        auto_label: false,
+        auto_flag: false,
+        batch_delay: 5,
+        rules: [],
+        alerts: {
+          desktop: false,
+          sound: false,
+          urgency_threshold: 'high',
+          webhook_url: '',
+          webhook_events: ['urgent', 'high'],
+        },
+        auto_calendar: false,
+        calendar_name: '',
+        calendar_alarm_minutes: 15,
+        calendar_confirm: true,
+      },
+    }),
+  ),
   accounts: z.array(AccountConfigSchema).min(1, 'At least one account is required'),
 });
 

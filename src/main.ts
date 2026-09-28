@@ -7,7 +7,7 @@
  *   http      Run as MCP server over Streamable HTTP (networked)
  *   account   Account management (list, add, edit, delete)
  *   test      Test IMAP/SMTP connections
- *   config    Config management (show, path, init)
+ *   config    Config management (show, edit, validate, path, init)
  *   scheduler Email scheduling management
  */
 
@@ -37,7 +37,7 @@ Commands:
   setup       Alias for 'account add'
   test        Test connections for all or a specific account
   install     Register/unregister with MCP clients (Claude, Cursor, …)
-  config      Config management (show, edit, path, init)
+  config      Config management (show, edit, validate, path, init)
   keychain    Password management (migrate, status, remove)
   scheduler   Email scheduling management (check, list, install, uninstall, status)
   notify      Test and diagnose desktop notifications
@@ -59,6 +59,7 @@ Examples:
   email-mcp install remove           # Unregister from MCP clients
   email-mcp config show              # Show config (passwords masked)
   email-mcp config edit              # Edit global settings
+  email-mcp config validate          # Syntax, schema, typo'd keys, consistency
   email-mcp config path              # Print config file path
   email-mcp config init              # Create template config
   email-mcp keychain status          # Show Keychain vs plain text passwords
