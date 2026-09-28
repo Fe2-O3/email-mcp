@@ -28,7 +28,7 @@ class CancelledError extends Error {
   }
 }
 
-function assertNotCancel<T>(value: T | symbol): asserts value is T {
+function assertNotCancel<T>(value: T): asserts value is Exclude<T, symbol> {
   if (isCancel(value)) {
     cancel('Operation cancelled.');
     throw new CancelledError();

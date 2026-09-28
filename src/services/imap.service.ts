@@ -553,8 +553,10 @@ export default class ImapService {
           name: mb.name,
           path: mb.path,
           specialUse: mb.specialUse ?? undefined,
-          totalMessages: status.messages,
-          unseenMessages: status.unseen,
+          // imapflow 2 returns false when the folder can't answer STATUS —
+          // report undefined counts, not a crash (Mailbox documents this).
+          totalMessages: status === false ? undefined : status.messages,
+          unseenMessages: status === false ? undefined : status.unseen,
         };
       }),
     );
@@ -1890,6 +1892,9 @@ export default class ImapService {
             const dl = await client.download(String(parseInt(emailId, 10)), partPath, {
               uid: true,
             });
+            if (!dl.content) {
+              throw new Error(`Failed to download mail part "${partPath}"`);
+            }
             const chunks: Buffer[] = [];
             for await (const c of dl.content)
               chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c as never));
@@ -2367,8 +2372,8 @@ export default class ImapService {
     }
 
     return {
-      total: status.messages ?? 0,
-      unread: status.unseen ?? 0,
+      total: status === false ? 0 : (status.messages ?? 0),
+      unread: status === false ? 0 : (status.unseen ?? 0),
       receivedToday,
     };
   }

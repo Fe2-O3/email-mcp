@@ -8,7 +8,7 @@
  */
 
 import type { ImapFlow } from 'imapflow';
-import type { Transporter } from 'nodemailer';
+import type { TransportConfig, Transporter } from 'nodemailer';
 import nodemailer from 'nodemailer';
 import { mcpLog } from '../logging.js';
 
@@ -191,7 +191,7 @@ export default class ConnectionManager implements IConnectionManager {
   private static buildSmtpTransportOptions(
     account: AccountConfig,
     auth: SmtpAuth,
-  ): nodemailer.TransportOptions {
+  ): TransportConfig {
     const pool = account.smtp.pool ?? {
       enabled: true,
       maxConnections: 1,
@@ -215,7 +215,7 @@ export default class ConnectionManager implements IConnectionManager {
             maxMessages: pool.maxMessages,
           }
         : {}),
-    } as nodemailer.TransportOptions;
+    } as TransportConfig;
   }
 
   async getSmtpTransport(
@@ -344,6 +344,9 @@ export default class ConnectionManager implements IConnectionManager {
           messages: true,
           unseen: true,
         });
+        // imapflow 2 returns false (not a throw) when STATUS is unsupported —
+        // treat it as the INBOX failure it is so the fallback below runs.
+        if (inbox === false) throw new Error('INBOX STATUS unsupported');
         messageCount = inbox.messages ?? 0;
       } catch {
         // INBOX may not exist (e.g. Google Workspace uses "All Mail")
@@ -352,6 +355,7 @@ export default class ConnectionManager implements IConnectionManager {
             const first = await client.status(mailboxes[0].path, {
               messages: true,
             });
+            if (first === false) throw new Error('STATUS unsupported');
             messageCount = first.messages ?? 0;
           } catch {
             /* ignore — connection still works */
