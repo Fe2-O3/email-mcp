@@ -1,82 +1,63 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-O3/email-mcp)) are recorded in this file.
 
-The format follows [Conventional Commits](https://www.conventionalcommits.org/) and is generated with [cocogitto](https://docs.cocogitto.io/).
+- This fork starts its **own version line at 0.1.0** (2026-09-28). The package was previously frozen at the upstream development version `0.3.0`.
+- Everything at or before the fork point (2026-08-21, `7fe8916`) is inherited upstream history. For the original project's releases — v0.1.0 through **v0.5.1** — see the **[codefuturist/email-mcp releases page](https://github.com/codefuturist/email-mcp/releases)** and their changelog.
+- The format loosely follows [Keep a Changelog](https://keepachangelog.com/); commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
 
-<!-- next-header -->
+## [0.1.0] — 2026-09-28
 
-## Unreleased ([3886bac..4e6910c](https://github.com/codefuturist/email-mcp/compare/3886bac..4e6910c))
+First release of the hardened fork: **84 commits** past the fork point, **428 tests** green.
 
-#### ✨ Features
+### Ported from upstream v0.5.1
 
-- **(alerts)** add notification setup diagnostics and AI-configurable alerts - ([34e288a](https://github.com/codefuturist/email-mcp/commit/34e288acb3a3330fd4eca0a583540ec877d9912c))
-- **(alerts)** add urgency-based multi-channel notification system - ([b2425df](https://github.com/codefuturist/email-mcp/commit/b2425df6c917436e056e5cc8002ce684fc898694))
-- **(cli)** add notify command for testing desktop notifications - ([687f7d2](https://github.com/codefuturist/email-mcp/commit/687f7d26449d97d56bd9d94b7e67f3b798b8e13e))
-- **(cli)** add interactive MCP client installation command - ([e2369c7](https://github.com/codefuturist/email-mcp/commit/e2369c7f03df1e506b0bb11e0e5c471a0313ec6b))
-- **(cli)** add interactive account CRUD and config edit commands - ([aaa8af5](https://github.com/codefuturist/email-mcp/commit/aaa8af501e7738cf049bd0b4a29ee74f0dbee3bb))
-- **(hooks)** add customizable presets and static rule matching - ([138c08e](https://github.com/codefuturist/email-mcp/commit/138c08e0708f49e795e036e2245022fe060a0950))
-- **(watcher)** add IMAP IDLE monitoring with AI triage - ([5ed0388](https://github.com/codefuturist/email-mcp/commit/5ed0388ccb0a781220407b3800723bf8191eb2f9))
-- add AI-optimised email tools and context improvements - ([d7b01a4](https://github.com/codefuturist/email-mcp/commit/d7b01a48e57491d68ac605583ede6c1a92b2b70d))
-- add provider-aware label management (ProtonMail/Gmail/IMAP keywords) - ([85609e5](https://github.com/codefuturist/email-mcp/commit/85609e5f181ea3c01ef26b4fe27a69bafb549141))
-- add IMAP move/delete reliability and find_email_folder tool - ([3886bac](https://github.com/codefuturist/email-mcp/commit/3886bacc83eb8b4200f16695468e9029ade32c40))
+- **TLS servername repair for IP-literal IMAP hosts** ([upstream 70d4215](https://github.com/codefuturist/email-mcp/commit/70d4215de07920252f672923cf3cd48aad7a0189)) — imapflow sets `servername = false` for IP-literal hosts, which Node's `tls.connect()` rejects; every IMAP connection to an IP address died before authentication. All three construction sites now route through `createImapClient()`.
+- **`config validate`** ([upstream bf09dcc](https://github.com/codefuturist/email-mcp/commit/bf09dcc1f087279812fe307647bf8e52198becd8)) — syntax, schema, did-you-mean typo detection, and cross-setting consistency checks; exit 1 on errors (CI-friendly). Adapted to this fork's settings sections.
+- **Dependency set aligned with upstream v0.5.1** — imapflow 1.7 → 2.0.8, nodemailer 9 → 10, vitest 4 → 5, zod 4.4 → 4.6, `@clack/prompts` 1.7 → 1.8, MCP SDK/server/node minors, dev-tool bumps.
+- **Factory schema defaults** (same upstream commit as `config validate`) — a static object default was one shared instance across parses; mutating one parsed config poisoned later loads.
 
-#### 🐛 Bug Fixes
+### Fixed — open upstream issues (all still open on the upstream tracker)
 
-- **(cli)** add TTY guard and fix IMAP STARTTLS display - ([d9bca69](https://github.com/codefuturist/email-mcp/commit/d9bca695af07e311ec249379827c175e8dac483b))
-- virtual folder detection and find_email_folder reliability - ([3c44c22](https://github.com/codefuturist/email-mcp/commit/3c44c226e7b3bf2666479e4d5761c8777d8c5e9c))
+| Issue(s) | Fix |
+|---|---|
+| [#12](https://github.com/codefuturist/email-mcp/issues/12) | `download_attachment` gained `savePath` — writes to disk, returns path, size, sha256 |
+| [#20](https://github.com/codefuturist/email-mcp/issues/20) [#92](https://github.com/codefuturist/email-mcp/issues/92) | Sent mail files into Sent via IMAP APPEND after SMTP send |
+| [#45](https://github.com/codefuturist/email-mcp/issues/45) | `forward_email` honours the html flag |
+| [#52](https://github.com/codefuturist/email-mcp/issues/52) | Attachments on forward, send, and draft paths |
+| [#55](https://github.com/codefuturist/email-mcp/issues/55) | Memory leak — connection rotation (30 min) + cache eviction (5 min TTL) |
+| [#57](https://github.com/codefuturist/email-mcp/issues/57) | Error/close handlers on every ImapFlow client (no more process crash) |
+| [#58](https://github.com/codefuturist/email-mcp/issues/58) | GBNF-safe schemas — llama.cpp models no longer fail every call |
+| [#59](https://github.com/codefuturist/email-mcp/issues/59) | `list_emails` / `search_emails` order by date, not UID |
+| [#60](https://github.com/codefuturist/email-mcp/issues/60) | stdio server exits when the client closes stdin (no orphan processes) |
+| [#62](https://github.com/codefuturist/email-mcp/issues/62) | Retried sends identifiable; accidental duplicates refused |
+| [#66](https://github.com/codefuturist/email-mcp/issues/66) [#95](https://github.com/codefuturist/email-mcp/issues/95) | Multipart bodies decoded; richer text preferred over raw MIME |
+| [#71](https://github.com/codefuturist/email-mcp/issues/71) [#91](https://github.com/codefuturist/email-mcp/issues/91) | Search failures on broken IMAP4rev2 servers fail loudly |
+| [#79](https://github.com/codefuturist/email-mcp/issues/79) | `read_only` gates background services and calendar writes |
+| [#96](https://github.com/codefuturist/email-mcp/issues/96) | Draft subjects RFC 2047-encoded via MailComposer |
 
-#### 📚 Documentation
+### Fixed — local finds (no upstream issue)
 
-- update tool count to 42 in README - ([4e6910c](https://github.com/codefuturist/email-mcp/commit/4e6910c04a8dd46efc739079c8e6aa613a7edfaf))
-- add pnpm install and usage instructions - ([13c8d4b](https://github.com/codefuturist/email-mcp/commit/13c8d4bf3006fa4fb5f014eb630006a478082a23))
+- **UID-join argument overflow** — full-set UID fetches chunked at 400 per command; list/search/stats now work on 64,000+ message mailboxes (Hostinger 64k verified)
+- **Login-failure visibility** — IMAP rejections surface `responseText` (auth reason) instead of a bare "Command failed"
+- Output schema drift (`messageId` missing from list schema), broken-config reported as "no configuration found", IMAP STARTTLS never reaching the client, watcher skipping OAuth2 sign-in, `send_draft` dropping Bcc, same-name attachments overwriting, `reply_email` ignoring Reply-To, calendar duplicate-check/timeout/quote bugs, quota reported in wrong units, retry guard saved before send, hooks listener scoping, double reconnect emit, watcher bulk headers, named-calendar query timeout, `tcpa` account credentials
+- **Idle exit** — stdio server exits after `settings.idle_exit` seconds (default 1800, 0 disables) so hosts that never close the pipe can't pin orphans
 
-- - -
-## [v0.2.1](https://github.com/codefuturist/email-mcp/compare/bd6f94d6f0d1f7f4beca5aa8061f2892a40f0ce0..v0.2.1) - 2026-02-20
-#### 🐛 Bug Fixes
-- (**labels**) fix critical parameter swap and multiple label bugs - ([bd6f94d](https://github.com/codefuturist/email-mcp/commit/bd6f94d6f0d1f7f4beca5aa8061f2892a40f0ce0)) - Colin
-- defer post-connect work until MCP handshake completes - ([7847da0](https://github.com/codefuturist/email-mcp/commit/7847da07b4241e73282b2a36a9dd1a362dfb8656)) - Colin
-#### Tests
-- (**integration**) expand plain connection tests to match STARTTLS and SSL coverage - ([8bd3d77](https://github.com/codefuturist/email-mcp/commit/8bd3d7752ca18037ca899899a1e14688b961c0b1)) - Colin
-- (**integration**) add connection mode tests for plain, STARTTLS, and implicit SSL - ([ccbefb7](https://github.com/codefuturist/email-mcp/commit/ccbefb78248f0f08d31c5b227347f286f350c9f9)) - Colin
-- (**integration**) add integration test suite with GreenMail and Testcontainers - ([1cc72fe](https://github.com/codefuturist/email-mcp/commit/1cc72fec8166842fa92ad8c7957c2ec28df327ac)) - Colin
-#### Build
-- (**docker**) add OCI manifest annotations for GHCR multi-arch images - ([2aeb938](https://github.com/codefuturist/email-mcp/commit/2aeb93857e95d99b2cf4435e4eee7cd7a47aecdc)) - Colin
-- (**docker**) add docker and goreleaser scripts, fix build for dockers_v2 context - ([56102f4](https://github.com/codefuturist/email-mcp/commit/56102f42ce81bba8c9ab8f442926d1b9704d2ab4)) - Colin
-- (**docker**) add GoReleaser dockers_v2 for GHCR and Docker Hub publishing - ([83483a8](https://github.com/codefuturist/email-mcp/commit/83483a8879228b3ec213414f2f7c53e9cce3f497)) - Colin
-- (**docker**) add Dockerfile, docker-compose, and CI docker build - ([e9f0a9f](https://github.com/codefuturist/email-mcp/commit/e9f0a9f2179a59de064879456204c8c3b4f3945b)) - Colin
-- add lefthook git hooks, report output, upgrade actions and node to v24 - ([8665419](https://github.com/codefuturist/email-mcp/commit/86654197b1a1f252d6c67d8a5fd67f09100f4fd4)) - Colin
-#### CI
-- (**docker**) enable docker hub publishing - ([f2a8d44](https://github.com/codefuturist/email-mcp/commit/f2a8d44fb8e503a0ef053a716e00b5814625daf8)) - Colin
-- refactor workflows to use codefuturist/shared-workflows@v1 - ([815292c](https://github.com/codefuturist/email-mcp/commit/815292c91e6215592cd3172a91600cf42b2224e0)) - Colin
-- add docker-sha workflow, workflow_dispatch, action upgrades and lint fixes - ([ddfbcdc](https://github.com/codefuturist/email-mcp/commit/ddfbcdc27af83175c3fec3c666ebd1f23d0631f4)) - Colin
-- improve Docker tag strategy - ([99785a0](https://github.com/codefuturist/email-mcp/commit/99785a0ea5c01579046783c3fdf7347932e77fdb)) - Colin
-- add weekly Docker rebuild workflow for base image updates - ([08f77f9](https://github.com/codefuturist/email-mcp/commit/08f77f9d06c8fd5b6de65a08c9ff89b556e7f2c0)) - Colin
-#### Chores
-- (**eslint**) exclude integration tests from eslint - ([e3bcc12](https://github.com/codefuturist/email-mcp/commit/e3bcc122bb9d71bfdfd77040d4419b96296a162d)) - Colin
-- (**gitignore**) update .gitignore to include comprehensive rules for various environments and tools - ([4c55dea](https://github.com/codefuturist/email-mcp/commit/4c55dea709e592f3e9f8b01d449846742774c07f)) - Colin
-- fix changelog separator for cocogitto - ([55510c3](https://github.com/codefuturist/email-mcp/commit/55510c34bb44ac377e91e1c628d7a810ed2e6d6e)) - Colin
+### Security
 
-- - -
+- SMTP header injection blocked (sender name via address object); constant-time token compare; OAuth watcher never uses a password as an access token; private/CGNAT IP ranges blocked in webhook dispatch (SSRF); OAuth endpoints must be HTTPS; scheduler validates emails, UUIDs, file permissions; config credentials written owner-only; webhook dispatch pinned to the validated address; HTTP token required even on loopback with bounded request bodies; draft headers sanitized; keychain invokes only `/usr/bin/security`; private vulnerability reporting enabled
 
+### Added
 
-## [v0.1.0](https://github.com/codefuturist/email-mcp/releases/tag/v0.1.0) — Initial Release
+- Sent-folder filing (IMAP APPEND), attachments on send/forward/draft, `savePath` downloads, duplicate-send guard, Reply-To awareness, Bcc on draft send, quota in MB
+- `password_command` (1Password, Bitwarden, pass, shell), macOS Keychain sentinels + `keychain migrate`
+- Bulk-mail classification from RFC headers; `get_email_security` (DMARC/SPF/DKIM); offline SQLite cache with retention caps (`window_days`, `max_size_mb`); connection rotation; cheap stats via STATUS+SEARCH; `find_email_folder` priority-folder search
+- Streamable HTTP transport alongside stdio; three setup modes (TLS/STARTTLS/plain); clear setup errors; OAuth-aware watching
 
-First public release of email-mcp.
+### Changed
 
-#### ✨ Features
+- MCP TypeScript SDK **v2** (spec revision 2026-07-28) with structured output
+- README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
+- Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
-- Full IMAP + SMTP email server for MCP clients
-- 42 tools, 7 prompts, 6 resources
-- Multi-account support with XDG-compliant TOML config
-- Guided interactive setup wizard with provider auto-detection
-- Gmail, Outlook, Yahoo, iCloud, Fastmail, ProtonMail, Zoho, GMX support
-- OAuth2 XOAUTH2 for Gmail and Microsoft 365 _(experimental)_
-- Email scheduling with OS-level scheduler integration
-- Real-time IMAP IDLE watcher with AI-powered triage
-- Urgency-based desktop / webhook alerts
-- Provider-aware label management
-- ICS/iCalendar extraction from emails
-- Email analytics (volume, top senders, daily trends)
-- Token-bucket rate limiter and audit trail
-- MCP client auto-installer (Claude Desktop, VS Code, Cursor, Windsurf)
+[0.1.0]: https://github.com/Fe2-O3/email-mcp/releases/tag/v0.1.0
