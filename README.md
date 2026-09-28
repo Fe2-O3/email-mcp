@@ -162,6 +162,28 @@ Then configure your client:
 ```
 </details>
 
+<details>
+<summary><strong>OpenCode</strong></summary>
+
+Add to `~/.config/opencode/opencode.json`, and raise the timeout: a full-text
+search over a large mailbox can take longer than the 60-second default
+(Hostinger measured ~80 seconds across 64k messages), and the default cut-off
+surfaces as `MCP error -32001: Request timed out`:
+
+```json
+{
+  "mcp": {
+    "email": {
+      "type": "local",
+      "command": ["node", "/absolute/path/to/imap-wizard/dist/main.js", "stdio"],
+      "enabled": true,
+      "timeout": 180000
+    }
+  }
+}
+```
+</details>
+
 ---
 
 ## What's Fixed
@@ -283,6 +305,7 @@ Located at `~/.config/email-mcp/config.toml`:
 ```toml
 [settings]
 rate_limit = 10  # max emails per minute per account
+idle_exit = 1800  # seconds without MCP requests before the stdio server exits (0 = never)
 
 [[accounts]]
 name = "personal"
