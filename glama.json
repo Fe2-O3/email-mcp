@@ -1,6 +1,4 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": [
-    "codefuturist"
-  ]
+  "maintainers": ["Fe2-O3"]
 }

@@ -1,7 +1,7 @@
 {
-  "name": "@codefuturist/email-mcp",
-  "version": "0.3.0",
-  "mcpName": "io.github.codefuturist/email-mcp",
+  "name": "@fe2-o3/email-mcp",
+  "version": "0.1.0",
+  "mcpName": "io.github.fe2-o3/email-mcp",
   "description": "Email MCP server with IMAP + SMTP support",
   "type": "module",
   "bin": {
@@ -63,17 +63,17 @@
     "nodejs"
   ],
   "author": {
-    "name": "codefuturist",
-    "url": "https://github.com/codefuturist"
+    "name": "Fe2-O3",
+    "url": "https://github.com/Fe2-O3"
   },
   "license": "LGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/codefuturist/email-mcp.git"
+    "url": "git+https://github.com/Fe2-O3/email-mcp.git"
   },
-  "homepage": "https://github.com/codefuturist/email-mcp#readme",
+  "homepage": "https://github.com/Fe2-O3/email-mcp#readme",
   "bugs": {
-    "url": "https://github.com/codefuturist/email-mcp/issues"
+    "url": "https://github.com/Fe2-O3/email-mcp/issues"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
