@@ -22,11 +22,11 @@ config loads in the same process).
 
 | Priority | Upstream feature | What it gives users | Cost / risk here |
 |---|---|---|---|
-| 1 | **[settings.server] + server lifecycle commands** (`v0.5.0` `98bc426`, `755eb39`) | Always-on HTTP daemon with start/stop/status + launchd login item | Medium — touches `cli/http.ts`, config schema; this fork's HTTP path already diverged (token rules, body caps) |
+| 1 | **[settings.server] + server lifecycle commands** (`755eb39` in v0.4.0, `98bc426` in v0.5.0) | Always-on HTTP daemon with start/stop/status + launchd login item | Medium — touches `cli/http.ts`, config schema; this fork's HTTP path already diverged (token rules, body caps) |
 | 2 | **CLI startup lazy-loading** (`v0.5.0` `a0f9ca6`, 3.8× faster) | Snappier `email-mcp` invocations | Low — pure refactor of `main.ts` import graph; measurable before/after needed |
 | 3 | **Shell completion, zsh/bash/fish** (`v0.5.0` `e0c6563`) | Tab completion for the CLI | Low — additive; must list *this* fork's subcommands (incl. `config validate`) |
 | 4 | **Config section editor + field catalog + validated save with backups** (`v0.4.0` `17efd45`, `00d559b`, `c2d0a9d`) | Safer interactive `config edit` | Medium — their `settings-fields.ts` assumes sections this fork doesn't have (server, verification); needs adaptation like `validate` did |
-| 5 | **Verification-code catcher** (`v0.4.0`, ~14 commits: OTP extractor, magic links, clipboard, `get_verification_code`) | +3 MCP tools (52 total), instant OTP auto-copy | High — new settings section, clipboard service, watcher integration; the biggest feature delta. Worth it only if the OTP workflow matters here |
+| 5 | **Verification-code catcher** (v0.4.0, 12 commits: OTP extractor, magic links, clipboard, `get_verification_code`) | +3 MCP tools (52 total), instant OTP auto-copy | High — new settings section, clipboard service, watcher integration; the biggest feature delta. Worth it only if the OTP workflow matters here |
 | 6 | **Bun single-binary releases + GoReleaser Pro matrix** (`v0.5.0`/`v0.5.1`) | Downloadable binaries per platform with provenance | High/infra — needs release pipeline work and (currently) goreleaser targets upstream's registries; their release workflows were removed from this repo for that reason |
 | 7 | **npm/Docker publishing** | `npx @fe2-o3/email-mcp`, ghcr images | Blocked on publishing credentials/decisions — package identity is already renamed, nothing publishes |
 
