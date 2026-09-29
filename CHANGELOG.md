@@ -8,7 +8,7 @@ All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-
 
 ## [0.1.0] — 2026-09-28
 
-First release of the hardened fork: **84 commits** past the fork point, **428 tests** green.
+First release of the hardened fork: **88 commits** past the fork point, **428 tests** green.
 
 ### Ported from upstream v0.5.1
 
@@ -45,7 +45,7 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 
 ### Security
 
-- SMTP header injection blocked (sender name via address object); constant-time token compare; OAuth watcher never uses a password as an access token; private/CGNAT IP ranges blocked in webhook dispatch (SSRF); OAuth endpoints must be HTTPS; scheduler validates emails, UUIDs, file permissions; config credentials written owner-only; webhook dispatch pinned to the validated address; HTTP token required even on loopback with bounded request bodies; draft headers sanitized; keychain invokes only `/usr/bin/security`; private vulnerability reporting enabled
+- SMTP header injection blocked (sender name via address object); constant-time token compare; OAuth watcher never uses a password as an access token; private/CGNAT IP ranges blocked in webhook dispatch (SSRF); OAuth endpoints must be HTTPS; scheduler validates emails, UUIDs, file permissions; config credentials written owner-only; webhook dispatch pinned to the validated address; HTTP token required even on loopback with bounded request bodies; draft headers sanitized; keychain invokes only `/usr/bin/security`; disclosure policy in SECURITY.md (Issues are disabled here, so bug reports go upstream)
 
 ### Added
 
