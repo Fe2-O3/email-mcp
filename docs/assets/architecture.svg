@@ -25,7 +25,7 @@
   <rect width="1240" height="540" fill="url(#grid)"/>
   <rect x="0" y="0" width="1240" height="6" fill="url(#accent)"/>
 
-  <text x="40" y="52" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif" font-size="26" font-weight="700" fill="#e2e8f0">How a request travels</text>
+  <text x="40" y="52" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif" font-size="26" font-weight="700" fill="#e2e8f0">IMAP Wizard — how a request travels</text>
   <text x="40" y="76" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14" fill="#94a3b8">No cloud service in the middle. Your assistant talks to a local process; credentials never leave the machine.</text>
 
   <!-- Column 1: clients -->

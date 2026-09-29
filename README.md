@@ -1,8 +1,8 @@
 <div align="center">
 
-# Email MCP Server
+# IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="Email MCP Server — the hardened fork: 49 tools, 428 tests green, 17 upstream bugs closed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard — hardened email MCP server: 49 tools, 428 tests green, 17 upstream bugs closed" width="100%">
 
 **The email server your AI assistant actually needs.** A hardened fork of
 [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) — every known
@@ -13,7 +13,7 @@ bug fixed, 13 security controls added, released and versioned.
 [![tests](https://img.shields.io/badge/tests-428%20green-22c55e?style=flat-square)](CHANGELOG.md)
 [![tools](https://img.shields.io/badge/49-tools-0ea5e9?style=flat-square)](#49-tools)
 [![last commit](https://img.shields.io/github/last-commit/Fe2-O3/email-mcp?label=last%20commit&style=flat-square)](https://github.com/Fe2-O3/email-mcp/commits/main)
-[![ahead of fork point](https://img.shields.io/badge/88-commits%20past%20fork%20point-334155?style=flat-square)](#version-history)
+[![ahead of fork point](https://img.shields.io/badge/91-commits%20past%20fork%20point-334155?style=flat-square)](#version-history)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
 [![MCP SDK v2](https://img.shields.io/badge/MCP-SDK%20v2-8B5CF6?style=flat-square)](https://modelcontextprotocol.io)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
@@ -26,7 +26,7 @@ bug fixed, 13 security controls added, released and versioned.
     <td align="center"><h3>7</h3><sub>prompts</sub></td>
     <td align="center"><h3>6</h3><sub>resources</sub></td>
     <td align="center"><h3>428</h3><sub>tests green</sub></td>
-    <td align="center"><h3>88</h3><sub>commits</sub></td>
+    <td align="center"><h3>91</h3><sub>commits</sub></td>
     <td align="center"><h3>17</h3><sub>upstream issues closed</sub></td>
   </tr>
 </table>
@@ -95,7 +95,7 @@ security surface, and ships its own release.
 
 | <strong>Bug fixes</strong> | <strong>Security</strong> | <strong>Craft</strong> |
 |:---:|:---:|:---:|
-| 17 upstream issues closed, every fix linked | 13 hardening controls, private reporting on | 428 tests, CI-grade <code>config validate</code> |
+| 17 upstream issues closed, every fix linked | 13 hardening controls, disclosure policy | 428 tests, CI-grade <code>config validate</code> |
 
 </div>
 
@@ -124,7 +124,7 @@ flowchart LR
 sequenceDiagram
     participant You
     participant Client as AI client
-    participant MCP as email-mcp
+    participant MCP as IMAP Wizard
     participant Imap as IMAP server
     You->>Client: Unread from Acme, last 30 days
     Client->>MCP: search_emails with account, from, since
@@ -907,7 +907,7 @@ Thanks to everyone who filed issues that identified bugs fixed in this fork:
 
 <div align="center">
 
-**Email MCP Server** — the hardened fork of
+**IMAP Wizard** — the hardened fork of
 [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp)
 
 [![stars](https://img.shields.io/github/stars/Fe2-O3/email-mcp?style=social)](https://github.com/Fe2-O3/email-mcp)
