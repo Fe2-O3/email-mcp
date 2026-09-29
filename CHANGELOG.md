@@ -8,7 +8,7 @@ All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-
 
 ## [0.1.0] — 2026-09-28
 
-First release of the hardened fork: **88 commits** past the fork point, **428 tests** green.
+First release of the hardened fork: **84 commits** past the fork point, **428 tests** green.
 
 ### Ported from upstream v0.5.1
 

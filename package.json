@@ -2,7 +2,7 @@
   "name": "@fe2-o3/email-mcp",
   "version": "0.1.0",
   "mcpName": "io.github.fe2-o3/email-mcp",
-  "description": "Email MCP server with IMAP + SMTP support",
+  "description": "IMAP Wizard \u2014 email MCP server with IMAP + SMTP support",
   "type": "module",
   "bin": {
     "email-mcp": "./dist/main.js"
