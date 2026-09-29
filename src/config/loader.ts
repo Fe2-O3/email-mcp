@@ -416,7 +416,7 @@ export async function warnOnLooseConfigPermissions(
  * Generate a template TOML config string.
  */
 export function generateTemplate(): string {
-  return `# Email MCP Server Configuration
+  return `# IMAP Wizard configuration
 # Location: ${CONFIG_FILE}
 
 [settings]

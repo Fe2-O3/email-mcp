@@ -319,7 +319,7 @@ export default class NotifierService {
     try {
       const testPayload: AlertPayload = {
         account: 'test',
-        sender: { name: 'Email MCP', address: 'test@email-mcp' },
+        sender: { name: 'IMAP Wizard', address: 'test@email-mcp' },
         subject: 'If you see this, notifications work!',
         priority: 'urgent',
       };
@@ -378,7 +378,7 @@ export default class NotifierService {
     this.desktopCount += 1;
 
     const title = sanitizeForShell(
-      `📧 Email MCP — ${payload.priority === 'urgent' ? 'Urgent' : 'Important'}`,
+      `📧 IMAP Wizard — ${payload.priority === 'urgent' ? 'Urgent' : 'Important'}`,
     );
     const senderDisplay = sanitizeForShell(payload.sender.name ?? payload.sender.address);
     const subject = sanitizeForShell(payload.subject);

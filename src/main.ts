@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Email MCP Server — Main entry point.
+ * IMAP Wizard (email-mcp) — Main entry point.
  *
  * Subcommands:
  *   stdio     Run as MCP server over stdio (default)
@@ -25,7 +25,7 @@ import { PKG_VERSION } from './server.js';
 const SHUTDOWN_GRACE_MS = 5_000;
 
 const HELP = `
-email-mcp — Email MCP Server (IMAP + SMTP)
+email-mcp — IMAP Wizard (email MCP server: IMAP + SMTP)
 
 Usage:
   email-mcp [command]

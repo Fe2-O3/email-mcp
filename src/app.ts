@@ -188,7 +188,7 @@ export function startBackgroundServices(
       // stopped flag at each resume point, or it outlives its own teardown
       // and keeps the event loop alive forever.
       if (stopped) return;
-      await mcpLog('info', 'server', 'Email MCP background services started');
+      await mcpLog('info', 'server', 'IMAP Wizard background services started');
 
       // Check for overdue scheduled emails on startup.
       try {

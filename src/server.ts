@@ -17,7 +17,7 @@ const pkg = esmRequire('../package.json') as { version: string };
 export const PKG_NAME = 'email-mcp';
 export const PKG_VERSION = pkg.version;
 
-const INSTRUCTIONS = `Email MCP server exposing IMAP + SMTP over the Model Context Protocol.
+const INSTRUCTIONS = `IMAP Wizard — an email MCP server exposing IMAP + SMTP over the Model Context Protocol.
 Start by calling \`list_accounts\` to discover configured accounts, then use
 \`list_emails\`/\`search_emails\` to browse and \`get_email\` to read. Reading is
 non-destructive by default (IMAP BODY.PEEK). Write tools (send, drafts, labels,

@@ -30,7 +30,7 @@ const ENTRY = fileURLToPath(new URL('./main.ts', import.meta.url));
 const LIFECYCLE_BUDGET_MS = 20_000;
 
 /** Emitted by the server once post-handshake background services have started. */
-const READY_LOG = 'Email MCP background services started';
+const READY_LOG = 'IMAP Wizard background services started';
 
 let child: ChildProcessWithoutNullStreams | undefined;
 let sandbox: string | undefined;
