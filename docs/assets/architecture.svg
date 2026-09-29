@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 540" width="1240" height="540" role="img" aria-label="Architecture: AI clients speak MCP over stdio or HTTP to a 49-tool layer, which runs IMAP, SMTP, a SQLite cache, a watcher, hooks and a scheduler, with config, Keychain and cache on disk.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="55%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#131a33"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="accent2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#a3e635"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1240" height="540" fill="url(#bg)"/>
+  <rect width="1240" height="540" fill="url(#grid)"/>
+  <rect x="0" y="0" width="1240" height="6" fill="url(#accent)"/>
+
+  <text x="40" y="52" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif" font-size="26" font-weight="700" fill="#e2e8f0">How a request travels</text>
+  <text x="40" y="76" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14" fill="#94a3b8">No cloud service in the middle. Your assistant talks to a local process; credentials never leave the machine.</text>
+
+  <!-- Column 1: clients -->
+  <rect x="40" y="110" width="230" height="330" rx="16" fill="#111c33" stroke="#2b3a5c" stroke-width="1.5"/>
+  <rect x="40" y="110" width="230" height="40" rx="16" fill="#1b2743"/>
+  <rect x="40" y="134" width="230" height="16" fill="#1b2743"/>
+  <text x="60" y="137" font-family="ui-sans-serif, sans-serif" font-size="14" font-weight="700" fill="#c7d2fe">AI CLIENTS</text>
+  <g font-family="ui-sans-serif, sans-serif" font-size="13" fill="#cbd5e1">
+    <text x="60" y="180">Claude Code / Desktop</text>
+    <text x="60" y="208">Codex CLI</text>
+    <text x="60" y="236">OpenCode</text>
+    <text x="60" y="264">Cursor</text>
+    <text x="60" y="292">VS Code / Copilot</text>
+    <text x="60" y="320">Any MCP client</text>
+  </g>
+  <text x="60" y="356" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#7dd3fc">Reads your prompts,</text>
+  <text x="60" y="374" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#7dd3fc">calls tools, shows results.</text>
+  <text x="60" y="404" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#64748b">Structured output (SDK v2)</text>
+  <text x="60" y="422" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#64748b">means the model gets typed</text>
+  <text x="60" y="440" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#64748b">fields, not prose to parse.</text>
+
+  <!-- arrow 1 -->
+  <line x1="272" y1="275" x2="322" y2="275" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="276" y="262" font-family="ui-sans-serif, sans-serif" font-size="11" fill="#94a3b8">MCP</text>
+
+  <!-- Column 2: transport + tool layer -->
+  <rect x="330" y="110" width="300" height="330" rx="16" fill="#111c33" stroke="#2b3a5c" stroke-width="1.5"/>
+  <rect x="330" y="110" width="300" height="40" rx="16" fill="#1b2743"/>
+  <rect x="330" y="134" width="300" height="16" fill="#1b2743"/>
+  <text x="350" y="137" font-family="ui-sans-serif, sans-serif" font-size="14" font-weight="700" fill="#c7d2fe">MCP SERVER (LOCAL PROCESS)</text>
+  <rect x="350" y="166" width="260" height="34" rx="8" fill="#172554" stroke="#3b82f6" stroke-width="1"/>
+  <text x="366" y="188" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#bfdbfe">stdio transport (default)</text>
+  <rect x="350" y="208" width="260" height="34" rx="8" fill="#172554" stroke="#3b82f6" stroke-width="1"/>
+  <text x="366" y="230" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#bfdbfe">Streamable HTTP (token required)</text>
+  <rect x="350" y="258" width="260" height="96" rx="10" fill="url(#accent)" opacity="0.16"/>
+  <rect x="350" y="258" width="260" height="96" rx="10" fill="none" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="480" y="286" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="15" font-weight="700" fill="#f1f5f9">49 tools &#183; 7 prompts</text>
+  <text x="480" y="308" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="15" font-weight="700" fill="#f1f5f9">6 resources</text>
+  <text x="480" y="334" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#c7d2fe">read &#183; write &#183; manage &#183; labels</text>
+  <text x="480" y="352" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#c7d2fe">watcher &#183; calendar &#183; security</text>
+  <text x="480" y="386" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#fca5a5">read_only mode gates every write</text>
+  <text x="480" y="404" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#fca5a5">rate limit 10 sends / minute</text>
+  <text x="480" y="424" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#86efac">idle exit after 30 min of silence</text>
+
+  <!-- arrow 2 -->
+  <line x1="632" y1="275" x2="682" y2="275" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="636" y="262" font-family="ui-sans-serif, sans-serif" font-size="11" fill="#94a3b8">call</text>
+
+  <!-- Column 3: core services -->
+  <rect x="690" y="110" width="300" height="330" rx="16" fill="#111c33" stroke="#2b3a5c" stroke-width="1.5"/>
+  <rect x="690" y="110" width="300" height="40" rx="16" fill="#1b2743"/>
+  <rect x="690" y="134" width="300" height="16" fill="#1b2743"/>
+  <text x="710" y="137" font-family="ui-sans-serif, sans-serif" font-size="14" font-weight="700" fill="#c7d2fe">CORE SERVICES</text>
+  <g font-family="ui-sans-serif, sans-serif" font-size="12.5" fill="#e2e8f0">
+    <rect x="710" y="168" width="260" height="34" rx="8" fill="#0f2a1e" stroke="#22c55e" stroke-width="1"/>
+    <text x="726" y="190" fill="#bbf7d0">IMAP service &#183; rotates every 30 min</text>
+    <rect x="710" y="210" width="260" height="34" rx="8" fill="#0f2a1e" stroke="#22c55e" stroke-width="1"/>
+    <text x="726" y="232" fill="#bbf7d0">SMTP service &#183; files into Sent</text>
+    <rect x="710" y="252" width="260" height="34" rx="8" fill="#2a1f0f" stroke="#eab308" stroke-width="1"/>
+    <text x="726" y="274" fill="#fef08a">SQLite cache &#183; offline mirror</text>
+    <rect x="710" y="294" width="260" height="34" rx="8" fill="#1e1b4b" stroke="#818cf8" stroke-width="1"/>
+    <text x="726" y="316" fill="#c7d2fe">IMAP IDLE watcher &#183; auto-reconnect</text>
+    <rect x="710" y="336" width="260" height="34" rx="8" fill="#1e1b4b" stroke="#818cf8" stroke-width="1"/>
+    <text x="726" y="358" fill="#c7d2fe">AI triage hooks + scheduler</text>
+    <rect x="710" y="378" width="260" height="34" rx="8" fill="#4c1d1d" stroke="#f87171" stroke-width="1"/>
+    <text x="726" y="400" fill="#fecaca">Safety: audit trail, rate limiter, SSRF guard</text>
+  </g>
+
+  <!-- arrow 3 -->
+  <line x1="992" y1="230" x2="1042" y2="230" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="992" y1="380" x2="1042" y2="380" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="996" y="218" font-family="ui-sans-serif, sans-serif" font-size="11" fill="#94a3b8">IMAP</text>
+  <text x="996" y="368" font-family="ui-sans-serif, sans-serif" font-size="11" fill="#94a3b8">local</text>
+
+  <!-- Column 4: edges -->
+  <rect x="1050" y="110" width="150" height="330" rx="16" fill="#111c33" stroke="#2b3a5c" stroke-width="1.5"/>
+  <rect x="1050" y="110" width="150" height="40" rx="16" fill="#1b2743"/>
+  <rect x="1050" y="134" width="150" height="16" fill="#1b2743"/>
+  <text x="1070" y="137" font-family="ui-sans-serif, sans-serif" font-size="13" font-weight="700" fill="#c7d2fe">EDGES</text>
+  <g font-family="ui-sans-serif, sans-serif" font-size="12" fill="#e2e8f0">
+    <rect x="1066" y="168" width="118" height="52" rx="8" fill="#14203a" stroke="#38bdf8" stroke-width="1"/>
+    <text x="1125" y="190" text-anchor="middle" fill="#bae6fd">Mail provider</text>
+    <text x="1125" y="208" text-anchor="middle" font-size="10.5" fill="#7dd3fc">Gmail, Outlook,</text>
+    <text x="1125" y="220" text-anchor="middle" font-size="10.5" fill="#7dd3fc">Hostinger, Fastmail</text>
+
+    <rect x="1066" y="240" width="118" height="52" rx="8" fill="#14203a" stroke="#38bdf8" stroke-width="1"/>
+    <text x="1125" y="262" text-anchor="middle" fill="#bae6fd">config.toml</text>
+    <text x="1125" y="280" text-anchor="middle" font-size="10.5" fill="#7dd3fc">owner-only, validated</text>
+
+    <rect x="1066" y="312" width="118" height="52" rx="8" fill="#14203a" stroke="#38bdf8" stroke-width="1"/>
+    <text x="1125" y="334" text-anchor="middle" fill="#bae6fd">macOS Keychain</text>
+    <text x="1125" y="352" text-anchor="middle" font-size="10.5" fill="#7dd3fc">or password_command</text>
+
+    <rect x="1066" y="384" width="118" height="40" rx="8" fill="#14203a" stroke="#38bdf8" stroke-width="1"/>
+    <text x="1125" y="402" text-anchor="middle" fill="#bae6fd">SQLite cache</text>
+    <text x="1125" y="417" text-anchor="middle" font-size="10.5" fill="#7dd3fc">size + age capped</text>
+  </g>
+
+  <!-- footer strip -->
+  <rect x="40" y="462" width="1160" height="46" rx="12" fill="#0f172a" stroke="#2b3a5c" stroke-width="1"/>
+  <text x="620" y="483" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="12.5" fill="#cbd5e1">TLS, STARTTLS or plain per account &#183; OAuth2 for Gmail-style providers &#183; 428 tests guard all of it</text>
+  <text x="620" y="500" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#64748b">Nothing is phoned home: no telemetry, no external API key, no account data leaving the host.</text>
+</svg>

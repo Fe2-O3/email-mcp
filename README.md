@@ -8,24 +8,62 @@
 [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) — every known
 bug fixed, 13 security controls added, released and versioned.
 
-[![release](https://img.shields.io/badge/release-v0.1.0-8B5CF6?style=flat-square)](https://github.com/Fe2-O3/email-mcp/releases/tag/v0.1.0)
+[![release](https://img.shields.io/github/v/release/Fe2-O3/email-mcp?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/email-mcp/releases/tag/v0.1.0)
 [![upstream](https://img.shields.io/github/v/release/codefuturist/email-mcp?label=upstream&color=ff6a00&style=flat-square)](https://github.com/codefuturist/email-mcp/releases)
 [![tests](https://img.shields.io/badge/tests-428%20green-22c55e?style=flat-square)](CHANGELOG.md)
 [![tools](https://img.shields.io/badge/49-tools-0ea5e9?style=flat-square)](#49-tools)
+[![last commit](https://img.shields.io/github/last-commit/Fe2-O3/email-mcp?label=last%20commit&style=flat-square)](https://github.com/Fe2-O3/email-mcp/commits/main)
+[![ahead of fork point](https://img.shields.io/badge/88-commits%20past%20fork%20point-334155?style=flat-square)](#version-history)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
 [![MCP SDK v2](https://img.shields.io/badge/MCP-SDK%20v2-8B5CF6?style=flat-square)](https://modelcontextprotocol.io)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript 7.x](https://img.shields.io/badge/TypeScript-7.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](CONTRIBUTING.md)
 
-<a href="#why-this-fork">Why</a> ·
+<table>
+  <tr>
+    <td align="center"><h3>49</h3><sub>tools</sub></td>
+    <td align="center"><h3>7</h3><sub>prompts</sub></td>
+    <td align="center"><h3>6</h3><sub>resources</sub></td>
+    <td align="center"><h3>428</h3><sub>tests green</sub></td>
+    <td align="center"><h3>88</h3><sub>commits</sub></td>
+    <td align="center"><h3>17</h3><sub>upstream issues closed</sub></td>
+  </tr>
+</table>
+
+<a href="#what-you-can-ask-for">What you can ask for</a> ·
+<a href="#why-this-fork">Why this fork</a> ·
+<a href="#architecture-at-a-glance">Architecture</a> ·
 <a href="#version-history">Version history</a> ·
 <a href="#quick-start">Quick start</a> ·
 <a href="#whats-fixed">Bug fixes</a> ·
 <a href="#49-tools">Tools</a> ·
 <a href="#configuration">Config</a> ·
+<a href="#faq">FAQ</a> ·
 <a href="#security">Security</a>
 
 </div>
+
+---
+
+## What You Can Ask For
+
+Plain sentences in, real mail operations out. The assistant picks the tool; you
+never see IMAP.
+
+| Say this | What runs |
+|---|---|
+| "Any invoice from Acme this month? Save the PDF to `~/Documents/Acme`" | `search_emails` → `get_email` → `download_attachment` with `savePath` |
+| "Reply to Sarah: Thursday works, cc billing" | `reply_email` (honours Reply-To and cc) |
+| "What's unread and older than a week?" | `list_emails` sorted by **date**, not UID |
+| "Is this sender legit? Check the headers" | `get_email_security` (DMARC / SPF / DKIM) |
+| "Summarize my inbox for standup, skip the bulk mail" | prompts + `list_emails` + bulk-mail flags from headers |
+| "Label everything unread from my manager as Follow-ups" | `add_label`, optionally driven by the watcher |
+| "Delete last month's newsletters" | `bulk_action` behind the rate limiter and audit trail |
+| "Find the reply, save a draft, and send nothing" | `read_only` mode refuses every write |
+
+Every call is one of the [49 tools](#49-tools). Every write is rate-limited,
+audited, and filed into Sent.
 
 ---
 
@@ -60,6 +98,55 @@ security surface, and ships its own release.
 | 17 upstream issues closed, every fix linked | 13 hardening controls, private reporting on | 428 tests, CI-grade <code>config validate</code> |
 
 </div>
+
+---
+
+## Architecture at a Glance
+
+<img src="docs/assets/architecture.svg" alt="Diagram: AI clients speak MCP over stdio or HTTP to a 49-tool layer, which runs IMAP, SMTP, a SQLite cache, a watcher, hooks and a scheduler; config, Keychain and cache live on disk" width="100%">
+
+Everything runs on your machine. There is no proxy, no telemetry, and no API key
+to buy: your assistant drives a local process that speaks IMAP and SMTP straight
+to your provider.
+
+```mermaid
+flowchart LR
+    A["Ask your assistant"] --> B["AI client picks a tool"]
+    B --> C{"Cache enabled and<br/>window covers the query?"}
+    C -->|Yes| D["Answer from the local SQLite mirror"]
+    C -->|No| E["Live IMAP: SEARCH, then chunked FETCH<br/>400 UIDs per command"]
+    E --> F["Refresh the mirror, then answer"]
+    D --> G["Structured result with<br/>MCP SDK v2 typed fields"]
+    F --> G
+```
+
+```mermaid
+sequenceDiagram
+    participant You
+    participant Client as AI client
+    participant MCP as email-mcp
+    participant Imap as IMAP server
+    You->>Client: Unread from Acme, last 30 days
+    Client->>MCP: search_emails with account, from, since
+    MCP->>Imap: UID SEARCH, then FETCH in chunks of 400
+    Imap-->>MCP: headers and bodies
+    MCP-->>Client: messages sorted by date
+    Client-->>You: summary, then a drafted reply
+```
+
+Why each piece is there:
+
+- **stdio by default, HTTP on request** — the pipe dies with your client; HTTP
+  mode still demands a token, even on loopback.
+- **Chunked UID fetches** (400 per command) — a full-mailbox UID list overflows
+  the server's argument limit. Verified on a 64,779-message mailbox.
+- **SQLite mirror with caps** (`window_days`, `max_size_mb`) — repeat questions
+  never touch the network.
+- **Connections rotate every 30 minutes** — closes the six-day leak
+  ([#55](https://github.com/codefuturist/email-mcp/issues/55)).
+- **30-minute idle exit** — a host that never closes the pipe cannot pin an
+  orphan ([#60](https://github.com/codefuturist/email-mcp/issues/60)).
+- **Keychain or `password_command`** — no plaintext secrets at rest.
 
 ---
 
@@ -159,6 +246,26 @@ Type adaptations rode along: imapflow 2's `status()` can return `false`,
 
 ---
 
+### Upstream features, and this fork's call on each
+
+Upstream shipped a lot more in the same week. Porting is a per-feature decision
+with credit attached, never a blind merge; the full draft with commit references
+is [docs/upstream-v0.5-draft.md](docs/upstream-v0.5-draft.md).
+
+| Upstream v0.4 / v0.5 feature | This fork | Reasoning |
+|---|---|---|
+| TLS `servername` repair for IP-literal hosts | **Ported** (`70d4215`) | Real bug here too: IMAP hosts given as IP addresses failed before authentication |
+| `config validate` with did-you-mean typos | **Ported** (`bf09dcc`) | Same silent-typo failure mode; exit `1` keeps it usable in CI |
+| Dependency set: imapflow 2, nodemailer 10, vitest 5, zod 4.6 | **Ported** (`bae1bb7`) | One upgrade pass instead of a growing backlog |
+| CLI lazy-loading, 3.8× faster startup (`a0f9ca6`) | **Adopt next** | Pure refactor of `main.ts`. Only real risk is a missed import, and 428 tests would catch it |
+| Shell completion for zsh, bash, fish (`e0c6563`) | **Adopt next** | Additive and small. Ours must list *our* subcommands, including `config validate`, so the list needs a test to stay honest |
+| Config section editor, field catalog, validated save with backups | **Hold** | `config validate` already delivers the safety non-interactively. Their field catalog assumes `server` and `verification` sections this fork does not have, and does not know our `keychain`, `idle_exit`, or `password_command` settings |
+| Verification-code catcher: OTP, magic links, clipboard (12 commits) | **Not adopted** | Upstream ships it **on by default** (`enabled: true`, `auto_copy: true`, `confirm_copy: false`) and its clipboard service reads your clipboard with `pbpaste`. Useful, but it puts clipboard access inside a mail server, and this fork does not need it |
+| `[settings.server]` daemon plus launchd login item | **Not adopted** | `http` already works when you want it. A login-item daemon is another supervisor to trust, and it overlaps the idle-exit valve |
+| Bun single binaries, GoReleaser Pro matrix, npm and Docker publish | **Not adopted** | Their release pipeline publishes to upstream's registries, and their workflows were removed from this repo for that reason. This fork ships tagged source releases verified by its own CI |
+
+---
+
 ## Quick Start
 
 ### 1. Build
@@ -193,6 +300,16 @@ node dist/main.js test
   Pass `sort: uid` only when you need old order.
 - **Send looks lost:** sent mail files into Sent by itself. Check Sent for the
   same message ID before you resend.
+
+### 3c. Know the limits before you file a bug
+
+| Symptom | Why it happens | What to do |
+|---|---|---|
+| `MCP error -32001: Request timed out` | Your client cut the call at 60 s. A full-text search over 64k messages measured ~80 s | Raise the timeout — `180000` in OpenCode; no such cut-off in Claude Code |
+| Setup reports an invalid config file | `config.toml` has a syntax or key error | `node dist/main.js config validate` names the line and the key |
+| Search returns nothing on a small mailbox | Some servers answer SEARCH with garbage | This build fails loudly instead of reporting zero results |
+| Login says only "Command failed" | You are on an older build | This build surfaces the server's own reason |
+| A server process is still running | Your client holds the pipe open forever | `settings.idle_exit` (default 1800 s), or close the client cleanly |
 
 ### 4. Connect your AI client
 
@@ -365,10 +482,11 @@ after upstream's v0.5.1 release**. Live tracker:
 | **Scheduler security** | Validate emails, UUID schedule_id, secure file perms |
 | **Config permissions** | Write credentials readable only by their owner |
 | **Webhook dispatch** | Pin webhook dispatch to validated address; resolve and range-check destinations |
-| **HTTP security** | Require a token even on loopback; bound request bodies |
+| **HTTP security** | Require a token even on loopback |
+| **Request bodies** | Bounded request body size on the HTTP transport |
 | **Draft headers** | Sanitize draft headers and harden remaining services |
 | **Keychain calls** | Run only the system keychain tool at its fixed path |
-| **Security reporting** | Private vulnerability reporting enabled via GitHub Security Advisories |
+| **Vulnerability disclosure** | Policy and private channels in [SECURITY.md](SECURITY.md) — this repo's Issues are disabled, so bugs go to the [upstream tracker](https://github.com/codefuturist/email-mcp/issues) |
 
 ### New Features
 
@@ -564,6 +682,8 @@ Commands:
 
 ## Architecture
 
+The [diagram above](#architecture-at-a-glance) shows the request path; this is the source map.
+
 ```text
 src/
 ├── main.ts                — Entry point, subcommand routing, idle-exit valve
@@ -621,13 +741,108 @@ pnpm smoke             # every MCP tool against a real configured account
 
 ---
 
+## FAQ
+
+<details>
+<summary><strong>Where are my passwords stored?</strong></summary>
+
+<br>
+
+Three ways, best first: the **macOS Keychain** (`password = "use_keychain:name"`,
+or run `keychain migrate`), a **`password_command`** that pulls from 1Password,
+Bitwarden, `pass` or any shell command, or plaintext in `config.toml` written
+readable only by you. `config show` always masks them.
+
+</details>
+
+<details>
+<summary><strong>Can it send email, or is it read-only?</strong></summary>
+
+<br>
+
+Both, your call. `read_only: true` refuses every write, including background
+services and calendar writes
+([#79](https://github.com/codefuturist/email-mcp/issues/79)). Writes are rate
+limited (10 per minute per account), logged to an audit trail, and anything you
+send is appended to your Sent folder so a client-side retry cannot duplicate it.
+
+</details>
+
+<details>
+<summary><strong>Will it work with a local model such as llama.cpp or Ollama?</strong></summary>
+
+<br>
+
+Yes. Earlier builds failed every single call on llama.cpp models because the
+schemas used patterns the GBNF grammar cannot express
+([#58](https://github.com/codefuturist/email-mcp/issues/58)). Those schemas are
+fixed here, and results come back as typed fields via MCP SDK v2.
+
+</details>
+
+<details>
+<summary><strong>How big a mailbox can it handle?</strong></summary>
+
+<br>
+
+Verified against a **64,779-message** Hostinger mailbox. UID fetches chunk at
+400 per command, results sort by date across the whole match set, and the SQLite
+mirror answers repeat queries without touching the network. The first full sync
+is slow, so give the client a 180-second timeout.
+
+</details>
+
+<details>
+<summary><strong>Which Node version do I need?</strong></summary>
+
+<br>
+
+`package.json` asks for **Node 24+**. The full suite was last run green on Node
+22.18, so 24 is the supported floor rather than a hard requirement. pnpm 9 or
+newer is used for the build.
+
+</details>
+
+<details>
+<summary><strong>How do I update, and is there an npm package?</strong></summary>
+
+<br>
+
+```bash
+git pull && pnpm install && pnpm build
+```
+
+There is deliberately no npm package or container image for this fork: releases
+are tagged source, and the security posture is easier to audit that way. Upstream
+still publishes its own package if you want it.
+
+</details>
+
+<details>
+<summary><strong>Will this fork merge upstream again?</strong></summary>
+
+<br>
+
+Feature by feature, with the upstream commit credited, the way the three ports
+in the [version history](#version-history) were done. A wholesale merge would
+fight this fork's fixes, and 18 files are touched by both sides.
+
+</details>
+
+---
+
 ## Security
 
 See [SECURITY.md](SECURITY.md) for the full security policy and reporting
 instructions.
 
-**Private vulnerability reporting is enabled.** Go to the Security tab →
-Report a vulnerability.
+**Where to report what:**
+
+- **A bug in this fork** — Issues are disabled on this repository, so file it on
+  the [upstream tracker](https://github.com/codefuturist/email-mcp/issues).
+  Every fix in [What's Fixed](#whats-fixed) came from there.
+- **A security problem** — follow the private channels in
+  [SECURITY.md](SECURITY.md). Never post exploits in public.
 
 ---
 
@@ -687,3 +902,26 @@ Thanks to everyone who filed issues that identified bugs fixed in this fork:
 ## License
 
 [LGPL-3.0-or-later](LICENSE)
+
+---
+
+<div align="center">
+
+**Email MCP Server** — the hardened fork of
+[codefuturist/email-mcp](https://github.com/codefuturist/email-mcp)
+
+[![stars](https://img.shields.io/github/stars/Fe2-O3/email-mcp?style=social)](https://github.com/Fe2-O3/email-mcp)
+[![forks](https://img.shields.io/github/forks/Fe2-O3/email-mcp?style=social)](https://github.com/Fe2-O3/email-mcp/network/members)
+[![contributors](https://img.shields.io/github/contributors/Fe2-O3/email-mcp?style=social)](https://github.com/Fe2-O3/email-mcp/graphs/contributors)
+
+[Releases](https://github.com/Fe2-O3/email-mcp/releases) ·
+[Changelog](CHANGELOG.md) ·
+[Security policy](SECURITY.md) ·
+[Contributing](CONTRIBUTING.md) ·
+[Upstream project](https://github.com/codefuturist/email-mcp)
+
+<sub>Standing on the work of
+<a href="https://github.com/codefuturist">@codefuturist</a> and the upstream
+contributors credited above. Released under LGPL-3.0-or-later.</sub>
+
+</div>
