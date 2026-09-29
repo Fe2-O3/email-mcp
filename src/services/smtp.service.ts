@@ -336,8 +336,9 @@ export default class SmtpService {
         if (!res.appended) {
           mcpLog('debug', 'smtp', `No Sent folder found for "${accountName}"; copy not filed`);
         }
-      } catch {
-        mcpLog('warning', 'smtp', `Sent-folder filing failed for "${accountName}"`);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        mcpLog('warning', 'smtp', `Sent-folder filing failed for "${accountName}": ${reason}`);
       }
     })();
   }

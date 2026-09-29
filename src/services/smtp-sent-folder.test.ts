@@ -13,6 +13,9 @@
 
 import SmtpService from './smtp.service.js';
 
+const { mcpLogMock } = vi.hoisted(() => ({ mcpLogMock: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('../logging.js', () => ({ mcpLog: mcpLogMock }));
+
 function buildService(appendSent: ReturnType<typeof vi.fn>) {
   const sendMail = vi.fn().mockResolvedValue({
     messageId: '<sent@example.invalid>',
@@ -71,6 +74,21 @@ describe('sent messages are filed into the Sent folder', () => {
       service.sendEmail('work', { to: ['c@example.invalid'], subject: 's', body: 'b' }),
     ).resolves.toMatchObject({ status: 'sent' });
     await vi.waitFor(() => expect(appendSent).toHaveBeenCalledOnce());
+  });
+
+  it('a filing failure logs the underlying reason, not just a bare warning', async () => {
+    const appendSent = vi.fn().mockRejectedValue(new Error('APPEND refused'));
+    const { service } = buildService(appendSent);
+
+    await service.sendEmail('work', { to: ['c@example.invalid'], subject: 's', body: 'b' });
+
+    await vi.waitFor(() =>
+      expect(mcpLogMock).toHaveBeenCalledWith(
+        'warning',
+        'smtp',
+        expect.stringContaining('Sent-folder filing failed for "work": APPEND refused'),
+      ),
+    );
   });
 
   it('forwards are filed too', async () => {
