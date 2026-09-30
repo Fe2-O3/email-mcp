@@ -159,8 +159,10 @@ export const CacheConfigSchema = z.object({
 export const SettingsSchema = z.object({
   rate_limit: z.number().int().min(1).default(10),
   // Seconds without an MCP request before the stdio server exits on its own.
-  // 0 disables. The default keeps idle children from outliving their sessions.
-  idle_exit: z.number().int().min(0).max(86_400).default(1800),
+  // 0 (the default) disables: stdin EOF is the primary lifecycle signal, so a
+  // host that closes the pipe does not need a timer. Set a positive value only
+  // as a backstop for hosts that never close it.
+  idle_exit: z.number().int().min(0).max(86_400).default(0),
   read_only: z.boolean().default(false),
   cache: CacheConfigSchema.default(() => ({
     enabled: true,
@@ -202,7 +204,7 @@ export const AppConfigFileSchema = z.object({
   settings: SettingsSchema.default(
     (): z.infer<typeof SettingsSchema> => ({
       rate_limit: 10,
-      idle_exit: 1800,
+      idle_exit: 0,
       read_only: false,
       cache: {
         enabled: true,

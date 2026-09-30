@@ -81,7 +81,7 @@ async function runServer(): Promise<void> {
   // the process takes itself down, so a host that keeps a session open forever
   // (resumed chats, forgotten terminals) does not pin a child for days. EOF
   // above stays the primary lifecycle signal; this is the backstop for hosts
-  // that never close the pipe. 0 disables.
+  // that never close the pipe. 0 disables, and 0 is the default.
   const idleExitSec = services.config.settings.idleExit;
   let lastActivity = Date.now();
 
@@ -181,8 +181,8 @@ async function runServer(): Promise<void> {
   if (idleExitSec > 0) {
     const idleMs = idleExitSec * 1_000;
     // Check often enough that short values fire close to their deadline (the
-    // lifecycle test runs at 2s) and rarely enough that a 30-minute default
-    // costs a handful of ticks: at most one tick of overshoot.
+    // lifecycle test runs at 2s) and rarely enough that a configured idle
+    // window costs a handful of ticks: at most one tick of overshoot.
     const timer = setInterval(
       () => {
         if (Date.now() - lastActivity < idleMs) return;

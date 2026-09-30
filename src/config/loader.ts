@@ -54,7 +54,7 @@ function loadFromEnv(): RawAppConfig | null {
   return {
     settings: {
       rate_limit: parseInt(process.env.MCP_EMAIL_RATE_LIMIT ?? '10', 10),
-      idle_exit: parseInt(process.env.MCP_EMAIL_IDLE_EXIT ?? '1800', 10),
+      idle_exit: parseInt(process.env.MCP_EMAIL_IDLE_EXIT ?? '0', 10),
       read_only: process.env.MCP_EMAIL_READ_ONLY === 'true',
       cache: {
         // Opt-out rather than opt-in: the mirror is a pure win for reads and
@@ -421,7 +421,7 @@ export function generateTemplate(): string {
 
 [settings]
 rate_limit = 10  # max emails per minute per account
-idle_exit = 1800  # seconds without MCP requests before the stdio server exits (0 = never)
+idle_exit = 0  # seconds without MCP requests before the stdio server exits (0 = never)
 read_only = false  # set to true to disable all write operations
 
 # Local mirror — keeps a SQLite copy of mail under $XDG_CACHE_HOME/email-mcp

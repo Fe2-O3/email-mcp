@@ -120,6 +120,11 @@ describe('SettingsSchema', () => {
     expect(result.read_only).toBe(false);
   });
 
+  it('applies default idle_exit of 0 (server lives until the client closes stdin)', () => {
+    const result = SettingsSchema.parse({});
+    expect(result.idle_exit).toBe(0);
+  });
+
   it('accepts custom values', () => {
     const result = SettingsSchema.parse({ rate_limit: 5, read_only: true });
     expect(result.rate_limit).toBe(5);

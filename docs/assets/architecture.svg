@@ -68,7 +68,7 @@
   <text x="480" y="352" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#c7d2fe">watcher &#183; calendar &#183; security</text>
   <text x="480" y="386" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#fca5a5">read_only mode gates every write</text>
   <text x="480" y="404" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#fca5a5">rate limit 10 sends / minute</text>
-  <text x="480" y="424" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#86efac">idle exit after 30 min of silence</text>
+  <text x="480" y="424" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#86efac">idle exit optional &#183; off by default</text>
 
   <!-- arrow 2 -->
   <line x1="632" y1="275" x2="682" y2="275" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
@@ -126,6 +126,6 @@
 
   <!-- footer strip -->
   <rect x="40" y="462" width="1160" height="46" rx="12" fill="#0f172a" stroke="#2b3a5c" stroke-width="1"/>
-  <text x="620" y="483" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="12.5" fill="#cbd5e1">TLS, STARTTLS or plain per account &#183; OAuth2 for Gmail-style providers &#183; 428 tests guard all of it</text>
+  <text x="620" y="483" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="12.5" fill="#cbd5e1">TLS, STARTTLS or plain per account &#183; OAuth2 for Gmail-style providers &#183; 430 tests guard all of it</text>
   <text x="620" y="500" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#64748b">Nothing is phoned home: no telemetry, no external API key, no account data leaving the host.</text>
 </svg>

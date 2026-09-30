@@ -6,6 +6,12 @@ All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-
 - Everything at or before the fork point (2026-08-21, `7fe8916`) is inherited upstream history. For the original project's releases — v0.1.0 through **v0.5.1** — see the **[codefuturist/email-mcp releases page](https://github.com/codefuturist/email-mcp/releases)** and their changelog.
 - The format loosely follows [Keep a Changelog](https://keepachangelog.com/); commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Idle exit now defaults to off** — `settings.idle_exit` default 1800 s → 0. The client closing stdin remains the primary exit signal, so a clean Claude/OpenCode quit still ends the server immediately; the timer is now an opt-in backstop (`idle_exit = <seconds>` or `MCP_EMAIL_IDLE_EXIT`). New configs and the config template ship `idle_exit = 0`.
+
 ## [0.1.0] — 2026-09-28
 
 First release of the hardened fork: **84 commits** past the fork point, **428 tests** green.

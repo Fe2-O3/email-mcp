@@ -164,7 +164,8 @@ describe('stdio server lifecycle', () => {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...sandboxEnv(sandbox),
-          // Shrink the default 1800s to something a test can observe.
+          // The idle valve is off by default (idle_exit = 0); turn it on with
+          // a window a test can observe.
           MCP_EMAIL_IDLE_EXIT: '2',
         },
       });
