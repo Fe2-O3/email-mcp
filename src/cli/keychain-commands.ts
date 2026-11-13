@@ -44,7 +44,15 @@ function assertNotCancel<T>(value: T): asserts value is Exclude<T, symbol> {
  */
 async function keychainStatus(): Promise<void> {
   if (!(await keychainAvailable())) {
-    console.error('macOS Keychain is not available on this system.');
+    if (process.platform === 'darwin') {
+      console.error('macOS Keychain is not available on this system.');
+    } else if (process.platform === 'linux') {
+      console.error(
+        'Linux secret store is not available. Install libsecret-tools (e.g. apt install libsecret-tools).',
+      );
+    } else {
+      console.error('Secure keychain storage is not available on this platform.');
+    }
     return;
   }
 
@@ -96,7 +104,13 @@ async function keychainMigrate(): Promise<void> {
   intro('email-mcp > Keychain Migration');
 
   if (!(await keychainAvailable())) {
-    log.error('macOS Keychain is not available on this system.');
+    log.error(
+      process.platform === 'darwin'
+        ? 'macOS Keychain is not available on this system.'
+        : process.platform === 'linux'
+          ? 'Linux secret store is not available. Install libsecret-tools (e.g. apt install libsecret-tools).'
+          : 'Secure keychain storage is not available on this platform.',
+    );
     log.info('Passwords will remain in the config file.');
     cancel('Keychain not available.');
     return;
@@ -169,7 +183,13 @@ async function keychainRemove(accountName?: string): Promise<void> {
   intro('email-mcp > Remove Keychain Entry');
 
   if (!(await keychainAvailable())) {
-    log.error('macOS Keychain is not available on this system.');
+    log.error(
+      process.platform === 'darwin'
+        ? 'macOS Keychain is not available on this system.'
+        : process.platform === 'linux'
+          ? 'Linux secret store is not available. Install libsecret-tools (e.g. apt install libsecret-tools).'
+          : 'Secure keychain storage is not available on this platform.',
+    );
     cancel('Keychain not available.');
     return;
   }

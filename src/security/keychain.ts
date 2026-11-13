@@ -1,11 +1,18 @@
 /**
- * macOS Keychain wrapper for secure password storage.
+ * Cross-platform secure password storage.
  *
- * Uses the `security` CLI (built into macOS) to store/retrieve/delete
- * passwords. No native dependencies required.
+ * macOS: uses the `security` CLI (built into macOS) to store/retrieve/delete
+ * passwords in the login Keychain. No native dependencies required.
+ *
+ * Linux: uses `secret-tool` (libsecret / GNOME Keyring) to store/retrieve/
+ * delete passwords. Install with your package manager, e.g.
+ * `apt install libsecret-tools` or `dnf install libsecret`.
  *
  * Passwords are stored under service "email-mcp" with the account name
  * as the account label.
+ *
+ * On unsupported platforms all operations report "not available" and the
+ * caller falls back to plain-text config or `password_command`.
  */
 
 import { execFile } from 'node:child_process';
@@ -17,23 +24,59 @@ const SERVICE = 'email-mcp';
 const KEYCHAIN_SENTINEL = 'use_keychain:';
 
 // ---------------------------------------------------------------------------
-// Core keychain operations
+// Platform detection
 // ---------------------------------------------------------------------------
 
-/**
- * Store a password in macOS Keychain.
- * Overwrites any existing entry for the same service + account.
- */
-export async function keychainSet(accountName: string, password: string): Promise<void> {
-  // Delete any existing entry first (add-generic-password fails if it exists)
+function isMacOS(): boolean {
+  return process.platform === 'darwin';
+}
+
+function isLinux(): boolean {
+  return process.platform === 'linux';
+}
+
+// ---------------------------------------------------------------------------
+// Tool availability
+// ---------------------------------------------------------------------------
+
+async function commandExists(cmd: string): Promise<boolean> {
+  try {
+    await execFileAsync('which', [cmd]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function macKeychainAvailable(): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync('security', ['help']);
+    return stdout.includes('keychain') || stdout.includes('generic-password');
+  } catch {
+    return false;
+  }
+}
+
+async function linuxSecretToolAvailable(): Promise<boolean> {
+  return commandExists('secret-tool');
+}
+
+export async function keychainAvailable(): Promise<boolean> {
+  if (isMacOS()) return macKeychainAvailable();
+  if (isLinux()) return linuxSecretToolAvailable();
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Core operations — macOS (security CLI)
+// ---------------------------------------------------------------------------
+
+async function macSet(accountName: string, password: string): Promise<void> {
   try {
     await execFileAsync('security', ['delete-generic-password', '-s', SERVICE, '-a', accountName]);
   } catch {
-    // Entry may not exist — that is fine
+    // Entry may not exist
   }
-
-  // -U updates if item already exists.
-  // -T adds the security CLI as trusted so reading doesn't pop a dialog.
   await execFileAsync('security', [
     'add-generic-password',
     '-s',
@@ -48,11 +91,7 @@ export async function keychainSet(accountName: string, password: string): Promis
   ]);
 }
 
-/**
- * Retrieve a password from macOS Keychain.
- * Returns null if the entry does not exist.
- */
-export async function keychainGet(accountName: string): Promise<string | null> {
+async function macGet(accountName: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync('security', [
       'find-generic-password',
@@ -68,45 +107,99 @@ export async function keychainGet(accountName: string): Promise<string | null> {
   }
 }
 
-/**
- * Delete a password from macOS Keychain.
- * Succeeds silently if the entry does not exist.
- */
-export async function keychainDelete(accountName: string): Promise<void> {
+async function macDelete(accountName: string): Promise<void> {
   try {
     await execFileAsync('security', ['delete-generic-password', '-s', SERVICE, '-a', accountName]);
   } catch {
-    // Entry may not exist — that is fine
+    // Entry may not exist
   }
 }
 
-/**
- * Check if macOS Keychain is available on this system.
- */
-export async function keychainAvailable(): Promise<boolean> {
+// ---------------------------------------------------------------------------
+// Core operations — Linux (secret-tool / libsecret)
+// ---------------------------------------------------------------------------
+
+async function linuxSet(accountName: string, password: string): Promise<void> {
+  // secret-tool reads the secret from stdin.
+  const { spawn } = await import('node:child_process');
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn(
+      'secret-tool',
+      ['store', '--label=email-mcp', 'service', SERVICE, 'account', accountName],
+      {
+        stdio: ['pipe', 'ignore', 'pipe'],
+      },
+    );
+    let stderr = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`secret-tool store failed (exit ${code}): ${stderr}`));
+    });
+    proc.stdin?.write(password);
+    proc.stdin?.end();
+  });
+}
+
+async function linuxGet(accountName: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('security', ['help']);
-    return stdout.includes('keychain') || stdout.includes('generic-password');
+    const { stdout } = await execFileAsync('secret-tool', [
+      'lookup',
+      'service',
+      SERVICE,
+      'account',
+      accountName,
+    ]);
+    return stdout.trim() || null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function linuxDelete(accountName: string): Promise<void> {
+  try {
+    await execFileAsync('secret-tool', ['clear', 'service', SERVICE, 'account', accountName]);
+  } catch {
+    // Entry may not exist
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export async function keychainSet(accountName: string, password: string): Promise<void> {
+  if (isMacOS()) return macSet(accountName, password);
+  if (isLinux()) return linuxSet(accountName, password);
+  throw new Error('Keychain is not available on this platform.');
+}
+
+export async function keychainGet(accountName: string): Promise<string | null> {
+  if (isMacOS()) return macGet(accountName);
+  if (isLinux()) return linuxGet(accountName);
+  return null;
+}
+
+export async function keychainDelete(accountName: string): Promise<void> {
+  if (isMacOS()) return macDelete(accountName);
+  if (isLinux()) return linuxDelete(accountName);
 }
 
 // ---------------------------------------------------------------------------
 // Sentinel value helpers
 // ---------------------------------------------------------------------------
 
-/** Returns true if the password field is a keychain sentinel. */
 export function isKeychainSentinel(password: string | undefined): boolean {
   return password?.startsWith(KEYCHAIN_SENTINEL) ?? false;
 }
 
-/** Extract the keychain account name from a sentinel value. */
 export function keychainSentinelAccount(password: string): string {
   return password.slice(KEYCHAIN_SENTINEL.length);
 }
 
-/** Create a sentinel value for a keychain-stored account. */
 export function makeKeychainSentinel(accountName: string): string {
   return KEYCHAIN_SENTINEL + accountName;
 }
@@ -115,10 +208,6 @@ export function makeKeychainSentinel(accountName: string): string {
 // Batch migration
 // ---------------------------------------------------------------------------
 
-/**
- * Migrate all plain-text passwords from a config to keychain.
- * Returns the updated config with sentinel values in place of passwords.
- */
 export async function migratePasswordsToKeychain(
   accounts: Array<{ name: string; password?: string }>,
 ): Promise<{ migrated: string[]; skipped: string[] }> {

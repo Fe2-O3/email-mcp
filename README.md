@@ -86,7 +86,7 @@ security surface, and ships its own release.
 | **Duplicate send guard** | ❌ ([#62](https://github.com/codefuturist/email-mcp/issues/62)) | ✅ Identifiable retries |
 | **Memory leak (6 days)** | ❌ OOM ([#55](https://github.com/codefuturist/email-mcp/issues/55)) | ✅ Connection rotation |
 | **Private IP SSRF** | ❌ | ✅ Blocked |
-| **Keychain support** | ❌ Plain text | ✅ macOS Keychain |
+| **Keychain support** | ❌ Plain text | ✅ macOS Keychain / Linux secret-tool |
 | **Large mailboxes (64k+)** | ❌ UID-join overflows | ✅ Chunked UID fetches |
 | **IP-literal IMAP hosts** | ✅ Fixed in v0.5.1 | ✅ Ported (`70d4215`) |
 | **`config validate`** | ✅ New in v0.5.0 | ✅ Ported (`bf09dcc`) |
@@ -621,9 +621,10 @@ password_command = "security find-generic-password -s email-mcp-personal -w"
 - If both `password` and `password_command` are set, `password_command` wins
 - Rotating the password requires restarting the server
 
-### macOS Keychain
+### Secure Keychain (macOS and Linux)
 
-Passwords are stored in macOS Keychain using sentinel values:
+Passwords are stored in the OS secure store using sentinel values.
+macOS uses the built-in Keychain; Linux uses `secret-tool` (libsecret).
 
 ```toml
 password = "use_keychain:my-account-name"

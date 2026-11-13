@@ -519,7 +519,7 @@ async function addAccount(): Promise<void> {
     try {
       await keychainSet(identity.name, creds.password);
       newAccount.password = makeKeychainSentinel(identity.name);
-      log.info('Password stored in macOS Keychain.');
+      log.info('Password stored in secure keychain.');
     } catch (err) {
       log.warning(`Could not store password in Keychain: ${err}`);
       log.info('Password saved in config file (less secure).');
@@ -740,7 +740,7 @@ async function editAccount(nameArg?: string): Promise<void> {
     try {
       await keychainSet(identity.name, creds.password);
       updatedAccount.password = makeKeychainSentinel(identity.name);
-      log.info('Password stored in macOS Keychain.');
+      log.info('Password stored in secure keychain.');
     } catch (err) {
       log.warning(`Could not store password in Keychain: ${err}`);
       log.info('Password saved in config file (less secure).');
