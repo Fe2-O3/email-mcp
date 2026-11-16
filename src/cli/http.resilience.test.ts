@@ -149,7 +149,11 @@ describe('http server resilience', () => {
       const garbage = await request(
         'POST',
         '/mcp',
-        { 'content-type': 'application/json', Authorization: auth.Authorization },
+        {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          Authorization: auth.Authorization,
+        },
         '{not json at all',
       );
       expect(garbage.status).toBe(400);
@@ -160,6 +164,7 @@ describe('http server resilience', () => {
         'POST',
         '/mcp',
         {
+          accept: 'application/json, text/event-stream',
           'content-type': 'application/json',
           'content-length': String(64 * 1024 * 1024),
           Authorization: auth.Authorization,
@@ -174,7 +179,7 @@ describe('http server resilience', () => {
         const sock = net.connect(port as number, '127.0.0.1');
         sock.on('connect', () => {
           sock.write(
-            'POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{',
+            'POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: application/json, text/event-stream\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{',
           );
           sock.resetAndDestroy();
           resolve();
