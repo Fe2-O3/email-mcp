@@ -36,6 +36,7 @@ import registerSecurityTools from './security.tool.js';
 import registerSendTools from './send.tool.js';
 import { registerTemplateReadTools, registerTemplateWriteTools } from './templates.tool.js';
 import registerThreadTools from './thread.tool.js';
+import registerVerificationTool from './verification.tool.js';
 import { registerWatcherReadTools, registerWatcherWriteTools } from './watcher.tool.js';
 
 export default function registerAllTools(
@@ -75,6 +76,9 @@ export default function registerAllTools(
   registerLocateTools(server, imapService);
   registerSecurityTools(server, imapService);
   registerWatcherReadTools(server, watcherService, hooksService);
+  if (config.settings.verification.enabled) {
+    registerVerificationTool(server, imapService, config);
+  }
 
   // Write tools — skipped in read-only mode
   if (!readOnly) {

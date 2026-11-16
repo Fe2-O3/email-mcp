@@ -534,6 +534,7 @@ async function addAccount(): Promise<void> {
     : {
         settings: {
           rate_limit: 10,
+          send: { max_attachment_mb: 25 },
           idle_exit: 0,
           read_only: false,
           cache: {
@@ -548,6 +549,10 @@ async function addAccount(): Promise<void> {
             enabled: false,
             folders: ['INBOX'],
             idle_timeout: 1740,
+          },
+          verification: {
+            enabled: false,
+            include_magic_links: false,
           },
           hooks: {
             on_new_email: 'notify',

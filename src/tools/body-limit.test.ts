@@ -29,6 +29,8 @@ function createConfig(): AppConfig {
   return {
     settings: {
       rateLimit: 10,
+      send: { maxAttachmentMb: 25 },
+      verification: { enabled: false, includeMagicLinks: false },
       idleExit: 1800,
       readOnly: false,
       cache: {

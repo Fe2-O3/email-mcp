@@ -47,6 +47,11 @@ project includes several security measures:
   to prevent buffer accumulation and stale state.
 - **Cache eviction** — label strategy caches are evicted after 5 minutes
   to prevent unbounded growth.
+- **Verification lookup** — the OTP tool is disabled by default and only scans
+  recent mail when explicitly called. It never reads or clears the system
+  clipboard. Clipboard writes require `copy_to_clipboard: true`, are blocked in
+  read-only mode, and are limited to ten per minute. Codes and links are
+  returned to the assistant by design.
 
 ## Best Practices for Users
 

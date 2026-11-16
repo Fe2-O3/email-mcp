@@ -29,7 +29,11 @@ const original = {
 
 function buildService(overrides: Partial<typeof original> = {}) {
   const connections = {
-    getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+    getAccount: () => ({
+      email: 'me@example.invalid',
+      fullName: 'Me',
+      smtp: { host: 'smtp.example.invalid' },
+    }),
     getSmtpTransport: async () => ({ sendMail }),
   };
   const imapService = {

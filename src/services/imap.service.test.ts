@@ -406,6 +406,26 @@ describe('ImapService', () => {
     });
   });
 
+  describe('fetchMessageAttachments size limit', () => {
+    it('checks the base64-encoded size before downloading attachment bytes', async () => {
+      client.fetchOne.mockResolvedValue({
+        bodyStructure: {
+          part: '1',
+          disposition: 'attachment',
+          dispositionParameters: { filename: 'large.bin' },
+          type: 'application/octet-stream',
+          size: 786_433,
+        },
+      } as never);
+
+      await expect(
+        service.fetchMessageAttachments('test', '1', 'INBOX', 1024 * 1024),
+      ).rejects.toThrow(/base64-encoded attachments/);
+      expect(client.download).not.toHaveBeenCalled();
+      expect(client._releaseFn).toHaveBeenCalledOnce();
+    });
+  });
+
   // -----------------------------------------------------------------------
   // Mailbox name sanitization
   // -----------------------------------------------------------------------

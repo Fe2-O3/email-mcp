@@ -62,6 +62,8 @@ export const AccountConfigSchema = z
     password: z.string().optional(),
     /** Shell command whose trimmed stdout is used as the password. */
     password_command: z.string().min(1, 'password_command cannot be empty').optional(),
+    /** Override the effective outbound attachment cap for this account, in MB. */
+    max_attachment_mb: z.number().int().min(1).optional(),
     oauth2: OAuth2ConfigSchema.optional(),
     imap: ImapConfigSchema,
     smtp: SmtpConfigSchema,
@@ -77,6 +79,13 @@ export const WatcherConfigSchema = z.object({
   enabled: z.boolean().default(false),
   folders: z.array(z.string()).default(() => ['INBOX']),
   idle_timeout: z.number().int().min(60).max(1740).default(1740),
+});
+
+/** On-demand verification-code lookup is deliberately disabled by default. */
+export const VerificationConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Allow the on-demand tool to return sign-in links as well as numeric codes. */
+  include_magic_links: z.boolean().default(false),
 });
 
 export const HookRuleMatchSchema = z.object({
@@ -158,6 +167,12 @@ export const CacheConfigSchema = z.object({
 
 export const SettingsSchema = z.object({
   rate_limit: z.number().int().min(1).default(10),
+  send: z
+    .object({
+      /** Maximum base64-encoded attachment bytes per outbound message, in MB. */
+      max_attachment_mb: z.number().int().min(1).default(25),
+    })
+    .default(() => ({ max_attachment_mb: 25 })),
   // Seconds without an MCP request before the stdio server exits on its own.
   // 0 (the default) disables: stdin EOF is the primary lifecycle signal, so a
   // host that closes the pipe does not need a timer. Set a positive value only
@@ -176,6 +191,10 @@ export const SettingsSchema = z.object({
     enabled: false,
     folders: ['INBOX'],
     idle_timeout: 1740,
+  })),
+  verification: VerificationConfigSchema.default(() => ({
+    enabled: false,
+    include_magic_links: false,
   })),
   hooks: HooksConfigSchema.default(
     (): z.infer<typeof HooksConfigSchema> => ({
@@ -204,6 +223,7 @@ export const AppConfigFileSchema = z.object({
   settings: SettingsSchema.default(
     (): z.infer<typeof SettingsSchema> => ({
       rate_limit: 10,
+      send: { max_attachment_mb: 25 },
       idle_exit: 0,
       read_only: false,
       cache: {
@@ -218,6 +238,10 @@ export const AppConfigFileSchema = z.object({
         enabled: false,
         folders: ['INBOX'],
         idle_timeout: 1740,
+      },
+      verification: {
+        enabled: false,
+        include_magic_links: false,
       },
       hooks: {
         on_new_email: 'notify',

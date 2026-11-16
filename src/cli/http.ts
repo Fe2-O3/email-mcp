@@ -129,7 +129,7 @@ export default async function runHttp(argv: string[]): Promise<void> {
   if (opts.noToken) {
     process.stderr.write(
       '[email-mcp] WARNING: running without authentication (--no-token). ' +
-        'Any local process can access all 49 tools.\n',
+        'Any local process can access all enabled email tools.\n',
     );
     opts.token = undefined;
   } else if (!opts.token) {

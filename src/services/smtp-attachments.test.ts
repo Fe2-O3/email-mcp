@@ -43,9 +43,24 @@ const twoParts = [
   },
 ];
 
-function buildService(opts: { attachmentParts?: Promise<typeof twoParts> } = {}) {
+function buildService(
+  opts: {
+    attachmentParts?: Promise<typeof twoParts>;
+    account?: {
+      email?: string;
+      smtpHost?: string;
+      maxAttachmentMb?: number;
+    };
+    globalAttachmentLimitMb?: number;
+  } = {},
+) {
   const connections = {
-    getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+    getAccount: () => ({
+      email: opts.account?.email ?? 'me@example.invalid',
+      fullName: 'Me',
+      smtp: { host: opts.account?.smtpHost ?? 'smtp.example.invalid' },
+      maxAttachmentMb: opts.account?.maxAttachmentMb,
+    }),
     getSmtpTransport: async () => ({ sendMail }),
   };
   const imapService = {
@@ -56,6 +71,7 @@ function buildService(opts: { attachmentParts?: Promise<typeof twoParts> } = {})
     connections as never,
     { tryConsume: () => true } as never,
     imapService as never,
+    opts.globalAttachmentLimitMb,
   );
 }
 
@@ -89,7 +105,11 @@ describe('forward_email reattaches the original\u2019s attachments', () => {
   it('fetches nothing when includeAttachments is false', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(twoParts);
     const connections = {
-      getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+      getAccount: () => ({
+        email: 'me@example.invalid',
+        fullName: 'Me',
+        smtp: { host: 'smtp.example.invalid' },
+      }),
       getSmtpTransport: async () => ({ sendMail }),
     };
     const imap = {
@@ -115,7 +135,11 @@ describe('forward_email reattaches the original\u2019s attachments', () => {
   it('refuses an oversized original before the transport is touched', async () => {
     const oversized = vi.fn().mockRejectedValue(new Error('Original carries 40MB of attachments'));
     const connections = {
-      getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+      getAccount: () => ({
+        email: 'me@example.invalid',
+        fullName: 'Me',
+        smtp: { host: 'smtp.example.invalid' },
+      }),
       getSmtpTransport: async () => ({ sendMail }),
     };
     const imap = {
@@ -132,6 +156,35 @@ describe('forward_email reattaches the original\u2019s attachments', () => {
       svc.forwardEmail('work', { emailId: '9', to: ['carol@example.invalid'] }),
     ).rejects.toThrow(/40MB/);
     expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('passes the account-specific cap into the forwarded attachment preflight', async () => {
+    const fetchAttachments = vi.fn().mockResolvedValue(twoParts);
+    const connections = {
+      getAccount: () => ({
+        email: 'person@outlook.com',
+        fullName: 'Me',
+        smtp: { host: 'smtp.office365.com' },
+      }),
+      getSmtpTransport: async () => ({ sendMail }),
+    };
+    const imap = {
+      getEmail: async () => ({ ...original }),
+      fetchMessageAttachments: fetchAttachments,
+    };
+    const svc = new SmtpService(
+      connections as never,
+      { tryConsume: () => true } as never,
+      imap as never,
+      25,
+    );
+
+    await svc.forwardEmail('work', {
+      emailId: '4821',
+      to: ['carol@example.invalid'],
+    });
+
+    expect(fetchAttachments).toHaveBeenCalledWith('work', '4821', 'INBOX', 20 * 1024 * 1024);
   });
 });
 
@@ -154,6 +207,38 @@ describe('send_email accepts inline parts safely', () => {
     const attachments = lastPayload().attachments as Array<Record<string, unknown>>;
     expect(attachments).toHaveLength(1);
     expect(attachments[0]).toMatchObject({ filename: 'invoice.pdf', encoding: 'base64' });
+  });
+
+  it('accepts local-file attachments on the reply path', async () => {
+    const svc = buildService();
+    await svc.replyToEmail('work', {
+      emailId: '4821',
+      body: 'See attached.',
+      attachments: [{ filename: 'notes.txt', content: Buffer.from('notes').toString('base64') }],
+    });
+
+    expect(lastPayload().attachments).toMatchObject([
+      { filename: 'notes.txt', encoding: 'base64' },
+    ]);
+    expect(lastPayload().disableFileAccess).toBe(true);
+    expect(lastPayload().disableUrlAccess).toBe(true);
+  });
+
+  it('rejects inline attachments over the effective provider limit before SMTP send', async () => {
+    const svc = buildService({
+      account: { email: 'person@outlook.com', smtpHost: 'smtp.office365.com' },
+      globalAttachmentLimitMb: 25,
+    });
+
+    await expect(
+      svc.sendEmail('work', {
+        to: ['carol@example.invalid'],
+        subject: 'Too large',
+        body: 'Attached.',
+        attachments: [{ filename: 'large.bin', content: 'A'.repeat(20 * 1024 * 1024 + 1) }],
+      }),
+    ).rejects.toThrow(/20 MB send limit/);
+    expect(sendMail).not.toHaveBeenCalled();
   });
 
   it('never allows filesystem or URL access in any composed mail', async () => {

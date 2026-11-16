@@ -58,6 +58,11 @@ async function showConfig(): Promise<void> {
   console.log(`Config file: ${CONFIG_FILE}\n`);
   console.log(`[settings]`);
   console.log(`  rate_limit = ${config.settings.rateLimit}`);
+  console.log(`  send.max_attachment_mb = ${config.settings.send.maxAttachmentMb}`);
+  console.log(`  verification.enabled = ${config.settings.verification.enabled}`);
+  console.log(
+    `  verification.include_magic_links = ${config.settings.verification.includeMagicLinks}`,
+  );
   console.log(`  read_only  = ${config.settings.readOnly}\n`);
 
   config.accounts.forEach((account) => {
@@ -77,6 +82,9 @@ async function showConfig(): Promise<void> {
     const imapLabel = account.imap.starttls ? 'STARTTLS' : imapSecurity;
     console.log(`  imap     = ${account.imap.host}:${account.imap.port} (${imapLabel})`);
     console.log(`  smtp     = ${account.smtp.host}:${account.smtp.port} (${smtpLabel})`);
+    if (account.maxAttachmentMb !== undefined) {
+      console.log(`  max_attachment_mb = ${account.maxAttachmentMb}`);
+    }
     console.log(
       `  smtp_pool = ${
         smtpPool.enabled
@@ -129,6 +137,9 @@ async function editSettings(): Promise<void> {
 
   log.info(`Current settings:`);
   log.info(`  rate_limit = ${settings.rate_limit}`);
+  log.info(`  send.max_attachment_mb = ${settings.send.max_attachment_mb}`);
+  log.info(`  verification.enabled = ${settings.verification.enabled}`);
+  log.info(`  verification.include_magic_links = ${settings.verification.include_magic_links}`);
   log.info(`  read_only  = ${settings.read_only}`);
 
   const rateLimitStr = await text({
@@ -147,6 +158,40 @@ async function editSettings(): Promise<void> {
     return;
   }
 
+  const attachmentLimitStr = await text({
+    message: 'Maximum base64-encoded attachment total per message (MB)',
+    defaultValue: String(settings.send.max_attachment_mb),
+    initialValue: String(settings.send.max_attachment_mb),
+    validate: (v) => {
+      if (!v) return 'Must be a positive integer';
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 1) return 'Must be a positive integer';
+      return undefined;
+    },
+  });
+  if (isCancel(attachmentLimitStr)) {
+    cancel('Cancelled.');
+    return;
+  }
+
+  const verificationEnabled = await confirm({
+    message: 'Enable the on-demand verification-code tool? (no background inbox scanning)',
+    initialValue: settings.verification.enabled,
+  });
+  if (isCancel(verificationEnabled)) {
+    cancel('Cancelled.');
+    return;
+  }
+
+  const includeMagicLinks = await confirm({
+    message: 'Also look for sign-in links when the tool is called?',
+    initialValue: settings.verification.include_magic_links,
+  });
+  if (isCancel(includeMagicLinks)) {
+    cancel('Cancelled.');
+    return;
+  }
+
   const readOnly = await confirm({
     message: 'Read-only mode? (disables all write operations)',
     initialValue: settings.read_only,
@@ -161,6 +206,15 @@ async function editSettings(): Promise<void> {
     settings: {
       ...settings,
       rate_limit: parseInt(rateLimitStr, 10),
+      send: {
+        ...settings.send,
+        max_attachment_mb: parseInt(attachmentLimitStr, 10),
+      },
+      verification: {
+        ...settings.verification,
+        enabled: verificationEnabled,
+        include_magic_links: includeMagicLinks,
+      },
       read_only: readOnly,
     },
   };

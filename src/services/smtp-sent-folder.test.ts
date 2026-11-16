@@ -21,7 +21,11 @@ function buildService(appendSent: ReturnType<typeof vi.fn>) {
     messageId: '<sent@example.invalid>',
   });
   const connections = {
-    getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+    getAccount: () => ({
+      email: 'me@example.invalid',
+      fullName: 'Me',
+      smtp: { host: 'smtp.example.invalid' },
+    }),
     getSmtpTransport: async () => ({ sendMail }),
     invalidateSmtpTransport: vi.fn(),
   };
@@ -94,7 +98,11 @@ describe('sent messages are filed into the Sent folder', () => {
   it('forwards are filed too', async () => {
     const appendSent = vi.fn().mockResolvedValue({ appended: true, folder: 'INBOX/Sent' });
     const connections = {
-      getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+      getAccount: () => ({
+        email: 'me@example.invalid',
+        fullName: 'Me',
+        smtp: { host: 'smtp.example.invalid' },
+      }),
       getSmtpTransport: async () => ({
         sendMail: vi.fn().mockResolvedValue({ messageId: '<f@example.invalid>' }),
       }),

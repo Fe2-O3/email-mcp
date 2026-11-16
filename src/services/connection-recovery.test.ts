@@ -58,7 +58,11 @@ describe('smtp send path evicts dead transports', () => {
   it('invalidates the cached transport when a send fails', async () => {
     const sendMail = vi.fn().mockRejectedValue(new Error('connection died mid-DATA'));
     const connections = {
-      getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+      getAccount: () => ({
+        email: 'me@example.invalid',
+        fullName: 'Me',
+        smtp: { host: 'smtp.example.invalid' },
+      }),
       getSmtpTransport: async () => ({ sendMail }),
       invalidateSmtpTransport: vi.fn(),
     };
@@ -82,7 +86,11 @@ describe('smtp send path evicts dead transports', () => {
   it('does not evict when the send succeeds', async () => {
     const sendMail = vi.fn().mockResolvedValue({ messageId: '<ok@example.invalid>' });
     const connections = {
-      getAccount: () => ({ email: 'me@example.invalid', fullName: 'Me' }),
+      getAccount: () => ({
+        email: 'me@example.invalid',
+        fullName: 'Me',
+        smtp: { host: 'smtp.example.invalid' },
+      }),
       getSmtpTransport: async () => ({ sendMail }),
       invalidateSmtpTransport: vi.fn(),
     };

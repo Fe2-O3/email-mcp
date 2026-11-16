@@ -2,7 +2,7 @@
  * Configuration loader.
  *
  * Precedence: environment variables → TOML config file → defaults.
- * Passwords marked with `use_keychain:<name>` are resolved from macOS Keychain.
+ * Passwords marked with `use_keychain:<name>` are resolved from the OS keychain.
  */
 
 import fs from 'node:fs/promises';
@@ -54,6 +54,9 @@ function loadFromEnv(): RawAppConfig | null {
   return {
     settings: {
       rate_limit: parseInt(process.env.MCP_EMAIL_RATE_LIMIT ?? '10', 10),
+      send: {
+        max_attachment_mb: parseInt(process.env.MCP_EMAIL_SEND_MAX_ATTACHMENT_MB ?? '25', 10),
+      },
       idle_exit: parseInt(process.env.MCP_EMAIL_IDLE_EXIT ?? '0', 10),
       read_only: process.env.MCP_EMAIL_READ_ONLY === 'true',
       cache: {
@@ -76,6 +79,10 @@ function loadFromEnv(): RawAppConfig | null {
           .map((f) => f.trim())
           .filter(Boolean),
         idle_timeout: parseInt(process.env.MCP_EMAIL_WATCHER_IDLE_TIMEOUT ?? '1740', 10),
+      },
+      verification: {
+        enabled: process.env.MCP_EMAIL_VERIFICATION_ENABLED === 'true',
+        include_magic_links: process.env.MCP_EMAIL_VERIFICATION_MAGIC_LINKS === 'true',
       },
       hooks: {
         on_new_email:
@@ -192,6 +199,7 @@ async function normalizeAccount(raw: RawAccountConfig): Promise<AccountConfig> {
     username: raw.username ?? raw.email,
     password,
     passwordCommand: raw.password_command,
+    maxAttachmentMb: raw.max_attachment_mb,
     oauth2: raw.oauth2 ? normalizeOAuth2(raw.oauth2) : undefined,
     imap: {
       host: raw.imap.host,
@@ -242,6 +250,9 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
   return {
     settings: {
       rateLimit: raw.settings.rate_limit,
+      send: {
+        maxAttachmentMb: raw.settings.send.max_attachment_mb,
+      },
       idleExit: raw.settings.idle_exit,
       readOnly: raw.settings.read_only,
       cache: {
@@ -256,6 +267,10 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
         enabled: raw.settings.watcher.enabled,
         folders: raw.settings.watcher.folders,
         idleTimeout: raw.settings.watcher.idle_timeout,
+      },
+      verification: {
+        enabled: raw.settings.verification.enabled,
+        includeMagicLinks: raw.settings.verification.include_magic_links,
       },
       hooks: {
         onNewEmail: raw.settings.hooks.on_new_email,
@@ -424,6 +439,9 @@ rate_limit = 10  # max emails per minute per account
 idle_exit = 0  # seconds without MCP requests before the stdio server exits (0 = never)
 read_only = false  # set to true to disable all write operations
 
+[settings.send]
+max_attachment_mb = 25  # base64-encoded attachment total per message, MB
+
 # Local mirror — keeps a SQLite copy of mail under $XDG_CACHE_HOME/email-mcp
 # so reads are fast and still work while briefly offline. On by default; the
 # mirror is regenerable, so deleting it is always safe.
@@ -439,6 +457,11 @@ read_only = false  # set to true to disable all write operations
 # enabled = false        # enable IMAP IDLE real-time monitoring
 # folders = ["INBOX"]    # folders to watch per account
 # idle_timeout = 1740    # seconds (29 min, IMAP max is 30)
+
+# On-demand OTP lookup. Disabled by default; no background inbox scanning.
+# [settings.verification]
+# enabled = false
+# include_magic_links = false  # also return sign-in links when explicitly requested
 
 # [settings.hooks]
 # on_new_email = "notify"  # "triage" (AI) | "notify" (log) | "none"
@@ -474,6 +497,7 @@ full_name = "Your Name"
 # username defaults to email if omitted
 # username = "you@example.com"
 password = "your-app-password"
+# max_attachment_mb = 40  # optional per-account attachment limit override
 
 [accounts.imap]
 host = "imap.example.com"

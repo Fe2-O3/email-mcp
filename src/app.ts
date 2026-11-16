@@ -57,7 +57,12 @@ export async function buildServices(): Promise<AppServices> {
   const connections = new ConnectionManager(config.accounts, oauthService);
   const rateLimiter = new RateLimiter(config.settings.rateLimit);
   const imapService = new ImapService(connections);
-  const smtpService = new SmtpService(connections, rateLimiter, imapService);
+  const smtpService = new SmtpService(
+    connections,
+    rateLimiter,
+    imapService,
+    config.settings.send.maxAttachmentMb,
+  );
   const templateService = new TemplateService();
   const calendarService = new CalendarService();
   const localCalendarService = new LocalCalendarService();

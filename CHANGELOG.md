@@ -11,6 +11,9 @@ All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-
 ### Changed
 
 - **Idle exit now defaults to off** — `settings.idle_exit` default 1800 s → 0. The client closing stdin remains the primary exit signal, so a clean Claude/OpenCode quit still ends the server immediately; the timer is now an opt-in backstop (`idle_exit = <seconds>` or `MCP_EMAIL_IDLE_EXIT`). New configs and the config template ship `idle_exit = 0`.
+- **Provider-aware outbound attachment caps** — `settings.send.max_attachment_mb` defaults to 25 MB; known provider limits can lower it, and an account-level `max_attachment_mb` can override it. The cap is checked before SMTP send, including inline and forwarded/draft attachments.
+- **Opt-in verification lookup** — `get_verification_code` is registered only when `settings.verification.enabled = true`. It scans recent mail only on request; optional magic-link lookup and clipboard writes are off unless explicitly enabled/requested. The clipboard is never read or cleared, and writes are blocked in read-only mode and limited to 10 per minute.
+- **Email terminal CLI** — list, read, search, mailboxes, flag, delete, attachment download, reply, and send commands reuse the IMAP/SMTP services and enforce read-only and attachment-size limits.
 
 ## [0.1.0] — 2026-09-28
 

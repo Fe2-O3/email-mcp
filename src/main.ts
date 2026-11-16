@@ -9,6 +9,7 @@
  *   test      Test IMAP/SMTP connections
  *   config    Config management (show, edit, validate, path, init)
  *   scheduler Email scheduling management
+ *   list/read/search/...  Read and compose email from the terminal
  */
 
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio';
@@ -40,6 +41,15 @@ Commands:
   config      Config management (show, edit, validate, path, init)
   keychain    Password management (migrate, status, remove)
   scheduler   Email scheduling management (check, list, install, uninstall, status)
+  list        List recent emails
+  read        Read an email by ID
+  search      Search emails
+  mailboxes   List mailboxes/folders
+  flag        Flag or unflag an email
+  delete      Delete an email (asks first unless --yes)
+  attach      Download an email attachment
+  reply       Reply to an email
+  send        Send an email
   notify      Test and diagnose desktop notifications
   help        Show this help message
 
@@ -67,6 +77,10 @@ Examples:
   email-mcp keychain remove [name]   # Remove a password from Keychain
   email-mcp scheduler check          # Send overdue scheduled emails
   email-mcp scheduler install        # Install OS periodic check
+  email-mcp list --unread             # List unread messages
+  email-mcp read 1234                 # Read a message
+  email-mcp send --to a@b.com --subject Hello --body "Hi"
+  email-mcp send --help              # Show options for an email command
   email-mcp notify test              # Send a test notification
   email-mcp notify status            # Check notification platform support
 `.trim();
@@ -204,6 +218,20 @@ async function main(): Promise<void> {
   const command = process.argv[2] ?? 'stdio';
 
   switch (command) {
+    case 'list':
+    case 'read':
+    case 'search':
+    case 'mailboxes':
+    case 'flag':
+    case 'delete':
+    case 'attach':
+    case 'reply':
+    case 'send': {
+      const { default: runEmailCommand } = await import('./cli/email-commands.js');
+      await runEmailCommand(command, process.argv.slice(3));
+      break;
+    }
+
     case 'stdio':
       await runServer();
       break;

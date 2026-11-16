@@ -1723,7 +1723,7 @@ export default class ImapService {
     accountName: string,
     emailId: string,
     mailbox = 'INBOX',
-    maxTotalBytes = 25 * 1024 * 1024,
+    maxTotalEncodedBytes = 25 * 1024 * 1024,
   ): Promise<
     Array<{ filename: string; content: string; contentType: string; encoding: 'base64' }>
   > {
@@ -1745,11 +1745,12 @@ export default class ImapService {
       const parts = extractAttachmentParts(msg.bodyStructure);
       if (parts.length === 0) return [];
 
-      const totalBytes = parts.reduce((sum, p) => sum + p.size, 0);
-      if (totalBytes > maxTotalBytes) {
+      const totalEncodedBytes = parts.reduce((sum, part) => sum + Math.ceil(part.size / 3) * 4, 0);
+      if (totalEncodedBytes > maxTotalEncodedBytes) {
+        const maxTotalMb = Math.floor(maxTotalEncodedBytes / (1024 * 1024));
         throw new Error(
-          `Original carries ${Math.round(totalBytes / 1024 / 1024)}MB of attachments, ` +
-            `exceeds the ${Math.round(maxTotalBytes / 1024 / 1024)}MB outbound limit. ` +
+          `Original carries about ${Math.ceil(totalEncodedBytes / 1024 / 1024)}MB of ` +
+            `base64-encoded attachments, exceeding the ${maxTotalMb}MB outbound limit. ` +
             `Forward without attachments or send them another way.`,
         );
       }

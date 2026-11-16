@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 
 import type { Transporter } from 'nodemailer';
+import { DEFAULT_SEND_LIMIT_MB, resolveSendLimitMb } from '../config/send-limit.js';
 import type { IConnectionManager } from '../connections/types.js';
 import { mcpLog } from '../logging.js';
 import type RateLimiter from '../safety/rate-limiter.js';
@@ -15,10 +16,13 @@ import type { SendResult } from '../types/index.js';
 import type ImapService from './imap.service.js';
 
 export default class SmtpService {
+  private readonly pendingSentFilings = new Set<Promise<void>>();
+
   constructor(
     private connections: IConnectionManager,
     private rateLimiter: RateLimiter,
     private imapService: ImapService,
+    private globalAttachmentLimitMb = DEFAULT_SEND_LIMIT_MB,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -52,6 +56,8 @@ export default class SmtpService {
     this.assertNotDuplicate(accountName, options.to, options.subject, options.allowDuplicate);
 
     const account = this.connections.getAccount(accountName);
+    const attachmentLimitMb = this.sendLimitMb(account);
+    this.assertInlineAttachmentsWithinLimit(options.attachments, attachmentLimitMb);
     const transport = await this.connections.getSmtpTransport(accountName);
 
     const messageId =
@@ -103,11 +109,14 @@ export default class SmtpService {
       body: string;
       replyAll?: boolean;
       html?: boolean;
+      attachments?: Array<{ filename?: string; content: string; contentType?: string }>;
     },
   ): Promise<SendResult> {
     this.checkRateLimit(accountName);
 
     const account = this.connections.getAccount(accountName);
+    const attachmentLimitMb = this.sendLimitMb(account);
+    this.assertInlineAttachmentsWithinLimit(options.attachments, attachmentLimitMb);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
 
     // Build recipient list — Reply-To overrides From when present
@@ -147,6 +156,18 @@ export default class SmtpService {
       references: references.join(' '),
       messageId: `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`,
       ...(options.html ? { html: options.body } : { text: options.body }),
+      ...(options.attachments?.length
+        ? {
+            attachments: options.attachments.map((attachment) => ({
+              filename: attachment.filename,
+              content: attachment.content,
+              encoding: 'base64' as const,
+              contentType: attachment.contentType,
+            })),
+          }
+        : {}),
+      disableFileAccess: true,
+      disableUrlAccess: true,
     };
 
     const result = await this.sendWithRecovery(accountName, transport, mailOptions);
@@ -237,6 +258,7 @@ export default class SmtpService {
           accountName,
           options.emailId,
           options.mailbox ?? 'INBOX',
+          this.sendLimitMb(account) * 1024 * 1024,
         )
       : [];
 
@@ -273,6 +295,32 @@ export default class SmtpService {
           `Please wait before sending more emails.`,
       );
     }
+  }
+
+  private sendLimitMb(account: ReturnType<IConnectionManager['getAccount']>): number {
+    return resolveSendLimitMb(account, this.globalAttachmentLimitMb);
+  }
+
+  private assertInlineAttachmentsWithinLimit(
+    attachments: Array<{ filename?: string; content: string }> | undefined,
+    limitMb: number,
+  ): void {
+    if (!attachments?.length) return;
+    const totalEncodedBytes = attachments.reduce(
+      (total, attachment) => total + Buffer.byteLength(attachment.content, 'utf8'),
+      0,
+    );
+    const limitBytes = limitMb * 1024 * 1024;
+    if (totalEncodedBytes <= limitBytes) return;
+
+    const names = attachments
+      .map((attachment) => attachment.filename)
+      .filter((filename): filename is string => Boolean(filename));
+    const suffix = names.length > 0 ? ` (${names.join(', ')})` : '';
+    throw new Error(
+      `Base64-encoded attachments${suffix} exceed the ${limitMb} MB send limit. ` +
+        `Reduce the attachments or set max_attachment_mb for this account if its provider allows more.`,
+    );
   }
 
   /**
@@ -327,7 +375,7 @@ export default class SmtpService {
    * does not return it (only json/stream transports set `info.message`).
    */
   private fileToSent(accountName: string, mailOptions: Record<string, unknown>): void {
-    void (async () => {
+    const filing = (async () => {
       try {
         const { default: MailComposer } = await import('nodemailer/lib/mail-composer/index.js');
         const composer = new MailComposer(mailOptions as never);
@@ -341,6 +389,16 @@ export default class SmtpService {
         mcpLog('warning', 'smtp', `Sent-folder filing failed for "${accountName}": ${reason}`);
       }
     })();
+    this.pendingSentFilings.add(filing);
+    void filing.then(
+      () => this.pendingSentFilings.delete(filing),
+      () => this.pendingSentFilings.delete(filing),
+    );
+  }
+
+  /** Wait for best-effort Sent-folder copies before a one-shot CLI closes connections. */
+  async waitForSentFilings(): Promise<void> {
+    await Promise.all(this.pendingSentFilings);
   }
 
   /**
@@ -392,6 +450,7 @@ export default class SmtpService {
       accountName,
       String(draftId),
       draftsPath,
+      this.sendLimitMb(account) * 1024 * 1024,
     );
 
     const mailOptions = {

@@ -37,6 +37,9 @@ describe('Config Loader', () => {
       'MCP_EMAIL_PASSWORD',
       'MCP_EMAIL_IMAP_HOST',
       'MCP_EMAIL_SMTP_HOST',
+      'MCP_EMAIL_SEND_MAX_ATTACHMENT_MB',
+      'MCP_EMAIL_VERIFICATION_ENABLED',
+      'MCP_EMAIL_VERIFICATION_MAGIC_LINKS',
       'MCP_EMAIL_READ_ONLY',
       'MCP_EMAIL_ACCOUNT_NAME',
     ]) {
@@ -127,11 +130,27 @@ read_only = true
 
       // Settings defaults
       expect(config.settings.rateLimit).toBe(10);
+      expect(config.settings.send.maxAttachmentMb).toBe(25);
+      expect(config.settings.verification).toEqual({
+        enabled: false,
+        includeMagicLinks: false,
+      });
       expect(config.settings.readOnly).toBe(false);
       expect(config.settings.watcher.enabled).toBe(false);
       expect(config.settings.watcher.folders).toEqual(['INBOX']);
       expect(config.settings.hooks.onNewEmail).toBe('notify');
       expect(config.settings.hooks.preset).toBe('priority-focus');
+    });
+
+    it('loads global and per-account attachment limits', async () => {
+      const configPath = path.join(tmpDir, 'send-limit.toml');
+      const toml = `${MINIMAL_TOML.replace('name = "test"', 'name = "test"\nmax_attachment_mb = 40')}\n[settings.send]\nmax_attachment_mb = 12\n`;
+      await fs.writeFile(configPath, toml, 'utf-8');
+
+      const config = await loadConfig(configPath);
+
+      expect(config.settings.send.maxAttachmentMb).toBe(12);
+      expect(config.accounts[0].maxAttachmentMb).toBe(40);
     });
   });
 
@@ -145,6 +164,7 @@ read_only = true
       process.env.MCP_EMAIL_PASSWORD = 'env-pass';
       process.env.MCP_EMAIL_IMAP_HOST = 'imap.env.com';
       process.env.MCP_EMAIL_SMTP_HOST = 'smtp.env.com';
+      process.env.MCP_EMAIL_SEND_MAX_ATTACHMENT_MB = '12';
 
       const config = await loadConfig(path.join(tmpDir, 'nonexistent.toml'));
 
@@ -152,6 +172,23 @@ read_only = true
       expect(config.accounts[0].email).toBe('env@example.com');
       expect(config.accounts[0].imap.host).toBe('imap.env.com');
       expect(config.accounts[0].smtp.host).toBe('smtp.env.com');
+      expect(config.settings.send.maxAttachmentMb).toBe(12);
+    });
+
+    it('enables verification lookup only through explicit environment flags', async () => {
+      process.env.MCP_EMAIL_ADDRESS = 'env@example.com';
+      process.env.MCP_EMAIL_PASSWORD = 'env-pass';
+      process.env.MCP_EMAIL_IMAP_HOST = 'imap.env.com';
+      process.env.MCP_EMAIL_SMTP_HOST = 'smtp.env.com';
+      process.env.MCP_EMAIL_VERIFICATION_ENABLED = 'true';
+      process.env.MCP_EMAIL_VERIFICATION_MAGIC_LINKS = 'true';
+
+      const config = await loadConfig(path.join(tmpDir, 'verification-env.toml'));
+
+      expect(config.settings.verification).toEqual({
+        enabled: true,
+        includeMagicLinks: true,
+      });
     });
 
     it('reads read_only from MCP_EMAIL_READ_ONLY', async () => {
@@ -235,6 +272,8 @@ read_only = true
       expect(template).toContain('[accounts.smtp]');
       expect(template).toContain('[settings]');
       expect(template).toContain('rate_limit');
+      expect(template).toContain('[settings.send]');
+      expect(template).toContain('max_attachment_mb = 25');
     });
   });
 });

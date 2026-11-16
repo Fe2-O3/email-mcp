@@ -79,3 +79,19 @@ export const emailStatusOutputSchema = z.object({
   answered: z.boolean(),
   labels: z.array(z.string()),
 });
+
+/** Structured result for an explicit, on-demand verification lookup. */
+export const verificationOutputSchema = z.object({
+  found: z.boolean(),
+  kind: z.enum(['code', 'link']).optional(),
+  value: z.string().optional(),
+  account: z.string().optional(),
+  mailbox: z.string().optional(),
+  from: z.string().optional(),
+  subject: z.string().optional(),
+  service: z.string().optional(),
+  date: z.string().optional(),
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+  copied: z.boolean(),
+  copy_error: z.string().optional(),
+});

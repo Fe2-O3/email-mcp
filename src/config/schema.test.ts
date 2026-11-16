@@ -86,6 +86,15 @@ describe('AccountConfigSchema', () => {
     expect(result.oauth2?.provider).toBe('google');
   });
 
+  it('accepts a per-account outbound attachment limit', () => {
+    const result = AccountConfigSchema.parse(validAccount({ max_attachment_mb: 40 }));
+    expect(result.max_attachment_mb).toBe(40);
+  });
+
+  it('rejects a non-positive per-account outbound attachment limit', () => {
+    expect(() => AccountConfigSchema.parse(validAccount({ max_attachment_mb: 0 }))).toThrow();
+  });
+
   it('rejects when neither password nor oauth2 provided', () => {
     expect(() => AccountConfigSchema.parse(validAccount({ password: undefined }))).toThrow(
       'password or oauth2',
@@ -113,6 +122,21 @@ describe('SettingsSchema', () => {
   it('applies default rate_limit of 10', () => {
     const result = SettingsSchema.parse({});
     expect(result.rate_limit).toBe(10);
+  });
+
+  it('defaults the outbound attachment limit to 25 MB', () => {
+    const result = SettingsSchema.parse({});
+    expect(result.send.max_attachment_mb).toBe(25);
+  });
+
+  it('keeps verification lookup and magic-link lookup opt-in', () => {
+    const result = SettingsSchema.parse({});
+    expect(result.verification).toEqual({ enabled: false, include_magic_links: false });
+  });
+
+  it('accepts a custom outbound attachment limit', () => {
+    const result = SettingsSchema.parse({ send: { max_attachment_mb: 12 } });
+    expect(result.send.max_attachment_mb).toBe(12);
   });
 
   it('applies default read_only of false', () => {

@@ -2,7 +2,7 @@
 
 # IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="IMAP Wizard — hardened email MCP server: 49 tools, 430 tests green, 17 upstream bugs closed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard — hardened email MCP server: 49 core tools plus opt-in verification, 504 tests green, 17 upstream bugs closed" width="100%">
 
 **The email server your AI assistant actually needs.** A hardened fork of
 [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) — every known
@@ -10,10 +10,10 @@ bug fixed, 13 security controls added, released and versioned.
 
 [![release](https://img.shields.io/github/v/release/Fe2-O3/email-mcp?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/email-mcp/releases/tag/v0.1.0)
 [![upstream](https://img.shields.io/github/v/release/codefuturist/email-mcp?label=upstream&color=ff6a00&style=flat-square)](https://github.com/codefuturist/email-mcp/releases)
-[![tests](https://img.shields.io/badge/tests-430%20green-22c55e?style=flat-square)](CHANGELOG.md)
+[![tests](https://img.shields.io/badge/tests-504%20green-22c55e?style=flat-square)](CHANGELOG.md)
 [![tools](https://img.shields.io/badge/49-tools-0ea5e9?style=flat-square)](#49-tools)
 [![last commit](https://img.shields.io/github/last-commit/Fe2-O3/email-mcp?label=last%20commit&style=flat-square)](https://github.com/Fe2-O3/email-mcp/commits/main)
-[![ahead of fork point](https://img.shields.io/badge/95-commits%20past%20fork%20point-334155?style=flat-square)](#version-history)
+[![ahead of fork point](https://img.shields.io/badge/98-commits%20past%20fork%20point-334155?style=flat-square)](#version-history)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
 [![MCP SDK v2](https://img.shields.io/badge/MCP-SDK%20v2-8B5CF6?style=flat-square)](https://modelcontextprotocol.io)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
@@ -25,8 +25,8 @@ bug fixed, 13 security controls added, released and versioned.
     <td align="center"><h3>49</h3><sub>tools</sub></td>
     <td align="center"><h3>7</h3><sub>prompts</sub></td>
     <td align="center"><h3>6</h3><sub>resources</sub></td>
-    <td align="center"><h3>430</h3><sub>tests green</sub></td>
-    <td align="center"><h3>95</h3><sub>commits</sub></td>
+    <td align="center"><h3>504</h3><sub>tests green</sub></td>
+    <td align="center"><h3>98</h3><sub>commits</sub></td>
     <td align="center"><h3>17</h3><sub>upstream issues closed</sub></td>
   </tr>
 </table>
@@ -95,7 +95,7 @@ security surface, and ships its own release.
 
 | <strong>Bug fixes</strong> | <strong>Security</strong> | <strong>Craft</strong> |
 |:---:|:---:|:---:|
-| 17 upstream issues closed, every fix linked | 13 hardening controls, disclosure policy | 430 tests, CI-grade <code>config validate</code> |
+| 17 upstream issues closed, every fix linked | 13 hardening controls, disclosure policy | 504 tests, CI-grade <code>config validate</code> |
 
 </div>
 
@@ -103,7 +103,7 @@ security surface, and ships its own release.
 
 ## Architecture at a Glance
 
-<img src="docs/assets/architecture.svg" alt="Diagram: AI clients speak MCP over stdio or HTTP to a 49-tool layer, which runs IMAP, SMTP, a SQLite cache, a watcher, hooks and a scheduler; config, Keychain and cache live on disk" width="100%">
+<img src="docs/assets/architecture.svg" alt="Diagram: AI clients speak MCP over stdio or HTTP to a 49-tool layer, with an optional verification-code tool, running IMAP, SMTP, SQLite cache, watcher, hooks and scheduler" width="100%">
 
 Everything runs on your machine. There is no proxy, no telemetry, and no API key
 to buy: your assistant drives a local process that speaks IMAP and SMTP straight
@@ -257,7 +257,7 @@ is [docs/upstream-v0.5-draft.md](docs/upstream-v0.5-draft.md).
 | TLS `servername` repair for IP-literal hosts | **Ported** (`70d4215`) | Real bug here too: IMAP hosts given as IP addresses failed before authentication |
 | `config validate` with did-you-mean typos | **Ported** (`bf09dcc`) | Same silent-typo failure mode; exit `1` keeps it usable in CI |
 | Dependency set: imapflow 2, nodemailer 10, vitest 5, zod 4.6 | **Ported** (`bae1bb7`) | One upgrade pass instead of a growing backlog |
-| CLI lazy-loading, 3.8× faster startup (`a0f9ca6`) | **Adopt next** | Pure refactor of `main.ts`. Only real risk is a missed import, and 430 tests would catch it |
+| CLI lazy-loading, 3.8× faster startup (`a0f9ca6`) | **Adopt next** | Pure refactor of `main.ts`. Only real risk is a missed import, and 504 tests would catch it |
 | Shell completion for zsh, bash, fish (`e0c6563`) | **Adopt next** | Additive and small. Ours must list *our* subcommands, including `config validate`, so the list needs a test to stay honest |
 | Config section editor, field catalog, validated save with backups | **Hold** | `config validate` already delivers the safety non-interactively. Their field catalog assumes `server` and `verification` sections this fork does not have, and does not know our `keychain`, `idle_exit`, or `password_command` settings |
 | Verification-code catcher: OTP, magic links, clipboard (12 commits) | **Not adopted** | Upstream ships it **on by default** (`enabled: true`, `auto_copy: true`, `confirm_copy: false`) and its clipboard service reads your clipboard with `pbpaste`. Useful, but it puts clipboard access inside a mail server, and this fork does not need it |
@@ -532,7 +532,7 @@ after upstream's v0.5.1 release**. Live tracker:
 
 | Category | Tools |
 |---|---|
-| **Read (14)** | `list_accounts` `list_mailboxes` `list_emails` `get_email` `get_emails` `get_email_status` `search_emails` `download_attachment` `find_email_folder` `extract_contacts` `get_thread` `list_templates` `get_email_stats` `check_health` |
+| **Read (14 + opt-in)** | `list_accounts` `list_mailboxes` `list_emails` `get_email` `get_emails` `get_email_status` `search_emails` `download_attachment` `find_email_folder` `extract_contacts` `get_thread` `list_templates` `get_email_stats` `check_health` · `get_verification_code` (opt-in) |
 | **Write (9)** | `send_email` `reply_email` `forward_email` `save_draft` `send_draft` `apply_template` `schedule_email` `list_scheduled` `cancel_scheduled` |
 | **Manage (7)** | `move_email` `delete_email` `mark_email` `bulk_action` `create_mailbox` `rename_mailbox` `delete_mailbox` |
 | **Labels (5)** | `list_labels` `add_label` `remove_label` `create_label` `delete_label` |
@@ -568,11 +568,15 @@ Located at `~/.config/email-mcp/config.toml`:
 rate_limit = 10     # max emails per minute per account
 idle_exit = 0       # seconds without MCP requests before the stdio server exits (0 = never)
 
+[settings.send]
+max_attachment_mb = 25  # total base64-encoded attachments per message
+
 [[accounts]]
 name = "personal"
 email = "you@gmail.com"
 full_name = "Your Name"
 password = "use_keychain:personal"  # macOS Keychain
+# max_attachment_mb = 40  # optional account-specific override
 
 [accounts.imap]
 host = "imap.gmail.com"
@@ -584,6 +588,30 @@ host = "smtp.gmail.com"
 port = 465
 tls = true
 ```
+
+The send cap defaults to 25 MB. Known providers use a lower cap when their
+configured limit is smaller; an account-level `max_attachment_mb` overrides
+both. Provider limits vary by plan and can change, so keep the cap within the
+limit your mail provider supports. In environment-based setup, use
+`MCP_EMAIL_SEND_MAX_ATTACHMENT_MB`.
+
+### On-demand verification codes
+
+The `get_verification_code` tool is disabled by default. Enable it with:
+
+```toml
+[settings.verification]
+enabled = true
+include_magic_links = false  # optional, also search for sign-in links
+```
+
+It scans recent mail only when called. It does not watch the inbox in the
+background. The result contains the code or link. Clipboard copying is off by
+default and must be requested with `copy_to_clipboard = true`; the server never
+reads or clears the clipboard. Clipboard writes are blocked in read-only mode.
+Environment-based setup can enable it with
+`MCP_EMAIL_VERIFICATION_ENABLED=true`. Set
+`MCP_EMAIL_VERIFICATION_MAGIC_LINKS=true` to also scan for sign-in links.
 
 Validate any edit with:
 
@@ -679,8 +707,22 @@ Commands:
   scheduler install         Install OS-level scheduler (launchd/crontab)
   scheduler uninstall       Remove OS-level scheduler
   scheduler status          Show scheduler installation status
+  list                      List recent emails
+  read <id>                 Read an email
+  search <query>            Search email
+  mailboxes                 List mailboxes/folders
+  flag <id>                 Flag an email
+  delete <id>               Delete an email (confirmation required)
+  attach <id> <filename>    Save an attachment to disk
+  reply <id>                Reply to an email
+  send                      Send an email
   help                      Show help
 ```
+
+The email commands accept `--account NAME`; if omitted, they use the first
+configured account. Read commands support `--json`. `delete` asks for
+confirmation unless `--yes` is passed. `send` and `reply` accept repeated
+`--attach FILE` options and enforce the configured/provider attachment cap.
 
 ---
 
@@ -738,7 +780,7 @@ pnpm build       # build
 ### Testing
 
 ```bash
-pnpm test              # unit tests — 430 tests across 55 files
+pnpm test              # unit tests — 504 tests across 63 files
 pnpm test:integration  # against a throwaway GreenMail server (Docker required)
 pnpm smoke             # every MCP tool against a real configured account
 ```

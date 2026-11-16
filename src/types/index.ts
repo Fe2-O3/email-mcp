@@ -67,6 +67,8 @@ export interface AccountConfig {
   password?: string;
   /** Command that produced `password`. Diagnostic only — never the secret. */
   passwordCommand?: string;
+  /** Optional per-account outbound attachment cap in MB. */
+  maxAttachmentMb?: number;
   oauth2?: OAuth2Config;
   imap: ImapConfig;
   smtp: SmtpConfig;
@@ -76,6 +78,11 @@ export interface WatcherConfig {
   enabled: boolean;
   folders: string[];
   idleTimeout: number;
+}
+
+export interface VerificationConfig {
+  enabled: boolean;
+  includeMagicLinks: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,11 +159,15 @@ export interface CacheConfig {
 export interface AppConfig {
   settings: {
     rateLimit: number;
+    send: {
+      maxAttachmentMb: number;
+    };
     /** Seconds without an MCP request before the stdio server exits; 0 disables. */
     idleExit: number;
     readOnly: boolean;
     cache: CacheConfig;
     watcher: WatcherConfig;
+    verification: VerificationConfig;
     hooks: HooksConfig;
   };
   accounts: AccountConfig[];

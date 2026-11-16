@@ -28,6 +28,7 @@ vi.mock('./watcher.tool.js', () => ({
   registerWatcherReadTools: vi.fn(),
   registerWatcherWriteTools: vi.fn(),
 }));
+vi.mock('./verification.tool.js', () => ({ default: vi.fn() }));
 
 import registerAccountsTools from './accounts.tool.js';
 import registerBulkTools from './bulk.tool.js';
@@ -39,11 +40,14 @@ import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
 import registerSendTools from './send.tool.js';
 import { registerTemplateWriteTools } from './templates.tool.js';
+import registerVerificationTool from './verification.tool.js';
 
-function createConfig(readOnly: boolean): AppConfig {
+function createConfig(readOnly: boolean, verificationEnabled = false): AppConfig {
   return {
     settings: {
       rateLimit: 10,
+      send: { maxAttachmentMb: 25 },
+      verification: { enabled: verificationEnabled, includeMagicLinks: false },
       idleExit: 1800,
       readOnly,
       cache: {
@@ -136,5 +140,43 @@ describe('registerAllTools', () => {
     expect(registerFolderTools).not.toHaveBeenCalled();
     expect(registerTemplateWriteTools).not.toHaveBeenCalled();
     expect(registerSchedulerTools).not.toHaveBeenCalled();
+  });
+
+  it('does not register verification lookup unless explicitly enabled', () => {
+    registerAllTools(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      createConfig(false),
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(registerVerificationTool).not.toHaveBeenCalled();
+  });
+
+  it('registers on-demand verification lookup when enabled, including in read-only mode', () => {
+    registerAllTools(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      createConfig(true, true),
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(registerVerificationTool).toHaveBeenCalledOnce();
   });
 });
