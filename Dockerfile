@@ -21,12 +21,12 @@ RUN pnpm prune --prod
 # ── Production stage ──────────────────────────────────────────────────────────
 FROM node:24-slim AS production
 
-LABEL org.opencontainers.image.title="email-mcp" \
+LABEL org.opencontainers.image.title="imap-wizard" \
       org.opencontainers.image.description="IMAP/SMTP email MCP server — 49 tools, stdio + Streamable HTTP, IMAP IDLE push, multi-account, AI triage" \
-      org.opencontainers.image.url="https://github.com/codefuturist/email-mcp" \
-      org.opencontainers.image.source="https://github.com/codefuturist/email-mcp" \
+      org.opencontainers.image.url="https://github.com/Fe2-O3/imap-wizard" \
+      org.opencontainers.image.source="https://github.com/Fe2-O3/imap-wizard" \
       org.opencontainers.image.licenses="LGPL-3.0-or-later" \
-      org.opencontainers.image.vendor="codefuturist"
+      org.opencontainers.image.vendor="Fe2-O3"
 
 WORKDIR /app
 
@@ -46,7 +46,7 @@ EXPOSE 8080
 USER node
 
 # Default: stdio. For HTTP, override the command, e.g.:
-#   docker run -e EMAIL_MCP_HTTP_TOKEN=… -p 8080:8080 codefuturist/email-mcp \
+#   docker run -e EMAIL_MCP_HTTP_TOKEN=… -p 8080:8080 ghcr.io/fe2-o3/imap-wizard \
 #     http --host 0.0.0.0 --port 8080
 ENTRYPOINT ["node", "dist/main.js"]
 CMD ["stdio"]

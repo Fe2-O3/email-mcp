@@ -2,7 +2,7 @@ services:
   # ── Method 1: stdio (default) ───────────────────────────────────────────────
   email-mcp:
     build: .
-    image: codefuturist/email-mcp:latest
+    image: ghcr.io/fe2-o3/imap-wizard:latest
     stdin_open: true # required for stdio transport
     volumes:
       - ${EMAIL_MCP_CONFIG:-~/.config/email-mcp}:/home/node/.config/email-mcp:ro
@@ -13,7 +13,7 @@ services:
   # `Authorization: Bearer $EMAIL_MCP_HTTP_TOKEN` to http://host:8080/mcp.
   email-mcp-http:
     build: .
-    image: codefuturist/email-mcp:latest
+    image: ghcr.io/fe2-o3/imap-wizard:latest
     profiles: ["http"]
     command: ["http", "--host", "0.0.0.0", "--port", "8080"]
     environment:

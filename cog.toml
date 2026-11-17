@@ -1,5 +1,5 @@
 # ==============================================================================
-# Cocogitto Configuration for email-mcp
+# Cocogitto Configuration for imap-wizard
 # ==============================================================================
 # Docs: https://docs.cocogitto.io/reference/config.html
 #
@@ -35,8 +35,8 @@ post_bump_hooks = [
     "git add package.json",
     "jq --arg v {{version}} '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json",
     "git add server.json",
-    "git push origin HEAD",
-    "git push origin {{version}}",
+    "git push fork HEAD",
+    "git push fork {{version}}",
 ]
 
 # ------------------------------------------------------------------------------
@@ -68,8 +68,8 @@ revert = { changelog_title = "⏪ Reverts" }
 path = "CHANGELOG.md"
 template = "remote"
 remote = "github.com"
-owner = "codefuturist"
-repository = "email-mcp"
+owner = "Fe2-O3"
+repository = "imap-wizard"
 authors = [
     { signature = "58808821+codefuturist@users.noreply.github.com", username = "codefuturist" },
 ]
@@ -86,8 +86,8 @@ post_bump_hooks = [
     "git add package.json",
     "jq --arg v {{version}} '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json",
     "git add server.json",
-    "git push origin HEAD",
-    "git push origin {{version}}",
+    "git push fork HEAD",
+    "git push fork {{version}}",
 ]
 
 [bump_profiles.hotfix]
@@ -97,6 +97,6 @@ post_bump_hooks = [
     "git add package.json",
     "jq --arg v {{version}} '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json",
     "git add server.json",
-    "git push origin HEAD",
-    "git push origin {{version}}",
+    "git push fork HEAD",
+    "git push fork {{version}}",
 ]
