@@ -18,6 +18,7 @@ import OAuthService from '../services/oauth.service.js';
 import SmtpService from '../services/smtp.service.js';
 import type { AccountConfig, AppConfig, Email, EmailMeta } from '../types/index.js';
 import { stripHtml } from '../utils/html.js';
+import offlineNotice from '../utils/offline-notice.js';
 
 export interface CliServices {
   config: AppConfig;
@@ -176,7 +177,11 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
       const account = resolveAccount(svc.config, values.account);
       const email = await svc.imap.getEmail(account.name, id, values.mailbox);
       if (values.json) asJson(email);
-      else console.log(formatEmail(email));
+      else {
+        const notice = offlineNotice(email);
+        if (notice) console.log(notice);
+        console.log(formatEmail(email));
+      }
       if (values['mark-read']) {
         assertWritable(svc.config);
         await svc.imap.setFlags(account.name, id, values.mailbox, 'read');

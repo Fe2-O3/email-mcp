@@ -87,7 +87,9 @@ export async function buildServices(): Promise<AppServices> {
       // Read-through is opt-in. Without it the service has no port attached and
       // takes exactly the live path it always did.
       if (config.settings.cache.readThrough) {
-        imapService.attachBodyCache(new BodyCache(cacheStore, config.settings.cache.bodyMaxMb));
+        imapService.attachBodyCache(new BodyCache(cacheStore, config.settings.cache.bodyMaxMb), {
+          offlineReads: config.settings.cache.offlineReads,
+        });
       }
     } catch (err) {
       cacheStore = undefined;

@@ -37,3 +37,52 @@ export async function imapCommand<T>(operation: string, run: () => Promise<T>): 
     throw new Error(`${operation} rejected by server: ${detail || response}`, { cause: err });
   }
 }
+
+/**
+ * Node socket and DNS codes that mean "the server could not be reached or the
+ * link dropped", as opposed to "the server answered and said no".
+ */
+const NODE_CONNECTIVITY_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EPIPE',
+]);
+
+/** ImapFlow's own codes for a connection that is closed, missing or timed out. */
+const IMAPFLOW_CONNECTIVITY_CODES = new Set([
+  'EConnectionClosed',
+  'NoConnection',
+  'ETIMEOUT',
+  'GREETING_TIMEOUT',
+  'ClosedAfterConnectTLS',
+  'ClosedAfterConnectText',
+]);
+
+/**
+ * Whether an error means the server was unreachable, walking `cause` chains.
+ *
+ * Deliberately narrow: it gates serving cached mail as a stand-in for the
+ * server, so a login failure, a missing message or a permission error must
+ * never match — those are answers from a reachable server and must surface.
+ */
+export function isConnectivityError(err: unknown): boolean {
+  const chain: Array<{ code?: unknown; authenticationFailed?: unknown }> = [];
+  let current: unknown = err;
+  // Bounded so a cyclic `cause` cannot loop forever.
+  for (let depth = 0; depth < 8 && current && typeof current === 'object'; depth += 1) {
+    chain.push(current as { code?: unknown; authenticationFailed?: unknown });
+    current = (current as { cause?: unknown }).cause;
+  }
+
+  if (chain.some((e) => e.authenticationFailed === true)) return false;
+  return chain.some(
+    (e) =>
+      typeof e.code === 'string' &&
+      (NODE_CONNECTIVITY_CODES.has(e.code) || IMAPFLOW_CONNECTIVITY_CODES.has(e.code)),
+  );
+}

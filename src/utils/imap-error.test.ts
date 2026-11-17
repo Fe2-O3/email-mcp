@@ -1,4 +1,4 @@
-import { imapCommand } from './imap-error.js';
+import { imapCommand, isConnectivityError } from './imap-error.js';
 
 /** ImapFlow throws Error('Command failed') and puts the detail on `.response`. */
 function rejection(response: string): Error & { response: string } {
@@ -56,5 +56,59 @@ describe('imapCommand', () => {
     });
 
     await expect(run).rejects.toThrow(/something unparseable/);
+  });
+});
+
+describe('isConnectivityError', () => {
+  const withCode = (code: string, extra: Record<string, unknown> = {}) =>
+    Object.assign(new Error(code), { code, ...extra });
+
+  it.each([
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'EPIPE',
+    'EConnectionClosed',
+    'NoConnection',
+    'ETIMEOUT',
+  ])('is true for %s', (code) => {
+    expect(isConnectivityError(withCode(code))).toBe(true);
+  });
+
+  it('walks the cause chain', () => {
+    const wrapped = new Error('wrapped', {
+      cause: new Error('mid', { cause: withCode('ECONNRESET') }),
+    });
+    expect(isConnectivityError(wrapped)).toBe(true);
+  });
+
+  it('is false for an authentication failure, even one carrying a network-looking cause', () => {
+    expect(
+      isConnectivityError(withCode('AUTHENTICATIONFAILED', { authenticationFailed: true })),
+    ).toBe(false);
+    const err = Object.assign(new Error('Invalid credentials'), {
+      authenticationFailed: true,
+      cause: withCode('ECONNRESET'),
+    });
+    expect(isConnectivityError(err)).toBe(false);
+  });
+
+  it('is false for not-found, permission, generic and non-error values', () => {
+    expect(isConnectivityError(new Error('Email 1 not found in INBOX'))).toBe(false);
+    expect(isConnectivityError(withCode('NONEXISTENT'))).toBe(false);
+    expect(isConnectivityError(withCode('EACCES'))).toBe(false);
+    expect(isConnectivityError(new Error('Command failed'))).toBe(false);
+    expect(isConnectivityError(undefined)).toBe(false);
+    expect(isConnectivityError('ECONNREFUSED')).toBe(false);
+  });
+
+  it('survives a cyclic cause', () => {
+    const a: Record<string, unknown> = {};
+    a.cause = a;
+    expect(isConnectivityError(a)).toBe(false);
   });
 });

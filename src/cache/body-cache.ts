@@ -84,6 +84,24 @@ export default class BodyCache implements BodyCachePort {
     }
   }
 
+  getOffline(
+    account: string,
+    mailbox: string,
+    uid: number,
+  ): { bundle: BodyBundle; flags: string[]; cachedAt: number } | undefined {
+    try {
+      const row = this.store.findBodyAnyGeneration(account, mailbox, uid);
+      if (!row?.bundle || row.extractorVersion !== BODY_EXTRACTOR_VERSION) return undefined;
+      // Flags only exist in the mirror, and only for mirrored mailboxes. They
+      // may be stale, which the offline notice says; an empty set is the
+      // honest answer when nothing is known.
+      const flags = this.store.getMessage(account, mailbox, uid, row.uidValidity)?.flags ?? [];
+      return { bundle: { ...row.bundle, complete: true }, flags, cachedAt: row.fetchedAt };
+    } catch {
+      return undefined;
+    }
+  }
+
   forget(account: string, mailbox: string, uids: number[]): void {
     try {
       this.store.forgetBodies(account, mailbox, uids);

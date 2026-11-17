@@ -31,7 +31,7 @@ import {
   parseAuthSignals,
 } from '../utils/auth-results.js';
 import { BULK_HEADER_FIELDS, classifyBulk, parseHeaderBlock } from '../utils/bulk-headers.js';
-import { imapCommand } from '../utils/imap-error.js';
+import { imapCommand, isConnectivityError } from '../utils/imap-error.js';
 import type { ReconnectEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
 import type { LabelStrategy } from './label-strategy.js';
@@ -485,6 +485,12 @@ export interface BodyCachePort {
   /** Decides ok vs skipped (oversize or incomplete). */
   put(account: string, mailbox: string, uid: number, uidValidity: string, bundle: BodyBundle): void;
   forget(account: string, mailbox: string, uids: number[]): void;
+  /** Offline lookup when the server cannot be reached; picks the generation itself. */
+  getOffline(
+    account: string,
+    mailbox: string,
+    uid: number,
+  ): { bundle: BodyBundle; flags: string[]; cachedAt: number } | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +510,8 @@ export default class ImapService {
   /** Absent unless `cache.read_through` is on; absent means today's behavior exactly. */
   private bodyCache?: BodyCachePort;
 
+  private offlineReads = false;
+
   constructor(private connections: IConnectionManager) {
     // The label strategy is probed from server capabilities and folder layout,
     // so it is only valid for the connection that produced it. A reconnect may
@@ -517,8 +525,34 @@ export default class ImapService {
   }
 
   /** Route `getEmail` through the local body cache. */
-  attachBodyCache(port: BodyCachePort): void {
+  attachBodyCache(port: BodyCachePort, options: { offlineReads: boolean }): void {
     this.bodyCache = port;
+    this.offlineReads = options.offlineReads;
+  }
+
+  /**
+   * Answer from the cache when, and only when, the server was unreachable.
+   *
+   * Anything else (bad credentials, a missing message, a permission error) is
+   * an answer from a reachable server and is rethrown by the caller.
+   */
+  private readOffline(
+    err: unknown,
+    account: string,
+    mailbox: string,
+    uid: number,
+  ): Email | undefined {
+    if (!this.bodyCache || !this.offlineReads || !isConnectivityError(err)) return undefined;
+    try {
+      const hit = this.bodyCache.getOffline(account, sanitizeMailboxName(mailbox), uid);
+      if (!hit) return undefined;
+      return {
+        ...assembleEmail(hit.bundle, hit.flags, uid),
+        offline: { cachedAt: new Date(hit.cachedAt).toISOString() },
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /** Free cached bodies of messages that just left a mailbox. Hygiene only: correctness never depends on it. */
@@ -836,11 +870,26 @@ export default class ImapService {
   // -------------------------------------------------------------------------
 
   async getEmail(accountName: string, emailId: string, mailbox = 'INBOX'): Promise<Email> {
-    const client = await this.connections.getImapClient(accountName);
     const uid = parseInt(emailId, 10);
+
+    let client: ImapFlow;
+    try {
+      client = await this.connections.getImapClient(accountName);
+    } catch (err) {
+      const offline = this.readOffline(err, accountName, mailbox, uid);
+      if (offline) return offline;
+      throw err;
+    }
     const safeMailbox = sanitizeMailboxName(mailbox);
 
-    const lock = await client.getMailboxLock(safeMailbox);
+    let lock: Awaited<ReturnType<ImapFlow['getMailboxLock']>>;
+    try {
+      lock = await client.getMailboxLock(safeMailbox);
+    } catch (err) {
+      const offline = this.readOffline(err, accountName, safeMailbox, uid);
+      if (offline) return offline;
+      throw err;
+    }
     try {
       // A message's body, headers and structure never change for a given
       // (UIDVALIDITY, UID), so a hit needs no freshness model: the FLAGS fetch

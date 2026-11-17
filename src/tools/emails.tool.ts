@@ -4,11 +4,11 @@
 
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
 import type ImapService from '../services/imap.service.js';
 import type { Email, EmailMeta } from '../types/index.js';
 import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
+import offlineNotice from '../utils/offline-notice.js';
 import { emailListOutputSchema, emailStatusOutputSchema } from './schemas.js';
 
 // ---------------------------------------------------------------------------
@@ -255,7 +255,9 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
       try {
         const email = await imapService.getEmail(account, emailId, mailbox);
 
+        const notice = offlineNotice(email);
         const parts: string[] = [
+          ...(notice ? [notice, ''] : []),
           `📧 ${email.subject}`,
           `Status: ${formatEmailStatus(email)}`,
           `From:   ${email.from.name ? `${email.from.name} <${email.from.address}>` : email.from.address}`,
@@ -388,6 +390,7 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
           results.push(
             [
               `━━━ [${emailId}] ${email.subject}`,
+              offlineNotice(email) ?? '',
               `Status: ${formatEmailStatus(email)}`,
               `From:   ${from}`,
               `Date:   ${email.date}`,
