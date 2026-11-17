@@ -396,7 +396,8 @@ function imapflowRefusal(fields: Record<string, unknown> = {}): Error {
     authenticationFailed: true,
     responseStatus: 'NO',
     response: `2 NO ${GREENMAIL_REFUSAL_TEXT}`,
-    responseText: GREENMAIL_REFUSAL_TEXT,
+    // The reason text is covered by its own tests below; most tests check only the prefix.
+    responseText: undefined,
     ...fields,
   });
 }
@@ -489,16 +490,26 @@ describe('redactedError', () => {
       },
     );
 
-    it('should leave response and responseText off the returned error', () => {
+    it('should keep the server reason in the message with the password scrubbed', () => {
       const refusal = imapflowRefusal({
         response: `2 NO [AUTHENTICATIONFAILED] ${PASSWORD} rejected`,
-        responseText: `${PASSWORD} rejected`,
+        responseText: `[AUTHENTICATIONFAILED] ${PASSWORD} rejected`,
+        serverResponseCode: 'AUTHENTICATIONFAILED',
       });
-      const shown = inspect(redactedError(refusal, sent));
-      expect({ password: shown.includes(PASSWORD), reply: shown.includes('rejected') }).toEqual({
-        password: false,
-        reply: false,
-      });
+      const err = redactedError(refusal, sent);
+      expect(err.message).toBe(
+        'Login refused by the server (AUTHENTICATIONFAILED): [redacted] rejected',
+      );
+      expect(inspect(err)).not.toContain(PASSWORD);
+      expect(err).not.toHaveProperty('response');
+      expect(err).not.toHaveProperty('responseText');
+    });
+
+    it('should keep a plain server reason that tells the user how to fix the login', () => {
+      const refusal = imapflowRefusal({ responseText: GREENMAIL_REFUSAL_TEXT });
+      expect(redactedError(refusal, sent).message).toBe(
+        `Login refused by the server: ${GREENMAIL_REFUSAL_TEXT}`,
+      );
     });
 
     it('should leave the cause off the returned error', () => {

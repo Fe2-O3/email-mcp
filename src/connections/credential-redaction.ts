@@ -210,6 +210,14 @@ export function redactedError(err: unknown, sent: SentCredentials): Error {
     if (serverResponseCode && REGISTERED_RESPONSE_CODES.has(serverResponseCode)) {
       message += ` (${serverResponseCode})`;
     }
+    // This fork keeps the server's own reason ("application-specific password required",
+    // "web login required"): it is often the only thing that tells a user how to fix the
+    // login. The whole message passes through redactSentCredentials below, so a secret the
+    // server quotes back is still scrubbed.
+    const { responseText } = err as Error & { responseText?: unknown };
+    const reason =
+      typeof responseText === 'string' ? responseText.replace(/^\[[^\]]*\]\s*/, '').trim() : '';
+    if (reason) message += `: ${reason}`;
   }
   return Object.assign(new Error(redactSentCredentials(message, sent)), {
     code,
