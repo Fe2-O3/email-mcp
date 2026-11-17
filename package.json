@@ -36,7 +36,7 @@
     "version:bump:minor": "cog bump --minor",
     "version:bump:patch": "cog bump --patch",
     "version:log": "cog log",
-    "prepare": "lefthook install || true",
+    "prepare": "(test -f dist/main.js || tsc -p tsconfig.build.json) && (lefthook install || true)",
     "hooks:install": "lefthook install --force",
     "hooks:uninstall": "lefthook uninstall",
     "docker:build": "docker build -t codefuturist/email-mcp .",
