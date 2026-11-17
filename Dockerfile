@@ -7,7 +7,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 
 # Install dependencies (layer cached unless lock changes)
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # --ignore-scripts: the `prepare` script compiles TypeScript, but src/ and the
 # tsconfig files are not copied yet, and git hooks are useless in an image.
 RUN pnpm install --frozen-lockfile --ignore-scripts
