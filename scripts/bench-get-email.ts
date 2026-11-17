@@ -2,7 +2,7 @@
  * G0 measurement: is a body cache worth building?
  *
  * Read-only. Compares the current live `getEmail` against the cache-hit path
- * the plan in CACHE-IMPLEMENTATION-PROMPT.md proposes:
+ * the plan in docs/dev/body-cache-brief.md proposes:
  *
  *   hit = mailbox lock + `UID FETCH <uid> (UID FLAGS)`   (existence + live flags)
  *       + one local SQLite row read of the immutable body bundle

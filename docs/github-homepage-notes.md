@@ -67,7 +67,7 @@ updated to the new numbers.
 - The 64k-message mailbox test and the Hostinger timeout figure (from the
   CHANGELOG; no way to re-run here). The README now avoids exact numbers for it.
 - The body-cache benchmark (174 ms vs 714 ms p50) comes from
-  `CACHE-IMPLEMENTATION-PROMPT.md` section 10, one run on one account. Not
+  `docs/dev/body-cache-brief.md` section 10, one run on one account. Not
   re-run.
 - That `BODY.PEEK` is used on every fetch path. It is stated in the
   `get_email` tool description and server instructions and matches imapflow's

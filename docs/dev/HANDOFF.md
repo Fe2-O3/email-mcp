@@ -17,7 +17,7 @@ This handoff is for the next feature session. Read `README.md` and
   with a per-account override.
 - Linux secure password storage uses `secret-tool`; macOS uses `security`.
 - The stdio process exits on client stdin EOF. `idle_exit` defaults to `0`.
-- Body-tier cache: specified in `CACHE-IMPLEMENTATION-PROMPT.md`. Daemon support
+- Body-tier cache: specified in `docs/dev/body-cache-brief.md`. Daemon support
   is intentionally out of scope.
 
 ## What is already in the fork
@@ -33,7 +33,7 @@ Do not reimplement these. Check current source and tests before changing them.
 
 ## Body-tier cache
 
-The body cache spec is in `CACHE-IMPLEMENTATION-PROMPT.md`, version 4. It
+The body cache spec is in `docs/dev/body-cache-brief.md`, version 4. It
 replaces the upstream-derived plan that was here. The per-message design caches
 immutable bundles, and every hit re-checks existence and flags live with one
 `UID FETCH (FLAGS)`. Search, thread, list-from-mirror, and attachment blobs

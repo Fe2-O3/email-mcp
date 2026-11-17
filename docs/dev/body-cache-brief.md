@@ -1,6 +1,6 @@
 # Body cache: implementation brief
 
-Version 4.0.0 · 2026-11-17 · supersedes v3 and the body-cache section of `HANDOFF.md`
+Version 4.0.0 · 2026-11-17 · supersedes v3 and the body-cache section of `docs/dev/HANDOFF.md`
 
 This brief is for the model implementing the work. It is self-contained. Every
 claim about current code was checked against `main` at `99b03b5`. Where a line

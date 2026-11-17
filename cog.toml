@@ -25,18 +25,19 @@ skip_ci = "[skip ci]"
 skip_untracked = false
 tag_prefix = "v"
 
+# Version files are written BEFORE the bump commit so they land in it.
 pre_bump_hooks = [
     "pnpm check",
     "pnpm build",
+    "npm pkg set version={{version}}",
+    "jq --arg v {{version}} '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json",
+    "git add package.json server.json",
 ]
 
+# Push only this release's tag; never --tags (a local backup tag must stay local).
 post_bump_hooks = [
-    "npm pkg set version={{version}}",
-    "git add package.json",
-    "jq --arg v {{version}} '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json",
-    "git add server.json",
     "git push fork HEAD",
-    "git push fork {{version}}",
+    "git push fork refs/tags/v{{version}}",
 ]
 
 # ------------------------------------------------------------------------------
@@ -81,22 +82,16 @@ authors = [
 
 [bump_profiles.release]
 pre_bump_hooks = ["pnpm check", "pnpm build"]
+# Push only this release's tag; never --tags (a local backup tag must stay local).
 post_bump_hooks = [
-    "npm pkg set version={{version}}",
-    "git add package.json",
-    "jq --arg v {{version}} '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json",
-    "git add server.json",
     "git push fork HEAD",
-    "git push fork {{version}}",
+    "git push fork refs/tags/v{{version}}",
 ]
 
 [bump_profiles.hotfix]
 pre_bump_hooks = ["pnpm check"]
+# Push only this release's tag; never --tags (a local backup tag must stay local).
 post_bump_hooks = [
-    "npm pkg set version={{version}}",
-    "git add package.json",
-    "jq --arg v {{version}} '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json",
-    "git add server.json",
     "git push fork HEAD",
-    "git push fork {{version}}",
+    "git push fork refs/tags/v{{version}}",
 ]
