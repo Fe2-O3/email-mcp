@@ -6,12 +6,12 @@
     "url": "https://github.com/Fe2-O3/imap-wizard.git",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@fe2-o3/imap-wizard",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "runtimeHint": "npx",
       "commandArguments": ["stdio"],
       "transport": {

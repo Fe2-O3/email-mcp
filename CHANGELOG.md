@@ -8,6 +8,11 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-17
+
+First npm release of this fork. 0.2.x is skipped because tags v0.2.0–v0.2.3
+from the original project's history already exist in this repository.
+
 ### Added
 
 - **Body cache for `get_email`** (opt-in, `settings.cache.read_through`, default off) — a message's body, headers and structure are immutable per (UIDVALIDITY, UID), so a repeat read costs a mailbox lock, one `UID FETCH (UID FLAGS)` and a local read; flags stay live and a moved or deleted message still reports not found. Live and cached reads build the result with the same `assembleEmail()`. Schema v2 adds the `message_body` table; bodies over 256 KB are skipped rather than truncated, and a decoder version invalidates stale rows.
@@ -81,4 +86,5 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 - README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
 - Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
+[0.3.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.1.0
