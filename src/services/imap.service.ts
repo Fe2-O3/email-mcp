@@ -871,16 +871,18 @@ export default class ImapService {
 
   async getEmail(accountName: string, emailId: string, mailbox = 'INBOX'): Promise<Email> {
     const uid = parseInt(emailId, 10);
+    // Sanitized before connecting so the offline fallback looks rows up under
+    // the same key that write-back and backfill stored them with.
+    const safeMailbox = sanitizeMailboxName(mailbox);
 
     let client: ImapFlow;
     try {
       client = await this.connections.getImapClient(accountName);
     } catch (err) {
-      const offline = this.readOffline(err, accountName, mailbox, uid);
+      const offline = this.readOffline(err, accountName, safeMailbox, uid);
       if (offline) return offline;
       throw err;
     }
-    const safeMailbox = sanitizeMailboxName(mailbox);
 
     let lock: Awaited<ReturnType<ImapFlow['getMailboxLock']>>;
     try {
