@@ -319,31 +319,41 @@ function selectBodyPart(parts: TextPart[]): TextPart | undefined {
   return plain;
 }
 
+/** Bump when body extraction or decoding changes, so cached bodies from the old logic miss. */
+export const BODY_EXTRACTOR_VERSION = 1;
+
+/** Bodies larger than this are never cached: truncating would diverge from the live answer. */
+export const MAX_CACHED_BODY_BYTES = 256 * 1024;
+
 /**
- * Parse an RFC 5322 header block into a lowercase-keyed map.
- *
- * Continuation lines (leading space or tab) are unfolded onto the preceding
- * header, so a long References or Subject split across lines survives intact.
+ * Everything `getEmail`'s output derives from except flags. Immutable per
+ * (UIDVALIDITY, UID), which is what makes it safe to cache without a
+ * freshness model.
  */
-async function messageToEmail(
+export interface BodyBundle {
+  /** As ImapFlow returned it. */
+  envelope: unknown;
+  bodyStructure: unknown;
+  /** `msg.headers.toString('utf-8')`, exactly as the live path decodes it. */
+  headersRaw: string;
+  bodyText?: string;
+  bodyHtml?: string;
+  /** False when a part selected for download did not arrive. Never cache an incomplete bundle. */
+  complete: boolean;
+}
+
+/**
+ * The I/O half of building an `Email`: choose the text parts and download them.
+ * Everything else is derived by the pure `assembleEmail`.
+ */
+export async function fetchBodyBundle(
   msg: Record<string, unknown>,
   client: ImapFlow,
   uid: number,
-): Promise<Email> {
-  const meta = messageToEmailMeta(msg);
-  const envelope = (msg.envelope ?? {}) as Record<string, unknown>;
-
+): Promise<BodyBundle> {
   let bodyText: string | undefined;
   let bodyHtml: string | undefined;
-
-  // Headers come from a HEADER fetch. `source` would work too, but it pulls
-  // the entire message — base64 attachments and all — to read a few hundred
-  // bytes of header.
-  // parseHeaderBlock unfolds RFC 5322 continuation lines; naive line
-  // splitting truncates folded fields such as List-Unsubscribe.
-  const headers = parseHeaderBlock(
-    Buffer.isBuffer(msg.headers) ? msg.headers.toString('utf-8') : '',
-  );
+  let complete = true;
 
   // Always download body parts; never read them out of `source`. Raw source
   // is transfer-encoded (quoted-printable, base64) with soft line breaks, so
@@ -383,6 +393,8 @@ async function messageToEmail(
     if (decoded !== undefined) {
       if (chosen.subtype === 'html') bodyHtml = decoded;
       else bodyText = decoded;
+    } else {
+      complete = false;
     }
   }
   const sibling = chosen === htmlPart ? plainPart : htmlPart;
@@ -391,8 +403,42 @@ async function messageToEmail(
     if (decoded !== undefined) {
       if (sibling.subtype === 'html') bodyHtml = decoded;
       else bodyText = decoded;
+    } else {
+      complete = false;
     }
   }
+
+  return {
+    envelope: msg.envelope,
+    bodyStructure: msg.bodyStructure,
+    // Headers come from a HEADER fetch. `source` would work too, but it pulls
+    // the entire message — base64 attachments and all — to read a few hundred
+    // bytes of header.
+    headersRaw: Buffer.isBuffer(msg.headers) ? msg.headers.toString('utf-8') : '',
+    bodyText,
+    bodyHtml,
+    complete,
+  };
+}
+
+/**
+ * The pure half: build an `Email` from a bundle plus current flags. Both the
+ * live path and the cache-hit path call this, so they agree by construction.
+ */
+export function assembleEmail(bundle: BodyBundle, flags: Iterable<string>, uid: number): Email {
+  const msg: Record<string, unknown> = {
+    uid,
+    envelope: bundle.envelope,
+    flags: new Set(flags),
+    headers: Buffer.from(bundle.headersRaw, 'utf-8'),
+    bodyStructure: bundle.bodyStructure,
+  };
+  const meta = messageToEmailMeta(msg);
+  const envelope = (bundle.envelope ?? {}) as Record<string, unknown>;
+
+  // parseHeaderBlock unfolds RFC 5322 continuation lines; naive line
+  // splitting truncates folded fields such as List-Unsubscribe.
+  const headers = parseHeaderBlock(bundle.headersRaw);
 
   const replyToParsed = parseAddresses(
     (envelope.replyTo as Record<string, string>[] | undefined) ??
@@ -404,18 +450,27 @@ async function messageToEmail(
     cc: parseAddresses(envelope.cc as Record<string, string>[]),
     bcc: parseAddresses(envelope.bcc as Record<string, string>[]),
     replyTo: replyToParsed,
-    bodyText,
-    bodyHtml,
+    bodyText: bundle.bodyText,
+    bodyHtml: bundle.bodyHtml,
     messageId: (envelope.messageId as string) ?? '',
     inReplyTo: (envelope.inReplyTo as string) ?? undefined,
     references: headers.references?.split(/\s+/).filter(Boolean),
-    attachments: extractAttachments(msg.bodyStructure),
+    attachments: extractAttachments(bundle.bodyStructure),
     headers,
     // Recomputed from the full header set rather than reusing meta.bulk, which
     // a full fetch leaves unset — the targeted HEADER.FIELDS fetch only happens
     // on listings.
     bulk: classifyBulk(headers),
   };
+}
+
+async function messageToEmail(
+  msg: Record<string, unknown>,
+  client: ImapFlow,
+  uid: number,
+): Promise<Email> {
+  const bundle = await fetchBodyBundle(msg, client, uid);
+  return assembleEmail(bundle, (msg.flags ?? []) as Iterable<string>, uid);
 }
 
 // ---------------------------------------------------------------------------
