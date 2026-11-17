@@ -15,6 +15,11 @@ import { sanitizeTemplateVariable } from '../safety/validation.js';
 import type { SendResult } from '../types/index.js';
 import type ImapService from './imap.service.js';
 
+/** Reply markers: Re (English), AW (German), SV (Nordic). */
+export const REPLY_PREFIX = /^\s*(re|aw|sv)\s*:/i;
+/** Forward markers: Fwd, Fw, WG (German). */
+export const FORWARD_PREFIX = /^\s*(fwd?|wg)\s*:/i;
+
 export default class SmtpService {
   private readonly pendingSentFilings = new Set<Promise<void>>();
 
@@ -141,7 +146,9 @@ export default class SmtpService {
     // Build threading headers
     const references = [...(original.references ?? []), original.messageId].filter(Boolean);
 
-    const subject = original.subject.startsWith('Re:')
+    // Any existing reply marker, in any case or common locale (RE:, re:, AW:, SV:),
+    // counts: otherwise replies stack "Re: RE: ..." (upstream #102).
+    const subject = REPLY_PREFIX.test(original.subject)
       ? original.subject
       : `Re: ${original.subject}`;
 
@@ -202,7 +209,7 @@ export default class SmtpService {
     const account = this.connections.getAccount(accountName);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
 
-    const subject = original.subject.startsWith('Fwd:')
+    const subject = FORWARD_PREFIX.test(original.subject)
       ? original.subject
       : `Fwd: ${original.subject}`;
 
