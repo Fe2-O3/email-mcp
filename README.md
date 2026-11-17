@@ -129,6 +129,7 @@ Setup for other clients is under [More clients](#more-clients).
 | Duplicate-send guard | on | A retried send is recognized and refused unless you pass `allow_duplicate` |
 | HTTP transport token | required | `http` mode generates a bearer token, even on loopback |
 | Verification-code tool | off | `get_verification_code` is only registered when you enable it; it never reads your clipboard |
+| Encrypted logins | enforced | A config with `tls = false` and `starttls = false` to a non-loopback host is refused at load. Credentials in server error text are replaced with `[redacted]` |
 | Body cache (`read_through`) | **off** | Message bodies are only stored on disk if you turn it on. [Details](#local-body-cache-opt-in-unreleased) |
 
 What is stored on disk by default: your `config.toml` (written owner-only), the
@@ -499,6 +500,8 @@ work from upstream contributors:
 Ported from upstream: the [TLS servername repair](https://github.com/codefuturist/email-mcp/commit/70d4215de07920252f672923cf3cd48aad7a0189)
 and [`config validate`](https://github.com/codefuturist/email-mcp/commit/bf09dcc1f087279812fe307647bf8e52198becd8).
 Thanks also to everyone who filed the upstream issues listed above.
+
+Adapted from [Mailoo](https://github.com/Bitfloo/mailoo) by Bitfloo (LGPL-3.0-or-later): the plain-text login guard, credential redaction in error text, and the tool catalog baseline test. See [NOTICE](NOTICE).
 
 ## License
 

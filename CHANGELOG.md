@@ -8,6 +8,16 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+### Security
+
+- **Behavior change:** an account whose IMAP or SMTP has `tls = false` and `starttls = false` to a non-loopback host is now rejected when the config loads, and by `imap-wizard config validate`. The login would cross the network in clear text. To fix a config that stops loading, set `tls = true` or `starttls = true` on the named `[accounts.imap]` / `[accounts.smtp]` section. `localhost`, `127.0.0.0/8` and `::1` stay allowed. Adapted from Mailoo by Bitfloo.
+- Error text from IMAP and SMTP connects, sends, connection tests, the watcher and the OAuth2 token endpoint now has the account's password, OAuth2 tokens and client secret replaced with `[redacted]` before it is returned or logged. Adapted from Mailoo by Bitfloo.
+
+### Added
+
+- `NOTICE` file with fork and attribution details; code adapted from [Mailoo](https://github.com/Bitfloo/mailoo) by Bitfloo (LGPL-3.0-or-later) is credited there and in file headers.
+- A baseline test locks the registered tools, prompts and resources (names and schemas) in full and read-only mode, so accidental public API changes fail CI. Approach from Mailoo by Bitfloo.
+
 ### Fixed
 
 - Replies and forwards no longer stack prefixes: `RE:`, `re:`, `AW:`, `SV:`, `FW:` and `WG:` are recognised in any case (upstream #102).

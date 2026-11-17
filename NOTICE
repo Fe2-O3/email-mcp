@@ -1,0 +1,30 @@
+IMAP Wizard
+===========
+
+This project is a fork of email-mcp (https://github.com/codefuturist/email-mcp),
+licensed under LGPL-3.0-or-later. The original code remains copyright its
+original authors (see the upstream repository and its history). Changes made in
+this fork are licensed under the same terms.
+
+This project is not an official project of codefuturist/email-mcp or of Mailoo.
+
+Code adapted from other projects
+--------------------------------
+
+This project includes code adapted from Mailoo
+(https://github.com/Bitfloo/mailoo, commit f537225),
+Copyright (c) 2026 Bitfloo, licensed under LGPL-3.0-or-later.
+
+The adapted files are:
+
+  src/utils/loopback.ts                      loopback host check
+  src/utils/loopback.test.ts                 tests for the above
+  src/config/schema.ts                       plain-text login guard (the
+                                             superRefine on AccountConfigSchema)
+  src/connections/credential-redaction.ts    credential redaction in error text
+  src/connections/credential-redaction.test.ts
+  src/mcp-catalog.test.ts                    tool catalog baseline test (approach;
+                                             the baseline data is original)
+
+"Mailoo" and "Bitfloo" are names of their respective owners. They are used here
+only to attribute the code above and are not used as branding for this project.

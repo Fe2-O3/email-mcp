@@ -11,7 +11,8 @@
   "types": "./dist/main.d.ts",
   "files": [
     "dist",
-    "COPYING"
+    "COPYING",
+    "NOTICE"
   ],
   "scripts": {
     "dev": "tsx watch src/main.ts",
