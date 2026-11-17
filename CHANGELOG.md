@@ -8,6 +8,15 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+### Fixed
+
+- Replies and forwards no longer stack prefixes: `RE:`, `re:`, `AW:`, `SV:`, `FW:` and `WG:` are recognised in any case (upstream #102).
+- Sent copies and drafts are normalised to CRLF before IMAP APPEND, so strict servers accept them (upstream #116).
+
+### Docs
+
+- The upstream section now shows upstream's own status for each issue as of v0.6.0, instead of implying all are still unfixed there.
+
 ## [0.3.1] — 2026-11-17
 
 ### Fixed

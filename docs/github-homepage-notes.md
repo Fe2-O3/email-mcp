@@ -29,7 +29,7 @@ Website field: leave empty, or link the latest release.
 | Prompts | 7 | `server.registerPrompt(` in `src/prompts/` |
 | Resources | 6 | `server.registerResource(` in `src/resources/` |
 | Unit tests | 583 in 67 files, all passing | `pnpm test` on 2026-11-17 (Node 22.23.1) |
-| Upstream issues fixed | 18 | Issue numbers in the fix table; all reported OPEN by `gh issue view` on 2026-11-17 |
+| Upstream issues fixed | 18 | Issue numbers in the fix table; all still open on GitHub on 2026-11-17; upstream v0.6.0 code fixes some of them, see the README table |
 
 The old README said 49 tools. It missed `list_events` and `list_reminders`
 and did not list them in the tool table. The banner and architecture SVGs were

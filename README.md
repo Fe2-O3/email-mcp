@@ -29,7 +29,7 @@ over plain IMAP and SMTP. No cloud service in the middle.
 > [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) by
 > [@codefuturist](https://github.com/codefuturist), under the same
 > [LGPL-3.0-or-later](LICENSE) license. It keeps upstream's design and history,
-> fixes bugs that are still open on the upstream tracker, and adds safety
+> fixes bugs upstream still has, and adds safety
 > features. The package and command are called `imap-wizard`. See
 > [Relationship to upstream](#relationship-to-upstream).
 
@@ -99,11 +99,11 @@ Setup for other clients is under [More clients](#more-clients).
 
 ## Why this one
 
-- **Bugs fixed that are still open upstream.** 18 upstream issues, including
-  sent mail never reaching the Sent folder, no attachments on send, raw MIME
-  instead of readable bodies, UID instead of date ordering, orphaned stdio
-  processes, and schemas that broke every call on llama.cpp models.
-  [Full list](#relationship-to-upstream).
+- **Bugs fixed that upstream still has.** As of upstream v0.6.0: duplicate
+  sends on retry, `read_only` not stopping background mail, stdio processes
+  that never exit, "Re: RE:" subjects stacking, and Sent copies rejected by
+  strict servers. Several others we fixed first have since been fixed upstream
+  too. [Full list with upstream status](#relationship-to-upstream).
 - **Reading never changes your mailbox.** `get_email` fetches with IMAP
   `BODY.PEEK`, so mail you read stays unread unless you ask (`markRead: true`).
 - **A real read-only mode.** With `read_only = true`, write tools are not
@@ -251,7 +251,7 @@ variables, for example `MCP_EMAIL_READ_ONLY=true`, `MCP_EMAIL_RATE_LIMIT`,
 
 </details>
 
-### Local body cache (opt-in, unreleased)
+### Local body cache (opt-in)
 
 > Merged on the development branch, **off by default**, and not yet in a tagged
 > release.
@@ -400,26 +400,32 @@ The review of upstream's v0.4 and v0.5 features is in
 in the [CHANGELOG](CHANGELOG.md).
 
 <details>
-<summary><strong>Upstream issues fixed here</strong> (all still open upstream as of 2026-11-17)</summary>
+<summary><strong>Upstream issues fixed here</strong>, with upstream's own status as of v0.6.0 (checked 2026-11-17)</summary>
 
 <br>
 
-| Issue | Problem | Fix in this fork |
-|---|---|---|
-| [#12](https://github.com/codefuturist/email-mcp/issues/12) | Attachments only returned as base64 | `savePath` writes to disk and returns path, size and SHA-256 |
-| [#20](https://github.com/codefuturist/email-mcp/issues/20) [#54](https://github.com/codefuturist/email-mcp/issues/54) [#92](https://github.com/codefuturist/email-mcp/issues/92) | Sent mail never saved to Sent | IMAP APPEND into Sent after every send |
-| [#45](https://github.com/codefuturist/email-mcp/issues/45) | `forward_email` ignores `html` | Honoured |
-| [#52](https://github.com/codefuturist/email-mcp/issues/52) | No attachments on send | Attachments on send, forward and draft |
-| [#55](https://github.com/codefuturist/email-mcp/issues/55) | Memory leak in long-running process | Connections rotate every 30 minutes; caches evicted |
-| [#57](https://github.com/codefuturist/email-mcp/issues/57) | Socket timeout crashes the process | Error and close handlers on every IMAP client |
-| [#58](https://github.com/codefuturist/email-mcp/issues/58) | Every call fails on llama.cpp models | Grammar-safe (GBNF) schemas |
-| [#59](https://github.com/codefuturist/email-mcp/issues/59) | Results ordered by UID | Ordered by date across the whole match set |
-| [#60](https://github.com/codefuturist/email-mcp/issues/60) | stdio server never exits | Exits when the client closes stdin; optional idle exit |
-| [#62](https://github.com/codefuturist/email-mcp/issues/62) | Retries send duplicates | Retried sends recognized and refused |
-| [#66](https://github.com/codefuturist/email-mcp/issues/66) [#95](https://github.com/codefuturist/email-mcp/issues/95) | Raw MIME instead of the body | Decoded bodies; richer multipart part preferred |
-| [#71](https://github.com/codefuturist/email-mcp/issues/71) [#91](https://github.com/codefuturist/email-mcp/issues/91) | Silent zero results on broken servers | Fails loudly |
-| [#79](https://github.com/codefuturist/email-mcp/issues/79) | `read_only` does not gate background work | Calendar writes and background services gated |
-| [#96](https://github.com/codefuturist/email-mcp/issues/96) | Non-ASCII draft subjects not encoded | Drafts built with MailComposer (RFC 2047) |
+| Issue | Problem | Fix in this fork | Upstream v0.6.0 |
+|---|---|---|---|
+| [#12](https://github.com/codefuturist/email-mcp/issues/12) | Attachments only returned as base64 | `savePath` writes to disk and returns path, size and SHA-256 | Partly: a server-wide download folder on main, no per-call path |
+| [#20](https://github.com/codefuturist/email-mcp/issues/20) [#54](https://github.com/codefuturist/email-mcp/issues/54) [#92](https://github.com/codefuturist/email-mcp/issues/92) | Sent mail never saved to Sent | IMAP APPEND into Sent after every send, on by default | Partly: opt-in, off by default |
+| [#45](https://github.com/codefuturist/email-mcp/issues/45) | `forward_email` ignores `html` | Honoured | Fixed |
+| [#52](https://github.com/codefuturist/email-mcp/issues/52) | No attachments on send | Attachments on send, forward and draft | Partly: `send_draft` still drops them |
+| [#55](https://github.com/codefuturist/email-mcp/issues/55) | Memory leak in long-running process | Connections rotate every 30 minutes; caches evicted | Open (no rotation found; unverified) |
+| [#57](https://github.com/codefuturist/email-mcp/issues/57) | Socket timeout crashes the process | Error and close handlers on every IMAP client | Fixed on main after v0.6.0 |
+| [#58](https://github.com/codefuturist/email-mcp/issues/58) | Every call fails on llama.cpp models | Grammar-safe (GBNF) schemas | Fixed (via zod update) |
+| [#59](https://github.com/codefuturist/email-mcp/issues/59) | Results ordered by UID | Ordered by date across the whole match set | Partly: only the current page is re-sorted |
+| [#60](https://github.com/codefuturist/email-mcp/issues/60) | stdio server never exits | Exits when the client closes stdin; optional idle exit | Open |
+| [#62](https://github.com/codefuturist/email-mcp/issues/62) | Retries send duplicates | Retried sends recognized and refused | Open |
+| [#66](https://github.com/codefuturist/email-mcp/issues/66) [#95](https://github.com/codefuturist/email-mcp/issues/95) | Raw MIME instead of the body | Decoded bodies; richer multipart part preferred | Fixed |
+| [#71](https://github.com/codefuturist/email-mcp/issues/71) [#91](https://github.com/codefuturist/email-mcp/issues/91) | Silent zero results on broken servers | A malformed (non-array) search reply fails loudly | Partly: the imapflow update avoids the Strato case |
+| [#79](https://github.com/codefuturist/email-mcp/issues/79) | `read_only` does not gate background work | Calendar writes and background services gated | Open |
+| [#96](https://github.com/codefuturist/email-mcp/issues/96) | Non-ASCII draft subjects not encoded | Drafts built with MailComposer (RFC 2047) | Fixed |
+| [#102](https://github.com/codefuturist/email-mcp/issues/102) | Replies stack "Re: RE:" and "Fwd: FW:" | Any case and common locales (AW, SV, WG) recognised | Open |
+| [#116](https://github.com/codefuturist/email-mcp/issues/116) | Sent copy rejected by strict servers (bare LF) | Line endings normalised to CRLF before APPEND | Open |
+
+Upstream status was read from upstream's source, not from whether the issue
+is closed: most of these issues are still open on GitHub even where the code
+has been fixed.
 
 Plus fixes with no upstream issue: chunked UID fetches for large mailboxes,
 visible login-failure reasons, STARTTLS reaching the IMAP client, OAuth2 in the
