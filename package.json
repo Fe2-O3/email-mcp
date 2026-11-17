@@ -1,6 +1,6 @@
 {
   "name": "imap-wizard",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "mcpName": "io.github.Fe2-O3/imap-wizard",
   "description": "IMAP Wizard — email MCP server with IMAP + SMTP support",
   "type": "module",

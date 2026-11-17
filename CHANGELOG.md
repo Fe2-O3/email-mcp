@@ -8,9 +8,12 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-11-17
+
 ### Security
 
 - **Behavior change:** an account whose IMAP or SMTP has `tls = false` and `starttls = false` to a non-loopback host is now rejected when the config loads, and by `imap-wizard config validate`. The login would cross the network in clear text. To fix a config that stops loading, set `tls = true` or `starttls = true` on the named `[accounts.imap]` / `[accounts.smtp]` section. `localhost`, `127.0.0.0/8` and `::1` stay allowed. Adapted from Mailoo by Bitfloo.
+- A refused login still shows the server's own reason (for example "application-specific password required"), with any secret it quotes scrubbed.
 - Error text from IMAP and SMTP connects, sends, connection tests, the watcher and the OAuth2 token endpoint now has the account's password, OAuth2 tokens and client secret replaced with `[redacted]` before it is returned or logged. Adapted from Mailoo by Bitfloo.
 
 ### Added
@@ -113,6 +116,7 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 - README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
 - Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
+[0.3.2]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.1.0
