@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 
 import type { Transporter } from 'nodemailer';
 import { DEFAULT_SEND_LIMIT_MB, resolveSendLimitMb } from '../config/send-limit.js';
+import { redactedError, sentCredentials } from '../connections/credential-redaction.js';
 import type { IConnectionManager } from '../connections/types.js';
 import { mcpLog } from '../logging.js';
 import type RateLimiter from '../safety/rate-limiter.js';
@@ -426,7 +427,8 @@ export default class SmtpService {
       };
     } catch (err) {
       this.connections.invalidateSmtpTransport(accountName);
-      throw err;
+      // A refused login can quote the password or token the server was sent.
+      throw redactedError(err, sentCredentials(this.connections.getAccount(accountName)));
     }
   }
 

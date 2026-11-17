@@ -5,6 +5,7 @@
  * Uses native fetch (Node 22+) — no external HTTP dependencies.
  */
 
+import { redactSentCredentials } from '../connections/credential-redaction.js';
 import type { OAuth2Config } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -89,7 +90,12 @@ export default class OAuthService {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`OAuth2 token refresh failed (${response.status}): ${text}`);
+      // The provider's error body can echo the grant or the client secret that was just sent.
+      const safe = redactSentCredentials(text, {
+        user: '',
+        secrets: [oauth2.refreshToken, oauth2.clientSecret, oauth2.accessToken],
+      });
+      throw new Error(`OAuth2 token refresh failed (${response.status}): ${safe}`);
     }
 
     const data = (await response.json()) as {
@@ -167,7 +173,8 @@ export default class OAuthService {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`OAuth2 code exchange failed (${response.status}): ${text}`);
+      const safe = redactSentCredentials(text, { user: '', secrets: [code, oauth2.clientSecret] });
+      throw new Error(`OAuth2 code exchange failed (${response.status}): ${safe}`);
     }
 
     const data = (await response.json()) as {

@@ -11,6 +11,7 @@
  */
 
 import type { ImapFlow } from 'imapflow';
+import { redactedError, sentCredentials } from '../connections/credential-redaction.js';
 import { mcpLog } from '../logging.js';
 import type { AccountConfig, EmailMeta, WatcherConfig } from '../types/index.js';
 import { BULK_HEADER_FIELDS } from '../utils/bulk-headers.js';
@@ -223,7 +224,7 @@ export default class WatcherService {
         `IDLE started: ${state.account.name}/${state.folder} (uid > ${uidNext - 1})`,
       );
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = redactedError(err, sentCredentials(state.account)).message;
       await mcpLog(
         'warning',
         'watcher',

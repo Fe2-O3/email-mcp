@@ -16,6 +16,7 @@ import eventBus from '../services/event-bus.js';
 import type OAuthService from '../services/oauth.service.js';
 import type { AccountConfig } from '../types/index.js';
 import { createImapClient } from '../utils/imap-client.js';
+import { redactedError, sentCredentials } from './credential-redaction.js';
 import type { IConnectionManager } from './types.js';
 
 type SmtpAuth =
@@ -35,10 +36,16 @@ type SmtpAuth =
  * Listeners are attached BEFORE `connect()`, because a TLS or auth failure can
  * emit during the connect handshake itself.
  *
+ * @param account the account the client belongs to; its secrets are scrubbed from logged errors
  * @param onDead runs on error or close, for callers that pool the client and
  *   need to evict it. Short-lived clients pass nothing.
  */
-function attachImapLifecycleHandlers(client: ImapFlow, label: string, onDead?: () => void): void {
+function attachImapLifecycleHandlers(
+  client: ImapFlow,
+  account: AccountConfig,
+  onDead?: () => void,
+): void {
+  const label = account.name;
   const handleDead = (reason: string) => {
     // Logging must never throw from inside an error handler.
     mcpLog('warning', 'imap', `IMAP connection lost for "${label}": ${reason}`).catch(() => {
@@ -48,7 +55,8 @@ function attachImapLifecycleHandlers(client: ImapFlow, label: string, onDead?: (
   };
 
   client.on('error', (err: unknown) => {
-    handleDead(err instanceof Error ? err.message : String(err));
+    // The server's error text can quote the login; scrub it before it is logged.
+    handleDead(redactedError(err, sentCredentials(account)).message);
   });
 
   client.on('close', () => {
@@ -158,14 +166,18 @@ export default class ConnectionManager implements IConnectionManager {
       // Evict only if this exact client is still the pooled one. A newer client
       // may already have replaced it, and deleting unconditionally would drop a
       // live connection.
-      attachImapLifecycleHandlers(client, accountName, () => {
+      attachImapLifecycleHandlers(client, account, () => {
         if (this.imapClients.get(accountName) === client) {
           this.imapClients.delete(accountName);
           this.imapClientCreatedAt.delete(accountName);
         }
       });
 
-      await client.connect();
+      try {
+        await client.connect();
+      } catch (err) {
+        throw redactedError(err, sentCredentials(account));
+      }
       await mcpLog(
         'info',
         'imap',
@@ -260,7 +272,12 @@ export default class ConnectionManager implements IConnectionManager {
         ConnectionManager.buildSmtpTransportOptions(account, auth),
       );
 
-      await transport.verify();
+      try {
+        await transport.verify();
+      } catch (err) {
+        transport.close();
+        throw redactedError(err, sentCredentials(account));
+      }
       await mcpLog(
         'info',
         'smtp',
@@ -333,7 +350,7 @@ export default class ConnectionManager implements IConnectionManager {
 
       // Not pooled, so nothing to evict — but the listener still has to exist
       // or a mid-probe socket error crashes the process during setup.
-      attachImapLifecycleHandlers(client, account.name);
+      attachImapLifecycleHandlers(client, account);
 
       await client.connect();
 
@@ -373,7 +390,7 @@ export default class ConnectionManager implements IConnectionManager {
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: redactedError(err, sentCredentials(account)).message,
       };
     } finally {
       if (client) {
@@ -408,7 +425,7 @@ export default class ConnectionManager implements IConnectionManager {
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: redactedError(err, sentCredentials(account)).message,
       };
     } finally {
       transport?.close();
