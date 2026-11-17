@@ -1,288 +1,266 @@
-# IMAP Wizard: body-tier cache implementation
+# IMAP Wizard: verified body-tier cache implementation plan
 
-This document is a prompt for a strong coding model. It replaces the earlier
-handoff note and is intentionally self-contained. Read `README.md` and
-`CONTRIBUTING.md` first. No repository `AGENTS.md` exists.
+This is a prompt for a strong coding model, but it is first an **evidence-backed
+specification**. Every factual claim below was checked against this repository
+on 2026-11-17. The verification results come first so the implementer can tell
+what was observed, what was derived, and what was assumed.
 
-The goal is to extend the existing SQLite metadata mirror with reliable,
-bounded local storage for message bodies and attachments. Keep live IMAP as
-the safe fallback whenever cached data is missing, stale, incomplete, or
-unhealthy.
+Do not implement the cache from the earlier plan. That plan described tables and
+columns that do not exist here. Use this one.
 
-## Rules for the implementer
+## 1. Verification results
 
-1. Do not copy upstream wholesale. The fork has materially different lifecycle,
-   security, CLI, and tool code.
-2. Do not enable background body scanning or any daemon-like behavior.
-3. Cache correctness is the highest priority. A stale or partial answer is
-   worse than a slow one.
-4. Every cache read must prove freshness before returning data.
-5. Every cache failure must fall back to live IMAP, never produce a partial
-   result.
-6. Follow the repository conventions: TypeScript ESM, Biome, Vitest, path-scoped
-   commits, no `git add -A`.
-7. Use Node 24 from `.nvmrc` and the repository-pinned pnpm version.
-8. Run `pnpm check`, `pnpm typecheck`, `pnpm build`, and `pnpm test` before
-   claiming completion.
+### 1.1 What was checked (observed this session)
 
-## Current state
+| Claim | How it was checked | Result |
+|---|---|---|
+| Cache files | `ls src/cache/` | `schema.ts`, `store.ts`, `store.test.ts`, `sync-engine.ts`, `sync-engine.test.ts`. There is no `mail-read.service.ts` in this fork. |
+| Schema location | Read `src/cache/schema.ts` | `SCHEMA_SQL` and `SCHEMA_VERSION = 1` live in `src/cache/schema.ts`, not in `store.ts`. |
+| Message table | Read `src/cache/schema.ts:39-60` | Table is `message`, PK `(account, mailbox, uid, uid_validity)`. There is no `emails` table. |
+| Body columns | Read `src/cache/schema.ts:55-56` | `body_text TEXT` and `body_fetched_at INTEGER` **already exist**. |
+| FTS | Read `src/cache/schema.ts:75-102` | `message_fts` FTS5 external-content table plus insert/delete/update triggers already exist over `subject, from_text, body_text`. |
+| Store APIs | Grep/read `src/cache/store.ts` | Existing methods: `putMessages`, `putBody`, `getMessage`, `findByMessageId`, `listMessages`, `searchMessages`, `listAllUids`, `countMessages`, `deleteMessages`, `pruneOlderThan`, `pruneOldest`, `vacuum`, `putMailboxState`, `getMailboxState`, `resetEpoch`, `clear`, `sizeBytes`, `close`. |
+| `putBody` behavior | Read `src/cache/store.ts:324-338` | Takes `(account, mailbox, uid, uidValidity, bodyText: string)` and sets only `body_text` + `body_fetched_at`. No headers, no subtype, no preview, no attempt marker, no byte cap. |
+| `putBody` tested | `pnpm exec vitest run src/cache/store.test.ts` | 11 tests passed, including body write/read and FTS findability. |
+| Mailbox state | Read `src/cache/schema.ts:24-35` | Table `mailbox_state` holds `uid_validity TEXT`, `uid_next`, `highest_modseq`, `sync_tier`, `total_messages`, `unseen_messages`, `last_synced_at`. There is no `sync_state` table. |
+| UIDVALIDITY convention | Read `src/cache/schema.ts:6-16` | UIDVALIDITY is the cache epoch, stored as TEXT (bigint safety). Denormalized on each message. |
+| Migration behavior | Read `src/cache/store.ts:206-220` | `migrate()` drops all tables only when the **existing** `user_version` is greater than `SCHEMA_VERSION`; then runs `SCHEMA_SQL` (`CREATE TABLE IF NOT EXISTS`) and sets `user_version`. |
+| Migration proof (spike) | `node:sqlite` experiment | `CREATE TABLE IF NOT EXISTS t (a, b)` against an existing `t(a)` leaves only column `a`. Result: **CONFIRMED — IF NOT EXISTS does not add columns**. Bumping `SCHEMA_VERSION` from 1 to 2 will not upgrade a v1 database. |
+| Sync cycle location | Read `src/app.ts:215-250` | `startBackgroundServices()` runs `syncEngine.syncMailbox()` once at startup then every `syncInterval`; `stop()` cancels `cacheInterval`, stops the engine, and closes `cacheStore`. Backfill should ride this cycle. |
+| Sync fetch shape | Read `src/cache/sync-engine.ts:394-440` | `fetchChanges()` fetches only `uid, envelope, flags, bodyStructure, internalDate` — no body, no `source`. This is the safe pattern to extend; do not switch to `source: true`. |
+| Live read path | Read `src/services/imap.service.ts:751-786` | `getEmail()` always opens an IMAP client and fetches headers + bodyStructure, then decodes body parts via `messageToEmail`. No cache use. |
+| Conversion constraint | Read `src/services/imap.service.ts:328-419` | `messageToEmail()` needs an `ImapFlow` client and a `headers` fetch. Cached rows do not store raw headers or `bodyHtml`, so a cached-only `Email` cannot be complete today. |
+| Search path | Read `src/services/imap.service.ts:845-900` | `searchEmails()` always uses IMAP SEARCH. Store has a working FTS `searchMessages()` that nothing calls. |
+| Thread path | Read `src/services/imap.service.ts:1963+` | `getThread()` always uses IMAP SEARCH/fetch. Store has `findByMessageId()` that nothing calls. |
+| Backfill | Grep `bodyMessages`/`body_messages` | Config field exists (`default 500`) but is unused outside config/tests. No backfill code. |
+| Upstream commits | `git cat-file -t` on fetched upstream develop | All ten SHAs listed in the old plan exist and are cache commits dated 2026-10-10. Their subjects match the features claimed. |
+| Upstream implementation pattern | Read commit `5012971` diff | Upstream adds a `MailReadService` facade, stores headers + `bodySubtype`, caps cached bodies at `MAX_CACHED_BODY_BYTES`, marks attempted bodies, coalesces concurrent reads, and rides backfill on the sync cycle. |
+| Verification environment | `zsh -ic 'node -v; pnpm --version'` | Node v24.22.3, pnpm 11.22.0. `node:sqlite` is available. |
 
-### Cache implementation
+### 1.2 Errors in the previous plan (corrected here)
 
-- `src/cache/store.ts` — SQLite mirror with `window_days` and `max_size_mb`
-  backstop. Stores message metadata (uid, subject, from, to, date, flags,
-  labels, has_attachments). No body tier, no read-through, no thread assembly,
-  no attachment store.
-- `src/cache/sync-engine.ts` — background reconcile with UIDVALIDITY tracking,
-  deletion pass, and size-budget eviction.
-- `src/services/imap.service.ts` — all reads go through live IMAP. Cache is
-  populated as a side effect of sync-engine, not on demand.
-- `src/tools/emails.tool.ts` — `get_email` fetches from IMAP, not cache.
-- `src/tools/threads.tool.ts` — thread assembly from live IMAP.
+1. It said to add columns to an `emails` table. The table is `message` and
+   `body_text`/`body_fetched_at` already exist.
+2. It proposed a new `sync_state` table. `mailbox_state` already provides that
+   role, with TEXT uid_validity for bigint safety.
+3. It claimed a cache hit can return a full body. Not true: raw headers and
+   `bodyHtml` are not stored, so a cache hit would be a partial `Email`.
+4. It assumed changing `SCHEMA_SQL` upgrades an existing database. The spike
+   proved it does not; an explicit versioned migration is required.
+5. It omitted that FTS search and Message-ID lookup already work in the store
+   and are simply unwired.
+6. It omitted the upstream `MailReadService` pattern, which is the proven seam
+   for read-through without scattering cache policy through `ImapService`.
 
-### What already works (do not rebuild)
+### 1.3 Proven facts to build on
 
-- Scheduler, watcher with IDLE/triage/alerts, provider-aware labels, OAuth
-- Connection rotation, cache eviction, chunked UID fetches
-- SQLite mirror with window_days and max_size_mb
-- HTTP transport, config validate, keychain, password_command
-- Cross-platform keychain (macOS security + Linux secret-tool)
-- Email CLI (list, read, search, mailboxes, flag, delete, attach, reply, send)
-- On-demand verification code lookup (opt-in, no background scanning)
+- Storage for `body_text` works and is tested. The missing pieces are
+  **headers/HTML storage, read-through wiring, backfill, attachment store, and
+  correct schema migration**.
+- `node:sqlite` works under Node 24 in this environment.
+- Upstream's design is available and its commits are real; adapt, do not copy.
 
-### Key types and interfaces
+## 2. Goal and non-goals
 
-```typescript
-// src/types/index.ts
-interface EmailMeta {
-  id: string; messageId: string; subject: string; from: EmailAddress;
-  to: EmailAddress[]; date: string; seen: boolean; flagged: boolean;
-  answered: boolean; hasAttachments: boolean; labels: string[]; bulk?: BulkSignal;
-}
+**Goal.** Extend the existing mirror so `get_email`, `search_emails`, and
+`get_thread` can be answered locally when the mirror is complete and fresh,
+with automatic fallback to live IMAP otherwise. Add a bounded attachment store
+with LRU eviction.
 
-interface Email extends EmailMeta {
-  cc?: EmailAddress[]; bcc?: EmailAddress[]; replyTo?: EmailAddress;
-  bodyText?: string; bodyHtml?: string; inReplyTo?: string;
-  references?: string[]; attachments: AttachmentMeta[]; headers: Record<string, string>;
-}
+**Non-goals.** No daemon, no background body scanning unrelated to the existing
+sync cycle, no release/publishing changes, no changes to identity or global
+setup. Do not reimplement scheduler, watcher, verification tool, or CLI.
 
-interface CacheConfig {
-  enabled: boolean; mailboxes: string[]; windowDays: number;
-  bodyMessages: number; maxSizeMb: number; syncInterval: number;
-}
-```
+## 3. Design decisions (already made; do not relitigate without asking)
 
-### Config wiring
+1. **Add a `MailReadService` facade** in `src/services/mail-read.service.ts`,
+   modeled on upstream `5012971`/`3ce4dc1`/`0f037ec`. Wire tools to it. Keep
+   `ImapService` as the live transport. This avoids mixing cache policy into
+   protocol code.
+2. **A cache hit requires a complete stored body plus stored headers.** Store
+   `headers_json`, `body_html`, `body_subtype`, and `body_attempted_at`.
+   Serve from cache only when body is present and not marked as a dead end.
+3. **Body content is immutable per `(uidValidity, uid)`**; flags are not. Trust
+   cached bodies for a generation, but revalidate mailbox state before serving.
+4. **Bounded backfill** rides the existing sync cycle, using `body_messages` as
+   the per-mailbox budget. No unbounded scans.
+5. **Attachment store uses content hashes**, with LRU under `max_size_mb`.
+6. **Every cache error is swallowed on the read path and falls back to IMAP.**
+   A partial answer is forbidden.
 
-- `src/config/schema.ts` — Zod schemas with factory defaults
-- `src/config/loader.ts` — TOML parsing + env vars + normalization
-- `src/app.ts` — `buildServices()` constructs `CacheStore` and `SyncEngine`
-- `src/main.ts` — CLI dispatch, idle-exit valve
+## 4. Implementation phases
 
-## What to build
+### Phase 0: Correct schema migration (do this first)
 
-### Phase 1: Body tier in SQLite (schema v3)
+- Move to `SCHEMA_VERSION = 2` in `src/cache/schema.ts`.
+- Extend `SCHEMA_SQL` with the new columns/tables below.
+- Add an explicit `migrate()` upgrade path in `src/cache/store.ts`:
+  - If existing version is 1: `ALTER TABLE message ADD COLUMN headers_json TEXT`,
+    `ADD COLUMN body_html TEXT`, `ADD COLUMN body_subtype TEXT`,
+    `ADD COLUMN body_attempted_at INTEGER`; then create the new attachment
+    tables; then set `user_version = 2`.
+  - Keep the existing "existing version > current → drop and rebuild" branch.
+- Add a test that constructs a v1 database, opens it with the new code, and
+  asserts all new columns/tables exist and existing messages survive.
+- **Why:** the spike proved `CREATE TABLE IF NOT EXISTS` will not upgrade v1.
 
-Add columns to the existing `emails` table:
-
-```sql
-ALTER TABLE emails ADD COLUMN body_text TEXT;
-ALTER TABLE emails ADD COLUMN body_html TEXT;
-ALTER TABLE emails ADD COLUMN body_fetched_at INTEGER;  -- Unix timestamp ms
-ALTER TABLE emails ADD COLUMN body_complete INTEGER DEFAULT 0;  -- 1 if full body cached
-```
-
-Add a new `attachments` table for content-addressed storage:
-
-```sql
-CREATE TABLE IF NOT EXISTS attachments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  content_hash TEXT NOT NULL UNIQUE,  -- SHA-256 of raw bytes
-  filename TEXT NOT NULL,
-  mime_type TEXT NOT NULL,
-  size INTEGER NOT NULL,
-  local_path TEXT,  -- null if not yet downloaded to disk
-  created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS email_attachments (
-  email_uid INTEGER NOT NULL,
-  mailbox TEXT NOT NULL,
-  attachment_id INTEGER NOT NULL,
-  part_id TEXT,  -- MIME part number for re-download
-  PRIMARY KEY (email_uid, mailbox, attachment_id),
-  FOREIGN KEY (attachment_id) REFERENCES attachments(id)
-);
-```
-
-Add a `sync_state` table for per-mailbox freshness tracking:
+New columns on `message`:
 
 ```sql
-CREATE TABLE IF NOT EXISTS sync_state (
-  account TEXT NOT NULL,
-  mailbox TEXT NOT NULL,
-  uidvalidity INTEGER,
-  last_sync_at INTEGER NOT NULL,
-  message_count INTEGER,
-  PRIMARY KEY (account, mailbox)
+headers_json       TEXT,                -- parsed headers for a complete Email
+body_html          TEXT,                -- HTML half of multipart/alternative
+body_subtype       TEXT,                -- 'plain' | 'html' | undefined
+body_attempted_at  INTEGER,             -- dead-end marker; never retried
+```
+
+New tables:
+
+```sql
+CREATE TABLE IF NOT EXISTS attachment (
+  content_hash  TEXT PRIMARY KEY,       -- SHA-256 of raw bytes
+  filename      TEXT NOT NULL,
+  mime_type     TEXT NOT NULL,
+  size          INTEGER NOT NULL,
+  local_path    TEXT,
+  created_at    INTEGER NOT NULL,
+  last_access   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_attachment (
+  account      TEXT NOT NULL,
+  mailbox      TEXT NOT NULL,
+  uid          INTEGER NOT NULL,
+  uid_validity TEXT NOT NULL,
+  part_id      TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  PRIMARY KEY (account, mailbox, uid, uid_validity, part_id),
+  FOREIGN KEY (content_hash) REFERENCES attachment(content_hash)
 );
 ```
 
-### Phase 2: Read-through body cache
+Do **not** add a `sync_state` table. Use `mailbox_state`.
 
-Modify `ImapService.getEmail()` to:
+### Phase 1: Complete body storage
 
-1. Check cache for body (body_complete = 1 AND body_fetched_at within freshness window)
-2. If cache hit and fresh, return cached body
-3. If cache miss or stale, fetch from IMAP, cache the body, return it
-4. If IMAP fetch fails, return cached body if available (stale-while-error)
-5. Never return a partial body — if body_complete = 0, fetch from IMAP
+- Extend `CachedMessageInput`/`CachedMessage` in `src/cache/store.ts` with the
+  new fields.
+- Replace `putBody(account, mailbox, uid, uidValidity, bodyText: string)` with
+  a structured version carrying `{ text, html?, subtype, headers, preview? }`.
+  Keep a compatibility path if other callers exist (verified: none today).
+- Add `markBodyAttempted(account, mailbox, uid, uidValidity)` and
+  `touchAccess(...)` for LRU.
+- Add `MAX_CACHED_BODY_BYTES = 256 * 1024` (same as upstream) and refuse larger
+  bodies with an attempt marker instead of storing them.
+- Update the FTS triggers to index `body_html` as well if HTML-only messages
+  must be searchable; decide explicitly and cover with a test.
 
-Freshness rules:
-- Body is fresh if `body_fetched_at > Date.now() - (sync_interval * 1000 * 2)`
-- Body is stale if `body_fetched_at` is older than 2x sync interval
-- Stale body triggers a re-fetch but stale data can be served while re-fetching
-- On reconnect or UIDVALIDITY change, all bodies for that mailbox are invalidated
+### Phase 2: MailReadService read-through
 
-### Phase 3: Bounded backfill
+- Create `src/services/mail-read.service.ts` with:
+  - `getEmail(account, id, mailbox)` — revalidate mailbox state; on `cache`
+    result, serve a stored complete body; otherwise fetch live, write back, and
+    return. Coalesce concurrent loads keyed by `account\u0000mailbox\u0000uid`.
+  - `searchEmails(...)` — on `cache` result with a complete mirror, call
+    `store.searchMessages()`; otherwise call `ImapService.searchEmails()`.
+  - `getThread(...)` — use `store.findByMessageId()` for cached links; if any
+    thread member is missing from the mirror, fall back to live IMAP.
+  - `getEmailFlags`, `listEmails` stay live or use existing store methods only
+    when completeness is provable.
+- Factory: `revalidate(account, mailbox)` returns either `{kind:'cache',
+  uidValidity}` or `{kind:'live'}`; check `mailbox_state.last_synced_at` and
+  config `syncInterval`. On live, refresh state through the existing sync
+  engine. Keep this synchronous-safe (no unhandled rejections).
+- Register the service in `src/app.ts`, pass it to `registerAllTools()` and the
+  CLI where needed. Update `src/tools/emails.tool.ts`, `src/tools/thread.tool.ts`,
+  `src/tools/locate.tool.ts`, and `src/cli/email-commands.ts` to call it.
+- **Never** remove the live fallback or let a cache exception reach the tool.
 
-Add a background backfill process that:
+### Phase 3: Bounded body backfill
 
-1. Runs only when cache is enabled and watcher is active (or on startup)
-2. Fetches bodies for the most recent `body_messages` messages that don't have
-   cached bodies yet
-3. Processes in batches of 10-20 messages to avoid memory pressure
-4. Respects a configurable `body_backfill_interval` (default 60s between batches)
-5. Is cancellable — stops on shutdown or when cache is disabled
-6. Never blocks reads — backfill is best-effort background work
-7. Tracks progress in sync_state table
+- Add `backfillBodies(account, mailbox)` to `src/cache/sync-engine.ts`:
+  - Read `body_messages` budget from config (already normalized as
+    `bodyMessages`).
+  - Select newest messages with null body and null `body_attempted_at`, limited
+    to the budget; fetch in small batches; call the new `putBody`.
+  - Mark dead ends with `markBodyAttempted` (oversize, decode failure, missing
+    part) so they are never retried each cycle.
+  - Rides the existing reconcile cycle in `startBackgroundServices()`; never
+    throws; cancellable on shutdown.
+  - Respect read-only mode: no remote writes. Keep the existing metadata-only
+    fetch plus decoded part download pattern (`sync-engine.ts:394-440`); never
+    use `source: true`, which pulls full messages and risks changing flags.
 
-### Phase 4: Cached search and thread assembly
+### Phase 4: Attachment store
 
-- `search_emails` checks if cache covers the date range; if so, search locally
-- Thread assembly (`get_thread`) uses cached References/In-Reply-To when
-  available; falls back to IMAP for missing messages
-- Both must verify completeness: if any message in the result set is not
-  cached, fall back to IMAP
+- Implement `src/cache/attachment-store.ts`:
+  - `store(buffer, metadata) -> hash`, `get(hash)`, `touch(hash)`,
+    `evictToFit(maxBytes)` with oldest `last_access` first.
+  - Write blobs under the XDG cache dir already used by `CACHE_DB`; inherit its
+    0700/0600 permissions posture.
+- Wire into `ImapService.downloadAttachment` **after** the read-through facade
+  is stable: check `email_attachment` by part id, else download and persist.
+- Respect `max_attachment_size_mb` already implemented in this fork.
 
-### Phase 5: Content-addressed attachment store
+### Phase 5: Docs and config
 
-- When an attachment is downloaded, compute SHA-256 of raw bytes
-- Store in `attachments` table; reuse if hash exists
-- `email_attachments` junction links email to attachments with part_id
-- LRU eviction: when total size exceeds `max_size_mb`, evict oldest attachments
-  first, then remove from disk
-- Attachment download tool checks cache before IMAP
+- Document new settings in `README.md` and the config template:
+  `body_backfill_interval` (if added), `attachment_store_enabled`,
+  `max_attachment_store_mb`. Reuse `body_messages` and `max_size_mb` where they
+  already exist instead of inventing duplicates.
+- Document that bodies are stored locally and that the cache is regenerable;
+  point privacy note at the existing at-rest posture.
 
-### Phase 6: Config additions
+## 5. Test plan (grounded in real files)
 
-Add to `CacheConfigSchema`:
+Existing files to extend:
+- `src/cache/store.test.ts` — v1→v2 migration, new columns, headers/HTML write,
+  attempt markers, LRU touch, attachment tables, FTS over HTML.
+- `src/cache/sync-engine.test.ts` — backfill budget, dead-end markers, batching,
+  cancellation, no throw on failure.
+- `src/services/imap.service.test.ts` — live path unchanged when no cache.
+- `src/tools/register.test.ts` — new service wiring, read-only mode.
 
-```typescript
-body_backfill_interval: z.number().int().min(10).default(60),
-attachment_store_enabled: z.boolean().default(true),
-max_attachment_store_mb: z.number().int().min(1).default(100),
-```
+Files to create:
+- `src/services/mail-read.service.test.ts` — cache hit, cache miss, stale,
+  concurrent coalescing, corrupt store fallback, partial-body rejection,
+  search/thread fallback, failure never propagates.
+- `src/cache/attachment-store.test.ts` — hash dedupe, LRU, disk budget,
+  permissions, missing blob.
+- `src/__integration__/cache-read.integration.test.ts` — end-to-end with the
+  existing GreenMail harness.
 
-Add to `CacheConfig` interface in `src/types/index.ts`.
+Lifecycle: `src/main.lifecycle.test.ts` — backfill and cache close on shutdown.
 
-## Freshness and invalidation rules (critical)
+## 6. Risks and mitigations
 
-1. **UIDVALIDITY change** → purge all cached data for that mailbox
-2. **Message flags change** → update flags in cache, mark body as potentially
-   stale (re-fetch on next read)
-3. **Message delete/expunge** → remove from cache
-4. **Message move** → remove from source mailbox cache, add to destination
-5. **Reconnect** → re-validate UIDVALIDITY, invalidate if changed
-6. **Body fetch failure** → do not cache partial body; mark as not complete
-7. **Cache write failure** → log warning, serve from IMAP, do not cache
-8. **Config change** → reinitialize cache on next startup
-
-## Test plan
-
-### Unit tests (src/cache/*.test.ts)
-
-- `store.test.ts`: schema v3 migration, body tier read/write, attachment store CRUD, LRU eviction, disk budget enforcement
-- `sync-engine.test.ts`: backfill scheduling, batch processing, resume after restart, cancellation
-- `cache-freshness.test.ts`: freshness window, stale detection, UIDVALIDITY invalidation
-
-### Service tests (src/services/*.test.ts)
-
-- `imap.service.test.ts`: read-through cache hit, cache miss, stale body re-fetch, stale-while-error, partial body rejection
-- `imap.service.test.ts`: thread assembly from cache, fallback to IMAP
-- `imap.service.test.ts`: attachment download from cache, cache miss, hash reuse
-
-### Tool tests (src/tools/*.test.ts)
-
-- `emails.tool.test.ts`: get_email returns cached body when fresh
-- `emails.tool.test.ts`: get_email falls back to IMAP when cache stale
-- `threads.tool.test.ts`: get_thread uses cached data when complete
-
-### Integration tests (src/__integration__/)
-
-- `cache-body.integration.test.ts`: end-to-end body caching with GreenMail
-- `cache-eviction.integration.test.ts`: LRU eviction under disk pressure
-- `cache-fallback.integration.test.ts`: incomplete cache falls back to IMAP
-
-### Lifecycle tests (src/main.lifecycle.test.ts)
-
-- Backfill stops on shutdown
-- Cache store closes cleanly
-
-## Files to create
-
-| File | Purpose |
+| Risk | Mitigation |
 |---|---|
-| `src/cache/attachment-store.ts` | Content-addressed attachment storage with LRU |
-| `src/cache/body-backfill.ts` | Bounded background body fetcher |
-| `src/cache/cache-freshness.ts` | Freshness and invalidation logic |
-| `src/cache/thread-assembler.ts` | Thread assembly from cached data |
+| Migration drops user data | Explicit v1→v2 ALTER path + test. Mirror is regenerable, but do not rely on that. |
+| Partial Email from cache | Require headers + body + subtype before a hit; test partial rejection. |
+| Stale flags/labels | Revalidate mailbox state; flags are never trusted from cache blindly. |
+| Memory blowup | 256 KB body cap; batched backfill; attachment byte budget. |
+| Broken mirror breaks tools | All cache code wrapped; live fallback on every error. |
+| Concurrent duplicate fetches | Coalescing map with NUL-delimited keys (upstream proved this pattern). |
+| read-only violation | No remote writes; metadata-only FETCH + decoded part download; backfill gated by config. |
 
-## Files to modify
+## 7. Conventions and success criteria
 
-| File | Changes |
-|---|---|
-| `src/cache/store.ts` | Schema v3, body tier, attachment store, sync_state |
-| `src/cache/sync-engine.ts` | Backfill integration, freshness tracking |
-| `src/services/imap.service.ts` | Read-through cache integration |
-| `src/tools/emails.tool.ts` | Cached reads |
-| `src/tools/threads.tool.ts` | Cached thread assembly |
-| `src/config/schema.ts` | New cache settings |
-| `src/config/loader.ts` | Parse new settings |
-| `src/types/index.ts` | New types |
-| `src/app.ts` | Wire new services |
-| `README.md` | Document cache features |
+- TypeScript ESM, Node 24, Biome, Vitest, conventional commits, path-scoped
+  commits, no `git add -A`. Push after green hooks as usual.
+- Use the pinned pnpm version. Do not modify global setup or unrelated scripts.
+- Before claiming done, run and **report actual output** of:
+  `pnpm check`, `pnpm typecheck`, `pnpm build`, `pnpm test`.
+- Done means: all tests pass; cache hit/fallback tests prove no partial results;
+  v1 migration test passes; disk budget enforced; shutdown clean.
 
-## Upstream reference
+## 8. Upstream reference (verified)
 
-- Upstream repo: `codefuturist/email-mcp`
-- Fetch: `git fetch https://github.com/codefuturist/email-mcp.git develop`
-- Known commits: `d22d4f4`, `5012971`, `8d8111b`, `3ce4dc1`, `358901e`,
-  `3e5f921`, `0a745e0`, `5ffc8ff`, `e78e832`, `0f037ec`
-- These SHAs may have changed. Verify against current develop before use.
-- Do not copy upstream code. Review and adapt.
+Fetch with `git fetch https://github.com/codefuturist/email-mcp.git develop`.
+All SHAs below were verified to exist as 2026-10-10 cache commits:
 
-## Conventions
+- `d22d4f4` schema v3, `5012971` body tier, `8d8111b` cached list/flags,
+  `3ce4dc1` search/thread, `358901e` attachment store, `3e5f921` LRU,
+  `0a745e0` filename index, `5ffc8ff` NUL key fix, `e78e832` completeness fix,
+  `0f037ec` MailReadService facade.
 
-- TypeScript 7.x, Node 24+, ESM
-- Biome for lint/format (`pnpm check`)
-- Vitest for tests (`pnpm test`)
-- Conventional commits via lefthook pre-commit
-- Pre-push hook runs full test suite + pnpm check
-- Path-scoped commits, no `git add -A`
-- Push flow: `gh auth switch --user Fe2-O3`, `git push fork repair/sdk-v2:main`
-- Two agents share the checkout; stage only own paths
-- Never stage the unrelated `package.json` change
-
-## Success criteria
-
-1. `pnpm check` passes
-2. `pnpm typecheck` passes
-3. `pnpm build` passes
-4. `pnpm test` passes (all tests, including new cache tests)
-5. Body reads fall back to IMAP when cache is incomplete or stale
-6. Disk budget is enforced (LRU eviction)
-7. No stale data served without freshness proof
-8. No partial results from cache failures
-9. Cache store closes cleanly on shutdown
-10. Backfill is cancellable and stops on shutdown
+Read the diffs for patterns. Adapt to this fork. Do not cherry-pick the branch.
