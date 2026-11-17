@@ -595,6 +595,43 @@ both. Provider limits vary by plan and can change, so keep the cap within the
 limit your mail provider supports. In environment-based setup, use
 `MCP_EMAIL_SEND_MAX_ATTACHMENT_MB`.
 
+### Local body cache (opt-in)
+
+A message's body, headers and structure never change for a given mailbox
+generation (UIDVALIDITY) and UID. With `read_through` on, `get_email` keeps a
+decoded copy and a repeat read costs one `UID FETCH (UID FLAGS)` plus a local
+read, so flags are always live and a message that was moved or deleted is still
+reported as not found. It is off by default and changes nothing until enabled.
+
+```toml
+[settings.cache]
+read_through = false   # serve repeat get_email reads from the local body cache
+offline_reads = true   # with read_through on, serve cached bodies when the server is unreachable
+body_max_mb = 200      # LRU budget for cached bodies, inside max_size_mb
+body_messages = 500    # backfill bodies for the newest N messages per synced mailbox (0 = off)
+```
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| `read_through` | `MCP_EMAIL_CACHE_READ_THROUGH` | `false` |
+| `offline_reads` | `MCP_EMAIL_CACHE_OFFLINE_READS` | `true` |
+| `body_max_mb` | `MCP_EMAIL_CACHE_BODY_MAX_MB` | `200` |
+| `body_messages` | `MCP_EMAIL_CACHE_BODY_MESSAGES` | `500` |
+
+- **Fill:** every live read writes its body back, for any mailbox. A background
+  backfill then caches the newest `body_messages` messages of each synced
+  mailbox, a few per sync cycle, one mailbox lock per message.
+- **Budget:** bodies over 256 KB are never cached (never truncated). When cached
+  bodies exceed `body_max_mb`, the least recently read are evicted first. The
+  `max_size_mb` backstop evicts bodies before it prunes any mirrored message.
+- **Offline:** if the server cannot be reached, an already-cached message is
+  still returned with a visible warning that flags may be stale and the message
+  may have been moved or deleted. Authentication failures and "not found" are
+  never answered from the cache, and `markRead` fails instead of silently doing
+  nothing.
+- **Read-only mode:** write-back is a local write and stays allowed. Backfill
+  never runs, because background services do not start in read-only mode.
+
 ### On-demand verification codes
 
 The `get_verification_code` tool is disabled by default. Enable it with:

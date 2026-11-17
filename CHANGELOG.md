@@ -8,6 +8,17 @@ All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-
 
 ## [Unreleased]
 
+### Added
+
+- **Body cache for `get_email`** (opt-in, `settings.cache.read_through`, default off) — a message's body, headers and structure are immutable per (UIDVALIDITY, UID), so a repeat read costs a mailbox lock, one `UID FETCH (UID FLAGS)` and a local read; flags stay live and a moved or deleted message still reports not found. Live and cached reads build the result with the same `assembleEmail()`. Schema v2 adds the `message_body` table; bodies over 256 KB are skipped rather than truncated, and a decoder version invalidates stale rows.
+- **Offline reads** (`offline_reads`, default on when `read_through` is on) — when the server is unreachable, an already-cached message is returned with a visible warning. Only genuine connectivity errors qualify; auth failures and not-found are never served from cache.
+- **Bounded body backfill and budget** (`body_messages`, `body_max_mb`) — the newest mirrored messages are cached in the background one mailbox lock per message; cached bodies are LRU-evicted past `body_max_mb`, and the `max_size_mb` backstop evicts bodies before pruning message rows.
+
+### Fixed
+
+- **FTS reindex on flag-only resyncs** — the `message_fts_update` trigger fired on every update, rewriting the index for subject, sender and body on each flag change; it now fires only when an indexed column's value changes (migrated automatically on first open).
+- **Mirror rows keyed by the sanitized mailbox name**, matching how reads look them up.
+
 ### Changed
 
 - **Idle exit now defaults to off** — `settings.idle_exit` default 1800 s → 0. The client closing stdin remains the primary exit signal, so a clean Claude/OpenCode quit still ends the server immediately; the timer is now an opt-in backstop (`idle_exit = <seconds>` or `MCP_EMAIL_IDLE_EXIT`). New configs and the config template ship `idle_exit = 0`.

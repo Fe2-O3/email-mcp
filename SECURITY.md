@@ -47,6 +47,13 @@ project includes several security measures:
   to prevent buffer accumulation and stale state.
 - **Cache eviction** — label strategy caches are evicted after 5 minutes
   to prevent unbounded growth.
+- **Local body cache** — when `settings.cache.read_through` is on (off by
+  default), decoded message bodies and raw headers are stored in the local
+  mirror (`cache.db` under the XDG cache directory, normally
+  `~/.cache/email-mcp/cache.db`) with `0600` permissions inside a `0700`
+  directory. There is no `cache clear` command: to remove cached mail, stop the
+  server and delete that file; it is regenerated on demand. Pair it with
+  full-disk encryption.
 - **Verification lookup** — the OTP tool is disabled by default and only scans
   recent mail when explicitly called. It never reads or clears the system
   clipboard. Clipboard writes require `copy_to_clipboard: true`, are blocked in
