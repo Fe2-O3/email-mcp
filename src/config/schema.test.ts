@@ -178,3 +178,64 @@ describe('AppConfigFileSchema', () => {
     ).toThrow();
   });
 });
+
+describe('AccountConfigSchema plain-text login guard', () => {
+  const plain = { tls: false, starttls: false };
+
+  it('rejects plain IMAP to a remote host, naming account, protocol and host', () => {
+    const result = AccountConfigSchema.safeParse(
+      validAccount({ imap: { host: 'imap.example.com', ...plain } }),
+    );
+    expect(result.success).toBe(false);
+    const message = result.error?.issues.map((i) => i.message).join('\n');
+    expect(message).toContain('"test"');
+    expect(message).toContain('IMAP');
+    expect(message).toContain('imap.example.com');
+    expect(message).toContain('tls = true or starttls = true');
+  });
+
+  it('rejects plain SMTP to a remote host', () => {
+    const result = AccountConfigSchema.safeParse(
+      validAccount({ smtp: { host: 'smtp.example.com', ...plain } }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('SMTP');
+  });
+
+  it('allows implicit TLS', () => {
+    expect(AccountConfigSchema.safeParse(validAccount()).success).toBe(true);
+  });
+
+  it('allows STARTTLS', () => {
+    const result = AccountConfigSchema.safeParse(
+      validAccount({
+        imap: { host: 'imap.example.com', tls: false, starttls: true },
+        smtp: { host: 'smtp.example.com', tls: false, starttls: true },
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['localhost', '127.0.0.1', '::1', '[::1]'])(
+    'allows plain text to loopback %s',
+    (host) => {
+      const result = AccountConfigSchema.safeParse(
+        validAccount({ imap: { host, ...plain }, smtp: { host, ...plain } }),
+      );
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it.each(['127.1', 'localhost.'])('rejects plain text to the non-literal spelling %s', (host) => {
+    const result = AccountConfigSchema.safeParse(validAccount({ imap: { host, ...plain } }));
+    expect(result.success).toBe(false);
+  });
+
+  it('is reported through the whole-file schema used by config validate', () => {
+    const result = AppConfigFileSchema.safeParse({
+      accounts: [validAccount({ imap: { host: 'imap.example.com', ...plain } })],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['accounts', 0, 'imap', 'tls']);
+  });
+});

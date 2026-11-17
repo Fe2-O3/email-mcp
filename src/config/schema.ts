@@ -4,6 +4,8 @@
 
 import { z } from 'zod';
 
+import { isLoopbackHost, LOOPBACK_HOSTS_TEXT } from '../utils/loopback.js';
+
 export const ImapConfigSchema = z.object({
   host: z.string().min(1, 'IMAP host is required'),
   port: z.number().int().min(1).max(65535).default(993),
@@ -73,7 +75,29 @@ export const AccountConfigSchema = z
   .refine(
     (data) => Boolean(data.password) || Boolean(data.password_command) || Boolean(data.oauth2),
     { message: 'Either password_command, password or oauth2 config is required' },
-  );
+  )
+  // The login crosses this connection; with neither TLS nor STARTTLS only a
+  // loopback host keeps it on the machine.
+  // Adapted from Mailoo (https://github.com/Bitfloo/mailoo, commit f537225),
+  // Copyright (c) 2026 Bitfloo, LGPL-3.0-or-later.
+  .superRefine((account, ctx) => {
+    (
+      [
+        ['imap', 'IMAP'],
+        ['smtp', 'SMTP'],
+      ] as const
+    ).forEach(([protocol, label]) => {
+      const { host, tls, starttls } = account[protocol];
+      // A blank host already carries its own issue.
+      if (!tls && !starttls && host.trim() !== '' && !isLoopbackHost(host)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [protocol, 'tls'],
+          message: `Account ${JSON.stringify(account.name)}: ${label} to ${JSON.stringify(host)} would be unencrypted (tls = false and starttls = false). Set tls = true or starttls = true, or use a loopback host (${LOOPBACK_HOSTS_TEXT}).`,
+        });
+      }
+    });
+  });
 
 export const WatcherConfigSchema = z.object({
   enabled: z.boolean().default(false),
