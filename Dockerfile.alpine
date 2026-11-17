@@ -8,7 +8,9 @@ RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 
 # Install dependencies (layer cached unless lock changes)
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# --ignore-scripts: the `prepare` script compiles TypeScript, but src/ and the
+# tsconfig files are not copied yet, and git hooks are useless in an image.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Build TypeScript
 COPY tsconfig.json tsconfig.build.json ./
@@ -16,13 +18,13 @@ COPY src/ src/
 RUN pnpm build
 
 # Remove dev dependencies
-RUN pnpm prune --prod
+RUN pnpm prune --prod --ignore-scripts
 
 # ── Production stage ──────────────────────────────────────────────────────────
 FROM node:24-alpine AS production
 
 LABEL org.opencontainers.image.title="imap-wizard" \
-      org.opencontainers.image.description="IMAP/SMTP email MCP server — 49 tools, stdio + Streamable HTTP, IMAP IDLE push, multi-account, AI triage" \
+      org.opencontainers.image.description="IMAP/SMTP email MCP server — stdio + Streamable HTTP, IMAP IDLE push, multi-account, AI triage" \
       org.opencontainers.image.url="https://github.com/Fe2-O3/imap-wizard" \
       org.opencontainers.image.source="https://github.com/Fe2-O3/imap-wizard" \
       org.opencontainers.image.licenses="LGPL-3.0-or-later" \
