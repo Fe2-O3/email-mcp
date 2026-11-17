@@ -470,4 +470,17 @@ has not been run against a live server.
 
 ## 10. G0 results
 
-_Not yet run. Paste `scripts/bench-get-email.ts` output here._
+Run 2026-11-17, owner's real account, INBOX, 30 messages, 60 samples, node v22.23.1.
+
+| path                               |        p50 |        p95 |
+|------------------------------------|------------|------------|
+| live getEmail (today)              |   714.2 ms |  1290.0 ms |
+| hit: lock + UID FETCH FLAGS        |   173.3 ms |   242.5 ms |
+| hit: local SQLite bundle read      |     0.2 ms |     0.7 ms |
+| hit: total                         |   174.1 ms |   242.5 ms |
+| reference: STATUS probe            |   172.2 ms |   249.0 ms |
+
+Bundle size p50 18.8 KB, p95 111.4 KB, max 219.2 KB; 0/30 over the 256 KB cap.
+Unseen before/after: 2506 / 2506 (reads did not mark anything read).
+
+**G0: PASS.** Live p50 714.2 ms vs hit p95 242.5 ms (2.94x, needs >= 2x). Saving at p50 540.2 ms (needs >= 50 ms).
