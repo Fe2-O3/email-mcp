@@ -6,3 +6,11 @@ allowBuilds:
   lefthook: true
   protobufjs: true
   ssh2: true
+# Dev-only security floors for the vitest -> vite toolchain (never shipped to users).
+overrides:
+  vite: ^7.3.7
+  postcss: ^8.5.23
+  nanoid@<4: ^3.3.18
+  rollup: ^4.59.0
+  esbuild: ^0.28.1
+  source-map-js: ^1.2.2

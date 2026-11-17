@@ -77,26 +77,26 @@
     "url": "https://github.com/Fe2-O3/imap-wizard/issues"
   },
   "dependencies": {
-    "@clack/prompts": "^1.8.1",
-    "@modelcontextprotocol/node": "^2.1.0",
-    "@modelcontextprotocol/sdk": "^1.30.1",
-    "@modelcontextprotocol/server": "^2.1.0",
-    "imapflow": "^2.0.7",
-    "node-ical": "^0.27.2",
-    "nodemailer": "^10.0.10",
-    "smol-toml": "^1.9.0",
-    "zod": "^4.6.5"
+    "@clack/prompts": "^1.9.0",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "imapflow": "^2.12.1",
+    "node-ical": "^0.27.6",
+    "nodemailer": "^10.6.0",
+    "smol-toml": "^1.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
-    "@types/node": "^26.6.2",
+    "@biomejs/biome": "^2.6.8",
+    "@types/node": "^26.6.6",
     "@types/nodemailer": "^8.0.2",
-    "@vitest/coverage-v8": "^5.0.2",
-    "lefthook": "^2.1.14",
-    "testcontainers": "^12.1.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "lefthook": "^2.2.2",
+    "testcontainers": "^12.2.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.1.0"
   },
   "engines": {
     "node": ">=24.0.0"
