@@ -10,5 +10,5 @@ startCommand:
   commandFunction: |-
     (config) => ({
       command: "npx",
-      args: ["-y", "@fe2-o3/imap-wizard", "stdio"]
+      args: ["-y", "imap-wizard", "stdio"]
     })

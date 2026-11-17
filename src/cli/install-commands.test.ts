@@ -8,14 +8,14 @@ describe('buildServerEntry', () => {
   it('npx launches this fork package, not upstream', () => {
     expect(buildServerEntry('npx')).toEqual({
       command: 'npx',
-      args: ['-y', '@fe2-o3/imap-wizard', 'stdio'],
+      args: ['-y', 'imap-wizard', 'stdio'],
     });
   });
 
   it('pnpm dlx launches this fork package', () => {
     expect(buildServerEntry('pnpm')).toEqual({
       command: 'pnpm',
-      args: ['dlx', '@fe2-o3/imap-wizard', 'stdio'],
+      args: ['dlx', 'imap-wizard', 'stdio'],
     });
   });
 

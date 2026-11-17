@@ -1,5 +1,5 @@
 {
-  "name": "@fe2-o3/imap-wizard",
+  "name": "imap-wizard",
   "version": "0.3.0",
   "mcpName": "io.github.fe2-o3/imap-wizard",
   "description": "IMAP Wizard — email MCP server with IMAP + SMTP support",

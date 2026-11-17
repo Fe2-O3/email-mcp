@@ -38,12 +38,12 @@ updated to the new numbers.
 ## Things to fix before going public (not changed here)
 
 1. **FIXED. `install` launched upstream.** The `npx`, `pnpm dlx` and global
-   options now write `@fe2-o3/imap-wizard` (`src/cli/install-commands.ts`),
+   options now write `imap-wizard` (`src/cli/install-commands.ts`),
    with unit tests.
 2. **FIXED. `smithery.yaml` ran upstream's package.** It now runs
-   `npx -y @fe2-o3/imap-wizard stdio`.
+   `npx -y imap-wizard stdio`.
 3. **PARTLY FIXED. `server.json` names an npm package that does not exist.**
-   It now names `@fe2-o3/imap-wizard`, which is not published yet, so the
+   It now names `imap-wizard`, which is not published yet, so the
    registry entry will not install until the package is published. Its
    description is 97 characters (the MCP registry schema is believed to cap
    descriptions at 100, not checked against the live schema).

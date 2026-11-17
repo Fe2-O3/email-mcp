@@ -10,7 +10,7 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "@fe2-o3/imap-wizard",
+      "identifier": "imap-wizard",
       "version": "0.3.0",
       "runtimeHint": "npx",
       "commandArguments": ["stdio"],

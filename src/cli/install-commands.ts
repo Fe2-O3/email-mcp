@@ -115,9 +115,9 @@ export interface ServerEntry {
 export function buildServerEntry(transport: Transport): ServerEntry {
   switch (transport) {
     case 'npx':
-      return { command: 'npx', args: ['-y', '@fe2-o3/imap-wizard', 'stdio'] };
+      return { command: 'npx', args: ['-y', 'imap-wizard', 'stdio'] };
     case 'pnpm':
-      return { command: 'pnpm', args: ['dlx', '@fe2-o3/imap-wizard', 'stdio'] };
+      return { command: 'pnpm', args: ['dlx', 'imap-wizard', 'stdio'] };
     case 'global':
       return { command: 'imap-wizard', args: ['stdio'] };
     case 'node': {
@@ -125,7 +125,7 @@ export function buildServerEntry(transport: Transport): ServerEntry {
       return { command: process.execPath, args: [mainJs, 'stdio'] };
     }
     default:
-      return { command: 'npx', args: ['-y', '@fe2-o3/imap-wizard', 'stdio'] };
+      return { command: 'npx', args: ['-y', 'imap-wizard', 'stdio'] };
   }
 }
 
@@ -243,7 +243,7 @@ async function runInstall(): Promise<void> {
       {
         value: 'global' as Transport,
         label: 'Global install (imap-wizard on PATH)',
-        hint: 'requires: npm i -g @fe2-o3/imap-wizard',
+        hint: 'requires: npm i -g imap-wizard',
       },
       {
         value: 'node' as Transport,

@@ -74,7 +74,7 @@ Ask your assistant *"What's unread in my inbox?"* to check it works.
 Setup for other clients is under [More clients](#more-clients).
 
 > [!NOTE]
-> The npm package `@fe2-o3/imap-wizard` is not published yet. Until it is, the
+> The npm package `imap-wizard` is not published yet. Until it is, the
 > `npx` and `pnpm dlx` options in `imap-wizard install` will not find it. Pick
 > **"Direct node"** there, or write the config by hand as shown above.
 > An existing `~/.config/email-mcp` config keeps working unchanged.
