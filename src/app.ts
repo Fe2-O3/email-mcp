@@ -80,17 +80,21 @@ export async function buildServices(): Promise<AppServices> {
   if (config.settings.cache.enabled) {
     try {
       cacheStore = new CacheStore(CACHE_DB);
-      syncEngine = new SyncEngine(connections, cacheStore, {
-        windowDays: config.settings.cache.windowDays,
-        maxSizeMb: config.settings.cache.maxSizeMb,
-      });
-      // Read-through is opt-in. Without it the service has no port attached and
-      // takes exactly the live path it always did.
-      if (config.settings.cache.readThrough) {
-        imapService.attachBodyCache(new BodyCache(cacheStore, config.settings.cache.bodyMaxMb), {
-          offlineReads: config.settings.cache.offlineReads,
-        });
-      }
+      // Read-through is opt-in. Without it the service has no port attached,
+      // the engine does no backfill, and every read takes the live path it
+      // always did.
+      const { readThrough, bodyMaxMb, bodyMessages, offlineReads } = config.settings.cache;
+      const bodyCache = readThrough ? new BodyCache(cacheStore, bodyMaxMb) : undefined;
+      syncEngine = new SyncEngine(
+        connections,
+        cacheStore,
+        {
+          windowDays: config.settings.cache.windowDays,
+          maxSizeMb: config.settings.cache.maxSizeMb,
+        },
+        bodyCache ? { cache: bodyCache, bodyMessages, bodyMaxMb } : undefined,
+      );
+      if (bodyCache) imapService.attachBodyCache(bodyCache, { offlineReads });
     } catch (err) {
       cacheStore = undefined;
       syncEngine = undefined;

@@ -180,3 +180,103 @@ describe('stdio server lifecycle', () => {
     LIFECYCLE_BUDGET_MS * 2,
   );
 });
+
+describe('shutdown during body backfill', () => {
+  it('fetches nothing after stop() and closes the store cleanly', async () => {
+    const [{ startBackgroundServices }, { default: SyncEngine }, { default: BodyCache }, store] =
+      await Promise.all([
+        import('./app.js'),
+        import('./cache/sync-engine.js'),
+        import('./cache/body-cache.js'),
+        import('./cache/store.js').then((m) => new m.default(':memory:')),
+      ]);
+
+    const uids = [1, 2, 3, 4, 5, 6];
+    let fetchesAfterStop = 0;
+    let stopped = false;
+    let firstFetch: (() => void) | undefined;
+    const firstFetchStarted = new Promise<void>((resolve) => {
+      firstFetch = resolve;
+    });
+
+    const client = {
+      capabilities: new Map<string, boolean | number>(),
+      mailbox: { uidValidity: 100n, uidNext: 7, exists: uids.length },
+      getMailboxLock: vi.fn().mockResolvedValue({ release: vi.fn() }),
+      search: vi.fn().mockResolvedValue(uids),
+      fetch: vi.fn().mockImplementation(() =>
+        (async function* gen() {
+          for (const uid of uids) {
+            yield {
+              uid,
+              envelope: { subject: `s${uid}` },
+              flags: new Set<string>(),
+              bodyStructure: { type: 'text/plain', size: 4 },
+              internalDate: new Date(uid * 86_400_000),
+            };
+          }
+        })(),
+      ),
+      fetchOne: vi.fn(async (seq: string) => {
+        if (stopped) fetchesAfterStop += 1;
+        firstFetch?.();
+        // Yield so stop() can land between messages.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return {
+          uid: Number(seq),
+          envelope: {},
+          bodyStructure: { type: 'text/plain', size: 4 },
+          headers: Buffer.from(''),
+        };
+      }),
+      download: vi.fn(async () => ({
+        content: (async function* gen() {
+          yield Buffer.from('body');
+        })(),
+      })),
+    };
+    const connections = {
+      getAccountNames: vi.fn().mockReturnValue(['work']),
+      getImapClient: vi.fn().mockResolvedValue(client),
+    };
+
+    const syncEngine = new SyncEngine(
+      connections as never,
+      store,
+      {},
+      { cache: new BodyCache(store, 200), bodyMessages: 500, bodyMaxMb: 200, batch: 6 },
+    );
+    const services = {
+      config: {
+        settings: {
+          readOnly: false,
+          cache: { mailboxes: ['INBOX'], syncInterval: 3600 },
+        },
+      },
+      connections,
+      hooksService: { start: vi.fn(), stop: vi.fn() },
+      watcherService: { start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() },
+      schedulerService: { checkAndSend: vi.fn().mockResolvedValue({ sent: 0 }) },
+      imapService: { dispose: vi.fn() },
+      syncEngine,
+      cacheStore: store,
+    };
+
+    const handle = startBackgroundServices(services as never, null);
+    await firstFetchStarted;
+    await handle.stop();
+    stopped = true;
+    const fetchesAtStop = client.fetchOne.mock.calls.length;
+
+    // Give any straggling loop iteration time to misbehave.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(fetchesAfterStop).toBe(0);
+    // At most the message already in flight when stop() ran.
+    expect(client.fetchOne.mock.calls.length).toBe(fetchesAtStop);
+    expect(client.fetchOne.mock.calls.length).toBeLessThan(uids.length);
+    // stop() closed the store; a late write would have thrown inside the cache
+    // adapter, which swallows it, so closed is the observable end state.
+    expect(() => store.getBody('work', 'INBOX', 1, '100')).toThrow();
+  });
+});

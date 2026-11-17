@@ -28,6 +28,7 @@
 import type { ImapFlow } from 'imapflow';
 import type { IConnectionManager } from '../connections/types.js';
 import { mcpLog } from '../logging.js';
+import { sanitizeMailboxName } from '../safety/validation.js';
 import type {
   ExpungeEvent,
   FlagsEvent,
@@ -35,6 +36,9 @@ import type {
   ReconnectEvent,
 } from '../services/event-bus.js';
 import eventBus from '../services/event-bus.js';
+import { BODY_EXTRACTOR_VERSION, fetchBodyBundle } from '../services/imap.service.js';
+import { isConnectivityError } from '../utils/imap-error.js';
+import type BodyCache from './body-cache.js';
 import type CacheStore from './store.js';
 import type { CachedMessageInput, SyncTier } from './store.js';
 
@@ -140,6 +144,21 @@ export interface SyncRetention {
   maxSizeMb?: number;
 }
 
+/** Body backfill settings; absent means no backfill (read_through off). */
+export interface SyncBackfill {
+  cache: BodyCache;
+  /** Backfill bodies for the newest N messages per mailbox. 0 disables. */
+  bodyMessages: number;
+  /** Stop a cycle once cached bodies reach this many megabytes. */
+  bodyMaxMb: number;
+  /** Messages per sync cycle. */
+  batch?: number;
+}
+
+const DEFAULT_BACKFILL_BATCH = 25;
+const MAX_EVICT_ROUNDS = 10;
+const EVICT_BATCH = 500;
+
 export default class SyncEngine {
   private tiers = new Map<string, SyncTier>();
 
@@ -150,6 +169,9 @@ export default class SyncEngine {
   private inFlight = new Map<string, Promise<SyncResult>>();
 
   private listening = false;
+
+  /** Aborted by stop() so an in-flight backfill ends between messages. */
+  private abort = new AbortController();
 
   private readonly onReconnect: (event: ReconnectEvent) => void;
 
@@ -163,6 +185,7 @@ export default class SyncEngine {
     private connections: IConnectionManager,
     private store: CacheStore,
     private retention: SyncRetention = {},
+    private backfill?: SyncBackfill,
   ) {
     this.onReconnect = ({ account }) => {
       this.tiers.delete(account);
@@ -187,6 +210,7 @@ export default class SyncEngine {
   start(): void {
     if (this.listening) return;
     this.listening = true;
+    if (this.abort.signal.aborted) this.abort = new AbortController();
     eventBus.on('imap:reconnect', this.onReconnect);
     eventBus.on('email:new', this.onNewEmail);
     eventBus.on('email:expunge', this.onExpunge);
@@ -194,6 +218,7 @@ export default class SyncEngine {
   }
 
   stop(): void {
+    this.abort.abort();
     if (!this.listening) return;
     this.listening = false;
     eventBus.off('imap:reconnect', this.onReconnect);
@@ -253,7 +278,26 @@ export default class SyncEngine {
    * as it was. A stale row can still answer a question, a deleted one cannot,
    * so a transient network error must not escalate into data loss.
    */
-  async syncMailbox(account: string, mailbox: string): Promise<SyncResult> {
+  async syncMailbox(account: string, rawMailbox: string): Promise<SyncResult> {
+    // Rows are keyed by the sanitized name, the same key getEmail reads with;
+    // otherwise a configured " INBOX " would be backfilled under a key no read
+    // ever asks for.
+    let mailbox: string;
+    try {
+      mailbox = sanitizeMailboxName(rawMailbox);
+    } catch (err) {
+      return {
+        ok: false,
+        account,
+        mailbox: rawMailbox,
+        stored: 0,
+        removed: 0,
+        pruned: 0,
+        epochReset: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
     const key = `${account} ${mailbox}`;
     const running = this.inFlight.get(key);
     if (running) return running;
@@ -281,6 +325,7 @@ export default class SyncEngine {
       const client = await this.connections.getImapClient(account);
       const lock = await client.getMailboxLock(mailbox);
 
+      let reconciled = false;
       try {
         const info = (client as unknown as { mailbox?: MailboxInfo }).mailbox;
         if (!info?.uidValidity) {
@@ -336,9 +381,14 @@ export default class SyncEngine {
         result.pruned = this.enforceRetention(account, mailbox, uidValidity);
 
         result.ok = true;
+        reconciled = true;
       } finally {
         lock.release();
       }
+
+      // After the lock is released: backfill takes the lock once per message,
+      // so a long backfill never holds the connection against a tool call.
+      if (reconciled) await this.backfillBodies(account, mailbox, this.abort.signal);
     } catch (err) {
       result.error = err instanceof Error ? err.message : String(err);
       await mcpLog('warning', 'cache', `Sync failed for ${account}/${mailbox}: ${result.error}`);
@@ -367,14 +417,34 @@ export default class SyncEngine {
         pruned += this.store.pruneOlderThan(account, mailbox, uidValidity, cutoff);
       }
 
+      let evicted = 0;
       const maxSizeMb = this.retention.maxSizeMb ?? 0;
-      if (maxSizeMb > 0 && this.store.sizeBytes() > maxSizeMb * 1024 * 1024) {
-        // One bounded chunk per sync; a hugely over-budget mirror converges
-        // over successive syncs instead of stalling one of them.
-        pruned += this.store.pruneOldest(2000);
+      const limit = maxSizeMb * 1024 * 1024;
+      if (maxSizeMb > 0 && this.store.sizeBytes() > limit) {
+        // Bodies go first: they are the bulk of the file and fully
+        // regenerable by a live read, whereas a pruned message row is lost
+        // from the mirror. Free roughly the excess, in bounded rounds.
+        const excess = this.store.sizeBytes() - limit;
+        let freed = 0;
+        for (
+          let round = 0;
+          round < MAX_EVICT_ROUNDS && freed < excess && this.store.countOkBodies() > 0;
+          round += 1
+        ) {
+          const before = this.store.bodyBytes();
+          evicted += this.store.evictBodiesLru(EVICT_BATCH);
+          freed += before - this.store.bodyBytes();
+        }
+
+        // Only when no content bodies remain does the backstop touch message
+        // rows. One bounded chunk per sync; a hugely over-budget mirror
+        // converges over successive syncs instead of stalling one of them.
+        if (this.store.countOkBodies() === 0) {
+          pruned += this.store.pruneOldest(2000);
+        }
       }
 
-      if (pruned > 0) this.store.vacuum();
+      if (pruned > 0 || evicted > 0) this.store.vacuum();
     } catch (err) {
       void mcpLog(
         'warning',
@@ -434,6 +504,110 @@ export default class SyncEngine {
 
     this.store.putMessages(messages);
     return messages.length;
+  }
+
+  /**
+   * Cache bodies for the newest mirrored messages that have none.
+   *
+   * One message at a time, taking and releasing the mailbox lock for each:
+   * tool calls share this connection, and holding the lock across a batch of
+   * downloads would stall `get_email` for seconds. Never throws.
+   *
+   * @returns how many bodies were fetched.
+   */
+  async backfillBodies(account: string, mailbox: string, signal: AbortSignal): Promise<number> {
+    const config = this.backfill;
+    if (!config || config.bodyMessages <= 0) return 0;
+
+    let fetched = 0;
+    try {
+      const uidValidity = this.store.getMailboxState(account, mailbox)?.uidValidity;
+      if (!uidValidity) return 0;
+
+      const uids = this.store.listUidsMissingBody(
+        account,
+        mailbox,
+        uidValidity,
+        config.batch ?? DEFAULT_BACKFILL_BATCH,
+        BODY_EXTRACTOR_VERSION,
+        config.bodyMessages,
+      );
+      const budgetBytes = config.bodyMaxMb * 1024 * 1024;
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const uid of uids) {
+        if (signal.aborted) break;
+        if (budgetBytes > 0 && this.store.bodyBytes() >= budgetBytes) break;
+
+        // Sequential on purpose: see the method comment.
+        // eslint-disable-next-line no-await-in-loop
+        const outcome = await this.backfillOne(account, mailbox, uidValidity, uid, config.cache);
+        if (outcome === 'stored') fetched += 1;
+        if (outcome === 'unreachable') break;
+      }
+
+      config.cache.enforceBudget();
+    } catch (err) {
+      void mcpLog(
+        'warning',
+        'cache',
+        `Body backfill skipped for ${account}/${mailbox}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return fetched;
+  }
+
+  private async backfillOne(
+    account: string,
+    mailbox: string,
+    uidValidity: string,
+    uid: number,
+    cache: BodyCache,
+  ): Promise<'stored' | 'skipped' | 'unreachable'> {
+    let lock: { release: () => void };
+    let client: ImapFlow;
+    try {
+      client = await this.connections.getImapClient(account);
+      lock = await client.getMailboxLock(mailbox);
+    } catch {
+      // Not a fault of this message, so do not mark it; try again next cycle.
+      return 'unreachable';
+    }
+
+    try {
+      // The generation may have turned over since the sync that listed this
+      // UID; a body fetched now would be filed under the wrong epoch.
+      const selected = (client as unknown as { mailbox?: MailboxInfo | false }).mailbox;
+      if (!selected || selected.uidValidity.toString() !== uidValidity) return 'skipped';
+
+      const msg = await client.fetchOne(
+        String(uid),
+        { uid: true, envelope: true, bodyStructure: true, headers: true },
+        { uid: true },
+      );
+      if (!msg) return 'skipped';
+
+      const bundle = await fetchBodyBundle(msg as unknown as Record<string, unknown>, client, uid);
+      cache.put(account, mailbox, uid, uidValidity, bundle);
+      return 'stored';
+    } catch (err) {
+      if (isConnectivityError(err)) return 'unreachable';
+      try {
+        this.store.markBodySkipped(
+          account,
+          mailbox,
+          uid,
+          uidValidity,
+          'error',
+          BODY_EXTRACTOR_VERSION,
+        );
+      } catch {
+        // Marking is best effort.
+      }
+      return 'skipped';
+    } finally {
+      lock.release();
+    }
   }
 
   /**

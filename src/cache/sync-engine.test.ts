@@ -1,5 +1,6 @@
 import type { IConnectionManager } from '../connections/types.js';
 import eventBus from '../services/event-bus.js';
+import BodyCache from './body-cache.js';
 import CacheStore from './store.js';
 import SyncEngine from './sync-engine.js';
 
@@ -456,6 +457,296 @@ describe('SyncEngine', () => {
       await engine.syncMailbox('work', 'INBOX');
 
       expect(client._release).toHaveBeenCalled();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Body backfill
+// ---------------------------------------------------------------------------
+
+describe('SyncEngine body backfill', () => {
+  let store: CacheStore;
+  let client: ReturnType<typeof createMockClient> & {
+    fetchOne: ReturnType<typeof vi.fn>;
+    download: ReturnType<typeof vi.fn>;
+  };
+  let engine: SyncEngine;
+
+  /** N messages, uid i dated i days after epoch, so a higher uid is newer. */
+  function seedServer(count: number): void {
+    const uids = Array.from({ length: count }, (_, i) => i + 1);
+    client.fetch.mockImplementation(
+      messagesFrom(...uids.map((uid) => ({ uid, internalDate: new Date(uid * 86_400_000) }))),
+    );
+    client.search.mockResolvedValue(uids);
+    client.mailbox.exists = count;
+  }
+
+  function build(
+    backfill: { bodyMessages?: number; bodyMaxMb?: number; batch?: number } | undefined,
+  ): SyncEngine {
+    const base = createMockClient();
+    client = Object.assign(base, {
+      fetchOne: vi.fn(async (seq: string) => ({
+        uid: Number(seq),
+        envelope: { subject: `Subject ${seq}` },
+        bodyStructure: { type: 'text/plain', size: 5 },
+        headers: Buffer.from('Subject: x\r\n\r\n'),
+      })),
+      download: vi.fn(async () => ({
+        content: (async function* gen() {
+          yield Buffer.from('body text');
+        })(),
+      })),
+    });
+    return new SyncEngine(
+      createConnections(client),
+      store,
+      {},
+      backfill
+        ? {
+            cache: new BodyCache(store, backfill.bodyMaxMb ?? 200),
+            bodyMessages: backfill.bodyMessages ?? 500,
+            bodyMaxMb: backfill.bodyMaxMb ?? 200,
+            batch: backfill.batch,
+          }
+        : undefined,
+    );
+  }
+
+  beforeEach(() => {
+    store = new CacheStore(':memory:');
+  });
+
+  afterEach(() => {
+    engine?.stop();
+    store.close();
+    eventBus.removeAllListeners();
+  });
+
+  it('fetches at most one batch per cycle, newest first', async () => {
+    engine = build({ batch: 3 });
+    seedServer(10);
+
+    const result = await engine.syncMailbox('work', 'INBOX');
+
+    expect(result.ok).toBe(true);
+    expect(client.fetchOne.mock.calls.map((c) => c[0])).toEqual(['10', '9', '8']);
+    expect(store.getBody('work', 'INBOX', 10, '100')?.status).toBe('ok');
+    expect(store.getBody('work', 'INBOX', 7, '100')).toBeUndefined();
+  });
+
+  it('only considers the newest body_messages messages', async () => {
+    engine = build({ batch: 10, bodyMessages: 2 });
+    seedServer(5);
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    expect(client.fetchOne.mock.calls.map((c) => c[0])).toEqual(['5', '4']);
+  });
+
+  it('continues with the next batch on the next cycle', async () => {
+    engine = build({ batch: 2 });
+    seedServer(4);
+
+    await engine.syncMailbox('work', 'INBOX');
+    await engine.syncMailbox('work', 'INBOX');
+
+    expect(client.fetchOne.mock.calls.map((c) => c[0])).toEqual(['4', '3', '2', '1']);
+  });
+
+  it('takes and releases the mailbox lock once per message', async () => {
+    engine = build({ batch: 3 });
+    seedServer(3);
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    // One lock for the reconcile, one per backfilled message.
+    expect(client.getMailboxLock).toHaveBeenCalledTimes(1 + 3);
+    expect(client._release).toHaveBeenCalledTimes(1 + 3);
+  });
+
+  it('skips a vanished UID and keeps going', async () => {
+    engine = build({ batch: 3 });
+    seedServer(3);
+    client.fetchOne.mockImplementation(async (seq: string) =>
+      seq === '3'
+        ? null
+        : {
+            uid: Number(seq),
+            envelope: {},
+            bodyStructure: { type: 'text/plain', size: 5 },
+            headers: Buffer.from(''),
+          },
+    );
+
+    const result = await engine.syncMailbox('work', 'INBOX');
+
+    expect(result.ok).toBe(true);
+    expect(store.getBody('work', 'INBOX', 3, '100')).toBeUndefined();
+    expect(store.getBody('work', 'INBOX', 2, '100')?.status).toBe('ok');
+  });
+
+  it('marks a failing message skipped/error, continues, and the sync is still ok', async () => {
+    engine = build({ batch: 3 });
+    seedServer(3);
+    client.fetchOne.mockImplementation(async (seq: string) => {
+      if (seq === '3') throw new Error('Command failed');
+      return {
+        uid: Number(seq),
+        envelope: {},
+        bodyStructure: { type: 'text/plain', size: 5 },
+        headers: Buffer.from(''),
+      };
+    });
+
+    const result = await engine.syncMailbox('work', 'INBOX');
+
+    expect(result.ok).toBe(true);
+    expect(store.getBody('work', 'INBOX', 3, '100')).toMatchObject({
+      status: 'skipped',
+      skipReason: 'error',
+    });
+    expect(store.getBody('work', 'INBOX', 2, '100')?.status).toBe('ok');
+    // A skipped row is not retried by the next cycle.
+    client.fetchOne.mockClear();
+    await engine.syncMailbox('work', 'INBOX');
+    expect(client.fetchOne.mock.calls.map((c) => c[0])).not.toContain('3');
+  });
+
+  it('does not mark messages skipped when the connection drops', async () => {
+    engine = build({ batch: 3 });
+    seedServer(3);
+    client.fetchOne.mockRejectedValue(Object.assign(new Error('closed'), { code: 'ECONNRESET' }));
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    expect(client.fetchOne).toHaveBeenCalledTimes(1);
+    expect(store.getBody('work', 'INBOX', 3, '100')).toBeUndefined();
+  });
+
+  it('stops fetching once aborted between messages', async () => {
+    engine = build({ batch: 5 });
+    seedServer(5);
+    // Pretend stop() arrives while the first message is downloading.
+    client.fetchOne.mockImplementation(async (seq: string) => {
+      engine.stop();
+      return {
+        uid: Number(seq),
+        envelope: {},
+        bodyStructure: { type: 'text/plain', size: 5 },
+        headers: Buffer.from(''),
+      };
+    });
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    expect(client.fetchOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at the body budget', async () => {
+    engine = build({ batch: 5, bodyMaxMb: 1 });
+    seedServer(3);
+    // Budget already full.
+    store.putBodyBundle(
+      'work',
+      'Other',
+      1,
+      '1',
+      { envelope: {}, bodyStructure: {}, headersRaw: 'x'.repeat(1024 * 1024) },
+      1,
+    );
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    expect(client.fetchOne).not.toHaveBeenCalled();
+  });
+
+  it('does not backfill when read_through is off (no backfill config)', async () => {
+    engine = build(undefined);
+    seedServer(3);
+
+    const result = await engine.syncMailbox('work', 'INBOX');
+
+    expect(result.ok).toBe(true);
+    expect(client.fetchOne).not.toHaveBeenCalled();
+    expect(client.getMailboxLock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not backfill when body_messages is 0', async () => {
+    engine = build({ bodyMessages: 0 });
+    seedServer(3);
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    expect(client.fetchOne).not.toHaveBeenCalled();
+  });
+
+  it('keys rows by the sanitized mailbox name', async () => {
+    engine = build({ batch: 1 });
+    seedServer(2);
+
+    await engine.syncMailbox('work', ' INBOX ');
+
+    expect(store.getMailboxState('work', 'INBOX')).toBeDefined();
+    expect(store.getBody('work', 'INBOX', 2, '100')?.status).toBe('ok');
+  });
+
+  it('reports a failed sync instead of throwing for an invalid mailbox name', async () => {
+    engine = build({});
+
+    const result = await engine.syncMailbox('work', 'bad*name');
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/wildcard/);
+  });
+
+  describe('size backstop', () => {
+    it('evicts bodies before pruning any message row', async () => {
+      const base = createMockClient();
+      client = Object.assign(base, { fetchOne: vi.fn(), download: vi.fn() });
+      engine = new SyncEngine(createConnections(client), store, { maxSizeMb: 0.0001 });
+      // More bodies than ten bounded eviction rounds can clear.
+      for (let uid = 1; uid <= 5100; uid += 1) {
+        store.putBodyBundle(
+          'work',
+          'INBOX',
+          uid,
+          '100',
+          { envelope: {}, bodyStructure: {}, headersRaw: 'h', bodyText: 'b' },
+          1,
+        );
+      }
+      seedServer(2);
+
+      const result = await engine.syncMailbox('work', 'INBOX');
+
+      expect(result.ok).toBe(true);
+      expect(store.countOkBodies()).toBe(100);
+      // Still over budget, but content bodies remain, so no message row is pruned.
+      expect(result.pruned).toBe(0);
+      expect(store.countMessages('work', 'INBOX')).toBe(2);
+    });
+
+    it('prunes message rows only once no content bodies remain', async () => {
+      const base = createMockClient();
+      client = Object.assign(base, { fetchOne: vi.fn(), download: vi.fn() });
+      engine = new SyncEngine(createConnections(client), store, { maxSizeMb: 0.0001 });
+      store.putBodyBundle(
+        'work',
+        'INBOX',
+        1,
+        '100',
+        { envelope: {}, bodyStructure: {}, headersRaw: 'h', bodyText: 'b' },
+        1,
+      );
+      seedServer(2);
+
+      const result = await engine.syncMailbox('work', 'INBOX');
+
+      expect(store.countOkBodies()).toBe(0);
+      expect(result.pruned).toBeGreaterThan(0);
     });
   });
 });
