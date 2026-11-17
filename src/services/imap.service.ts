@@ -37,6 +37,17 @@ import eventBus from './event-bus.js';
 import type { LabelStrategy } from './label-strategy.js';
 import { detectLabelStrategy } from './label-strategy.js';
 
+/**
+ * IMAP APPEND requires CRLF line endings (RFC 3501 §4.3). MailComposer emits
+ * bare LF for LF-only bodies, and strict servers reject the literal
+ * (upstream #116). latin1 round-trips every byte, so non-ASCII content and
+ * already-CRLF lines are untouched.
+ */
+export function toCrlf(raw: string | Buffer | Uint8Array): Buffer {
+  const bytes = typeof raw === 'string' ? Buffer.from(raw, 'utf-8') : Buffer.from(raw);
+  return Buffer.from(bytes.toString('latin1').replace(/\r?\n/g, '\r\n'), 'latin1');
+}
+
 // ---------------------------------------------------------------------------
 // Helpers (must be defined before ImapService)
 // ---------------------------------------------------------------------------
@@ -1646,7 +1657,7 @@ export default class ImapService {
       .build();
 
     const appendResult = await imapCommand(`Saving draft to "${draftsPath}"`, () =>
-      client.append(draftsPath, Buffer.from(rawMessage), ['\\Draft', '\\Seen']),
+      client.append(draftsPath, toCrlf(rawMessage), ['\\Draft', '\\Seen']),
     );
 
     return {
@@ -1716,7 +1727,7 @@ export default class ImapService {
 
     const lock = await ImapService.lockMailbox(client, String(sentFolder.path));
     try {
-      await client.append(String(sentFolder.path), raw, ['\\Seen']);
+      await client.append(String(sentFolder.path), toCrlf(raw), ['\\Seen']);
       return { appended: true, folder: String(sentFolder.path) };
     } finally {
       lock.release();
