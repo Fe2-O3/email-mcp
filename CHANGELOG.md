@@ -8,6 +8,14 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-11-17
+
+### Fixed
+
+- MCP registry name is `io.github.Fe2-O3/imap-wizard`, matching the GitHub owner's case; the registry rejects the lowercase form.
+- Dependencies updated: no known advisories in production dependencies (`pnpm audit --prod`).
+- Docker images build again (lifecycle scripts skipped during install; overrides file copied).
+
 ## [0.3.0] — 2026-11-17
 
 First npm release of this fork. 0.2.x is skipped because tags v0.2.0–v0.2.3
@@ -86,5 +94,6 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 - README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
 - Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
+[0.3.1]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.0
 [0.1.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.1.0
