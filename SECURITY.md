@@ -23,7 +23,7 @@ confirmed, a fix will be released as soon as possible.
 
 ## Security Considerations
 
-email-mcp handles sensitive email credentials and message content. The
+imap-wizard handles sensitive email credentials and message content. The
 project includes several security measures:
 
 - **Credential file permissions** — the config file that stores account
@@ -67,4 +67,4 @@ project includes several security measures:
 - Review the audit log at `~/.local/share/email-mcp/audit.jsonl`
 - Use `read_only: true` in config if you only need read access
 - Set a token whenever you run the HTTP server, including on loopback
-- Keep email-mcp updated to the latest version
+- Keep imap-wizard updated to the latest version

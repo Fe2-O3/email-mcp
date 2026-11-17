@@ -2,16 +2,16 @@
 
 # IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 50 core tools plus an opt-in verification tool, 583 tests green, 18 upstream bugs fixed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 50 core tools plus an opt-in verification tool, 588 tests green, 18 upstream bugs fixed" width="100%">
 
 **Give your AI assistant your email, on your terms.**
 A local [MCP](https://modelcontextprotocol.io) server that lets Claude, Codex,
 Cursor, VS Code, OpenCode or any MCP client read, search, send and organize mail
 over plain IMAP and SMTP. No cloud service in the middle.
 
-[![release](https://img.shields.io/github/v/release/Fe2-O3/email-mcp?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/email-mcp/releases)
+[![release](https://img.shields.io/github/v/release/Fe2-O3/imap-wizard?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/imap-wizard/releases)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-583%20passing-22c55e?style=flat-square)](#development)
+[![tests](https://img.shields.io/badge/tests-588%20passing-22c55e?style=flat-square)](#development)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![MCP SDK v2](https://img.shields.io/badge/MCP-SDK%20v2-8B5CF6?style=flat-square)](https://modelcontextprotocol.io)
 
@@ -30,18 +30,20 @@ over plain IMAP and SMTP. No cloud service in the middle.
 > [@codefuturist](https://github.com/codefuturist), under the same
 > [LGPL-3.0-or-later](LICENSE) license. It keeps upstream's design and history,
 > fixes bugs that are still open on the upstream tracker, and adds safety
-> features. The command is still called `email-mcp`. See
+> features. The package and command are called `imap-wizard`. See
 > [Relationship to upstream](#relationship-to-upstream).
 
 ---
 
 ## Quick start
 
-You need **Node.js 24+** and **pnpm**. This fork is installed from source; it
-does not publish an npm package or container image.
+You need **Node.js 24+** and **pnpm**. Until the npm package is published, this
+fork is installed from source. Commands below use `node dist/main.js`; once
+`imap-wizard` is on your PATH (for example with `pnpm link --global`), run the
+same commands as `imap-wizard account add`, `imap-wizard test`, and so on.
 
 ```bash
-git clone https://github.com/Fe2-O3/email-mcp.git imap-wizard
+git clone https://github.com/Fe2-O3/imap-wizard.git imap-wizard
 cd imap-wizard
 pnpm install && pnpm build
 
@@ -71,11 +73,11 @@ Claude Desktop, Cursor and most other clients take the same JSON shape:
 Ask your assistant *"What's unread in my inbox?"* to check it works.
 Setup for other clients is under [More clients](#more-clients).
 
-> [!WARNING]
-> The interactive `email-mcp install` command offers `npx`, `pnpm dlx` and
-> global-install options. Those launch **upstream's** npm package
-> (`@codefuturist/email-mcp`), not this fork. Pick **"Direct node"** there, or
-> write the config by hand as shown above.
+> [!NOTE]
+> The npm package `@fe2-o3/imap-wizard` is not published yet. Until it is, the
+> `npx` and `pnpm dlx` options in `imap-wizard install` will not find it. Pick
+> **"Direct node"** there, or write the config by hand as shown above.
+> An existing `~/.config/email-mcp` config keeps working unchanged.
 
 ---
 
@@ -387,7 +389,7 @@ It refuses to bind a non-loopback address without a token.
 This project began as a fork of
 [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) at commit
 `7fe8916` (2026-08-21) and started its own version line at
-[v0.1.0](https://github.com/Fe2-O3/email-mcp/releases/tag/v0.1.0)
+[v0.1.0](https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.1.0)
 (2026-09-28). Upstream continues to ship its own releases; this fork adopts
 upstream changes one at a time, with credit, rather than merging wholesale.
 The review of upstream's v0.4 and v0.5 features is in
@@ -433,7 +435,7 @@ request bodies. See the [CHANGELOG](CHANGELOG.md).
 pnpm install
 pnpm check             # Biome lint and format
 pnpm typecheck
-pnpm test              # unit tests (583 across 67 files)
+pnpm test              # unit tests (588 across 68 files)
 pnpm test:integration  # against a throwaway GreenMail server (needs Docker)
 pnpm smoke             # every tool against a real configured account
 ```
@@ -446,14 +448,14 @@ pnpm smoke             # every tool against a real configured account
 <summary><strong>CLI reference</strong></summary>
 
 ```text
-email-mcp [command]
+imap-wizard [command]
 
   stdio                     Run as MCP server over stdio (default)
   http                      Run as MCP server over Streamable HTTP
   account list|add|edit|delete
   setup                     Alias for 'account add'
   test [account]            Test IMAP and SMTP connections
-  install [status|remove]   Register with MCP clients (pick "Direct node")
+  install [status|remove]   Register with MCP clients (pick "Direct node" until the npm package is published)
   config show|edit|validate|path|init
   keychain status|migrate|remove
   scheduler check|list|install|uninstall|status

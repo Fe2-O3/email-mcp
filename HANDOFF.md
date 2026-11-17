@@ -5,7 +5,7 @@ This handoff is for the next feature session. Read `README.md` and
 
 ## Current state
 
-- Fork of `codefuturist/email-mcp`, published at `Fe2-O3/email-mcp`.
+- Fork of `codefuturist/email-mcp`, published at `Fe2-O3/imap-wizard`.
 - 49 MCP tools by default. `get_verification_code` adds one optional tool.
 - Email CLI commands: `list`, `read`, `search`, `mailboxes`, `flag`, `delete`,
   `attach`, `reply`, and `send`.

@@ -1,4 +1,4 @@
-# Contributing to email-mcp
+# Contributing to imap-wizard
 
 Thank you for your interest in contributing! This guide will help you get started.
 
@@ -7,8 +7,8 @@ Thank you for your interest in contributing! This guide will help you get starte
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/<your-username>/email-mcp.git
-   cd email-mcp
+   git clone https://github.com/<your-username>/imap-wizard.git
+   cd imap-wizard
    ```
 3. Install dependencies:
    ```bash
@@ -23,7 +23,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ### Prerequisites
 
-- **Node.js** >= 22.0.0
+- **Node.js** >= 24.0.0
 - **pnpm** (package manager)
 
 ### Commands
@@ -33,16 +33,15 @@ Thank you for your interest in contributing! This guide will help you get starte
 | `pnpm dev` | Start in watch mode (auto-reload) |
 | `pnpm build` | Build for production |
 | `pnpm typecheck` | Type-check without emitting |
-| `pnpm lint` | Run ESLint |
-| `pnpm lint:fix` | Run ESLint with auto-fix |
+| `pnpm lint` | Run Biome lint |
+| `pnpm lint:fix` | Run Biome lint with auto-fix |
 | `pnpm format` | Format code with Biome |
 | `pnpm format:check` | Check formatting |
-| `pnpm check` | Run both Biome and ESLint |
+| `pnpm check` | Run Biome (format, lint, imports) |
 
 ### Code Style
 
-- **Formatter:** [Biome](https://biomejs.dev/) — handles formatting and import organization
-- **Linter:** [ESLint](https://eslint.org/) with Airbnb Extended + TypeScript strict rules
+- **Formatter:** [Biome](https://biomejs.dev/) — handles formatting, linting and import organization
 - Run `pnpm check` before committing to catch issues
 
 ### Commit Messages
@@ -93,8 +92,8 @@ src/
 
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/codefuturist/email-mcp/issues) for bugs and feature requests
-- Use [GitHub Discussions](https://github.com/codefuturist/email-mcp/discussions) for questions and ideas
+- Use [GitHub Issues](https://github.com/Fe2-O3/imap-wizard/issues) for bugs and feature requests
+- Use [GitHub Issues](https://github.com/Fe2-O3/imap-wizard/issues) for questions and ideas too (Discussions are not enabled)
 
 ## License
 

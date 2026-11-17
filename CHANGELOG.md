@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-O3/email-mcp)) are recorded in this file.
+All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe2-O3/imap-wizard)) are recorded in this file.
 
 - This fork starts its **own version line at 0.1.0** (2026-09-28). The package was previously frozen at the upstream development version `0.3.0`.
 - Everything at or before the fork point (2026-08-21, `7fe8916`) is inherited upstream history. For the original project's releases — v0.1.0 through **v0.5.1** — see the **[codefuturist/email-mcp releases page](https://github.com/codefuturist/email-mcp/releases)** and their changelog.
@@ -21,6 +21,7 @@ All notable changes to **this fork** ([Fe2-O3/email-mcp](https://github.com/Fe2-
 
 ### Changed
 
+- **BREAKING: renamed to `imap-wizard`.** The npm package is `@fe2-o3/imap-wizard` (not published yet) and the command is `imap-wizard`, replacing `email-mcp`. The `install` wizard's `npx`, `pnpm dlx` and global options no longer launch upstream's `@codefuturist/email-mcp`; smithery.yaml and server.json point at this fork too. The config, data and cache directories (`~/.config/email-mcp` and friends), the keychain entries, the `EMAIL_MCP_*` environment variables and the `email` key written into MCP client configs are unchanged, so existing setups keep working.
 - **Idle exit now defaults to off** — `settings.idle_exit` default 1800 s → 0. The client closing stdin remains the primary exit signal, so a clean Claude/OpenCode quit still ends the server immediately; the timer is now an opt-in backstop (`idle_exit = <seconds>` or `MCP_EMAIL_IDLE_EXIT`). New configs and the config template ship `idle_exit = 0`.
 - **Provider-aware outbound attachment caps** — `settings.send.max_attachment_mb` defaults to 25 MB; known provider limits can lower it, and an account-level `max_attachment_mb` can override it. The cap is checked before SMTP send, including inline and forwarded/draft attachments.
 - **Opt-in verification lookup** — `get_verification_code` is registered only when `settings.verification.enabled = true`. It scans recent mail only on request; optional magic-link lookup and clipboard writes are off unless explicitly enabled/requested. The clipboard is never read or cleared, and writes are blocked in read-only mode and limited to 10 per minute.
@@ -80,4 +81,4 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 - README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
 - Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
-[0.1.0]: https://github.com/Fe2-O3/email-mcp/releases/tag/v0.1.0
+[0.1.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.1.0

@@ -117,7 +117,7 @@ const accountsOut = await probe('list_accounts', {}, (b) =>
 SELF = accountsOut?.body.match(/[\w.+-]+@[\w.-]+\.\w+/)?.[0] ?? '';
 if (!SELF) throw new Error('could not determine the account address');
 const account = ACCOUNT || accountsOut?.body.match(/•\s*([^:]+):/)?.[1]?.trim() || '';
-if (!account) throw new Error('no account configured — run `email-mcp account add` first');
+if (!account) throw new Error('no account configured — run `imap-wizard account add` first');
 await probe('list_mailboxes', { account }, (b) => (b.includes('INBOX') ? undefined : 'no INBOX'));
 await probe('check_health', { account }, (b) =>
   b.includes('"connected": true') || b.includes('"connected":true') ? undefined : 'not connected',

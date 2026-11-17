@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Discussions
-    url: https://github.com/codefuturist/email-mcp/discussions
-    about: Ask questions and share ideas
+  - name: Questions and ideas
+    url: https://github.com/Fe2-O3/imap-wizard/issues
+    about: Discussions are not enabled. Open an issue for questions and ideas.
