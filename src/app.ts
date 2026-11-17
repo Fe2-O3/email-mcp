@@ -250,7 +250,7 @@ export function startBackgroundServices(
       }
     } catch (err) {
       process.stderr.write(
-        `[email-mcp] background start error: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[imap-wizard] background start error: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   })();

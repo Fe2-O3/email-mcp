@@ -228,7 +228,7 @@ function buildAppleScript(opts: JXAScriptOptions): string {
     });
     lines.push(
       'try',
-      '  display dialog dialogText with title "email-mcp \u2014 Add Calendar Event?" buttons {"Cancel", "Add to Calendar"} default button "Add to Calendar" cancel button "Cancel" giving up after 60',
+      '  display dialog dialogText with title "IMAP Wizard \u2014 Add Calendar Event?" buttons {"Cancel", "Add to Calendar"} default button "Add to Calendar" cancel button "Cancel" giving up after 60',
       '  set dlgResult to button returned of result',
       '  if dlgResult is not "Add to Calendar" then',
       '    return "{\\"status\\":\\"timed_out\\"}"',

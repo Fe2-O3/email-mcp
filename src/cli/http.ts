@@ -8,8 +8,8 @@
  *   • Refuses to bind a non-loopback interface without a token (use
  *     `--insecure` to override, e.g. when TLS + auth is terminated upstream).
  *
- * Run:  email-mcp http --port 8080            → http://127.0.0.1:8080/mcp
- *       email-mcp http --host 0.0.0.0 --port 8080 --token "$SECRET"
+ * Run:  imap-wizard http --port 8080            → http://127.0.0.1:8080/mcp
+ *       imap-wizard http --host 0.0.0.0 --port 8080 --token "$SECRET"
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -128,7 +128,7 @@ export default async function runHttp(argv: string[]): Promise<void> {
   // Token handling: generate on first run unless explicitly opted out.
   if (opts.noToken) {
     process.stderr.write(
-      '[email-mcp] WARNING: running without authentication (--no-token). ' +
+      '[imap-wizard] WARNING: running without authentication (--no-token). ' +
         'Any local process can access all enabled email tools.\n',
     );
     opts.token = undefined;
@@ -148,7 +148,7 @@ export default async function runHttp(argv: string[]): Promise<void> {
       await fs.writeFile(HTTP_TOKEN_FILE, `${generated}\n`, { encoding: 'utf-8', mode: 0o600 });
       await fs.chmod(HTTP_TOKEN_FILE, 0o600);
       process.stderr.write(
-        `[email-mcp] Generated HTTP token (printed once): ${generated}\n` +
+        `[imap-wizard] Generated HTTP token (printed once): ${generated}\n` +
           `  Stored at ${HTTP_TOKEN_FILE} (mode 0o600). Use --token or EMAIL_MCP_HTTP_TOKEN to override.\n`,
       );
       opts.token = generated;
@@ -250,7 +250,7 @@ export default async function runHttp(argv: string[]): Promise<void> {
       }
     })().catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[email-mcp] http request error: ${message}\n`);
+      process.stderr.write(`[imap-wizard] http request error: ${message}\n`);
       if (!res.headersSent) {
         res.writeHead(500, { 'content-type': 'application/json' });
       }
@@ -270,7 +270,7 @@ export default async function runHttp(argv: string[]): Promise<void> {
       // A signal handler may not discard its promise: an escaped rejection
       // here would kill the process mid-shutdown instead of finishing it.
       process.stderr.write(
-        `[email-mcp] http shutdown error: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[imap-wizard] http shutdown error: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   };
@@ -282,20 +282,20 @@ export default async function runHttp(argv: string[]): Promise<void> {
   // for unhandled rejections is a fatal throw). Log, keep serving.
   process.on('unhandledRejection', (reason) => {
     process.stderr.write(
-      `[email-mcp] unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}\n`,
+      `[imap-wizard] unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}\n`,
     );
   });
   process.on('uncaughtException', (err) => {
-    process.stderr.write(`[email-mcp] uncaught exception: ${err.message}\n`);
+    process.stderr.write(`[imap-wizard] uncaught exception: ${err.message}\n`);
   });
 
   httpServer.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       process.stderr.write(
-        `email-mcp — port ${opts.port} is already in use; choose another with --port\n`,
+        `imap-wizard — port ${opts.port} is already in use; choose another with --port\n`,
       );
     } else {
-      process.stderr.write(`email-mcp — HTTP server error: ${err.message}\n`);
+      process.stderr.write(`imap-wizard — HTTP server error: ${err.message}\n`);
     }
     // eslint-disable-next-line n/no-process-exit
     process.exit(1);
@@ -306,7 +306,7 @@ export default async function runHttp(argv: string[]): Promise<void> {
       const auth = opts.token ? 'bearer-token auth ON' : 'NO AUTH (loopback only)';
       const hostCheck = wildcard ? 'Host check OFF' : `Host allowlist: ${hostAllowlist.join(', ')}`;
       process.stderr.write(
-        `email-mcp — Streamable HTTP on http://${opts.host}:${opts.port}${opts.path} — ${auth}; ${hostCheck}\n`,
+        `imap-wizard — Streamable HTTP on http://${opts.host}:${opts.port}${opts.path} — ${auth}; ${hostCheck}\n`,
       );
       resolve();
     });

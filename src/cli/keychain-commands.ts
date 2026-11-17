@@ -91,7 +91,7 @@ async function keychainStatus(): Promise<void> {
   ).length;
   if (plainCount > 0) {
     console.log(
-      `\n  ${plainCount} account(s) have plain text passwords. Run 'email-mcp keychain migrate' to secure them.`,
+      `\n  ${plainCount} account(s) have plain text passwords. Run 'imap-wizard keychain migrate' to secure them.`,
     );
   }
   console.log();
@@ -101,7 +101,7 @@ async function keychainStatus(): Promise<void> {
  * Migrate all plain-text passwords to macOS Keychain.
  */
 async function keychainMigrate(): Promise<void> {
-  intro('email-mcp > Keychain Migration');
+  intro('imap-wizard > Keychain Migration');
 
   if (!(await keychainAvailable())) {
     log.error(
@@ -180,7 +180,7 @@ async function keychainMigrate(): Promise<void> {
  * Remove a password from Keychain.
  */
 async function keychainRemove(accountName?: string): Promise<void> {
-  intro('email-mcp > Remove Keychain Entry');
+  intro('imap-wizard > Remove Keychain Entry');
 
   if (!(await keychainAvailable())) {
     log.error(
@@ -245,7 +245,7 @@ async function keychainRemove(accountName?: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function printKeychainUsage(): void {
-  console.log(`Usage: email-mcp keychain <subcommand>
+  console.log(`Usage: imap-wizard keychain <subcommand>
 
 Subcommands:
   status            Show which accounts use Keychain vs plain text
@@ -253,9 +253,9 @@ Subcommands:
   remove [name]     Remove a password from Keychain
 
 Examples:
-  email-mcp keychain status
-  email-mcp keychain migrate
-  email-mcp keychain remove personal
+  imap-wizard keychain status
+  imap-wizard keychain migrate
+  imap-wizard keychain remove personal
 `);
 }
 

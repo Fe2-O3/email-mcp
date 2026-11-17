@@ -1,5 +1,5 @@
 /**
- * Structured logging for IMAP Wizard (email-mcp).
+ * Structured logging for IMAP Wizard.
  *
  * As of MCP 2026-07-28 the `logging` capability and the server→client
  * `notifications/message` channel are deprecated (SEP-2577). For a stdio

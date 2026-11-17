@@ -24,7 +24,7 @@ import { findConsistencyIssues, findUnknownKeys } from '../config/validate.js';
 import ensureInteractive from './guard.js';
 
 function printConfigUsage(): void {
-  console.log(`Usage: email-mcp config <subcommand>
+  console.log(`Usage: imap-wizard config <subcommand>
 
 Subcommands:
   show      Show current configuration (passwords masked)
@@ -44,7 +44,7 @@ async function showConfig(): Promise<void> {
   const exists = await configExists();
   if (!exists) {
     console.error(`No config file found at: ${CONFIG_FILE}`);
-    console.error(`Run 'email-mcp setup' or 'email-mcp config init' to create one.`);
+    console.error(`Run 'imap-wizard setup' or 'imap-wizard config init' to create one.`);
     throw new Error('Config file not found');
   }
 
@@ -98,7 +98,7 @@ async function showConfig(): Promise<void> {
 
 async function initConfig(): Promise<void> {
   ensureInteractive();
-  intro('email-mcp config init');
+  intro('imap-wizard config init');
 
   const exists = await configExists();
   if (exists) {
@@ -117,18 +117,18 @@ async function initConfig(): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(CONFIG_FILE, generateTemplate(), 'utf-8');
   log.success(`Template config created at ${CONFIG_FILE}`);
-  log.info("Edit the file to add your email accounts, then run 'email-mcp test'.");
+  log.info("Edit the file to add your email accounts, then run 'imap-wizard test'.");
   outro('Done!');
 }
 
 async function editSettings(): Promise<void> {
   ensureInteractive();
-  intro('email-mcp › Edit Settings');
+  intro('imap-wizard › Edit Settings');
 
   const exists = await configExists();
   if (!exists) {
     log.error(`No config file found at: ${CONFIG_FILE}`);
-    cancel("Run 'email-mcp account add' or 'email-mcp config init' first.");
+    cancel("Run 'imap-wizard account add' or 'imap-wizard config init' first.");
     return;
   }
 
@@ -227,9 +227,9 @@ async function editSettings(): Promise<void> {
 /**
  * Static validation of the config file. Non-interactive and CI-friendly:
  * exit code 1 on errors, 0 when valid (warnings allowed). Live connection
- * checks stay in `email-mcp test`.
+ * checks stay in `imap-wizard test`.
  *
- * Ported from codefuturist/email-mcp v0.5.1 (commit bf09dcc), adapted to
+ * Ported from codefuturist/imap-wizard v0.5.1 (commit bf09dcc), adapted to
  * this fork's settings sections.
  */
 async function validateConfig(): Promise<void> {
@@ -237,7 +237,7 @@ async function validateConfig(): Promise<void> {
 
   if (!(await configExists())) {
     console.error(`❌ No config file found at: ${CONFIG_FILE}`);
-    console.error(`   Run 'email-mcp account add' or 'email-mcp config init' to create one.`);
+    console.error(`   Run 'imap-wizard account add' or 'imap-wizard config init' to create one.`);
     process.exitCode = 1;
     return;
   }
@@ -302,7 +302,7 @@ async function validateConfig(): Promise<void> {
     return;
   }
   console.log(`✅ Config valid — ${warningCount} warning(s).`);
-  console.log(`   Live connection check: email-mcp test`);
+  console.log(`   Live connection check: imap-wizard test`);
 }
 
 export default async function runConfigCommand(subcommand?: string): Promise<void> {

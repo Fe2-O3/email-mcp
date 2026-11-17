@@ -1,11 +1,11 @@
 {
-  "name": "@fe2-o3/email-mcp",
+  "name": "@fe2-o3/imap-wizard",
   "version": "0.1.0",
-  "mcpName": "io.github.fe2-o3/email-mcp",
+  "mcpName": "io.github.fe2-o3/imap-wizard",
   "description": "IMAP Wizard \u2014 email MCP server with IMAP + SMTP support",
   "type": "module",
   "bin": {
-    "email-mcp": "./dist/main.js"
+    "imap-wizard": "./dist/main.js"
   },
   "main": "./dist/main.js",
   "types": "./dist/main.d.ts",
@@ -39,10 +39,10 @@
     "prepare": "(test -f dist/main.js || tsc -p tsconfig.build.json) && (lefthook install || true)",
     "hooks:install": "lefthook install --force",
     "hooks:uninstall": "lefthook uninstall",
-    "docker:build": "docker build -t codefuturist/email-mcp .",
-    "docker:run": "docker run --rm -i -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro codefuturist/email-mcp",
+    "docker:build": "docker build -t imap-wizard .",
+    "docker:run": "docker run --rm -i -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro imap-wizard",
     "docker:compose": "docker compose up",
-    "docker:clean": "docker images --format '{{.Repository}}:{{.Tag}}' | grep email-mcp | xargs docker rmi -f 2>/dev/null; true",
+    "docker:clean": "docker images --format '{{.Repository}}:{{.Tag}}' | grep imap-wizard | xargs docker rmi -f 2>/dev/null; true",
     "docker:prune": "docker image prune -f && docker buildx prune -f",
     "release:check": "goreleaser check",
     "release:snapshot": "goreleaser release --snapshot --clean && pnpm docker:clean",
@@ -69,11 +69,11 @@
   "license": "LGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Fe2-O3/email-mcp.git"
+    "url": "git+https://github.com/Fe2-O3/imap-wizard.git"
   },
-  "homepage": "https://github.com/Fe2-O3/email-mcp#readme",
+  "homepage": "https://github.com/Fe2-O3/imap-wizard#readme",
   "bugs": {
-    "url": "https://github.com/Fe2-O3/email-mcp/issues"
+    "url": "https://github.com/Fe2-O3/imap-wizard/issues"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",

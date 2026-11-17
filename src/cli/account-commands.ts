@@ -447,7 +447,7 @@ async function listAccounts(): Promise<void> {
   const exists = await configExists();
   if (!exists) {
     console.error(`No config file found at: ${CONFIG_FILE}`);
-    console.error("Run 'email-mcp account add' to create one.");
+    console.error("Run 'imap-wizard account add' to create one.");
     return;
   }
 
@@ -478,7 +478,7 @@ async function listAccounts(): Promise<void> {
  */
 async function addAccount(): Promise<void> {
   ensureInteractive();
-  intro('email-mcp › Add Account');
+  intro('imap-wizard › Add Account');
 
   let existingConfig: RawAppConfig | undefined;
   const exists = await configExists();
@@ -589,7 +589,7 @@ async function addAccount(): Promise<void> {
       {
         mcpServers: {
           email: {
-            command: 'email-mcp',
+            command: 'imap-wizard',
             args: ['stdio'],
           },
         },
@@ -609,12 +609,12 @@ async function addAccount(): Promise<void> {
  */
 async function editAccount(nameArg?: string): Promise<void> {
   ensureInteractive();
-  intro('email-mcp › Edit Account');
+  intro('imap-wizard › Edit Account');
 
   const exists = await configExists();
   if (!exists) {
     log.error(`No config file found at: ${CONFIG_FILE}`);
-    cancel("Run 'email-mcp account add' first.");
+    cancel("Run 'imap-wizard account add' first.");
     return;
   }
 
@@ -775,7 +775,7 @@ async function editAccount(nameArg?: string): Promise<void> {
  */
 async function deleteAccount(nameArg?: string): Promise<void> {
   ensureInteractive();
-  intro('email-mcp › Delete Account');
+  intro('imap-wizard › Delete Account');
 
   const exists = await configExists();
   if (!exists) {
@@ -795,7 +795,7 @@ async function deleteAccount(nameArg?: string): Promise<void> {
 
   if (accounts.length === 1) {
     log.error('Cannot delete the last account. At least one account must remain.');
-    log.info("Use 'email-mcp account edit' to modify it instead.");
+    log.info("Use 'imap-wizard account edit' to modify it instead.");
     cancel('Operation refused.');
     return;
   }
@@ -859,7 +859,7 @@ async function deleteAccount(nameArg?: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function printAccountUsage(): void {
-  console.log(`Usage: email-mcp account <subcommand>
+  console.log(`Usage: imap-wizard account <subcommand>
 
 Subcommands:
   list              List all configured accounts
@@ -868,10 +868,10 @@ Subcommands:
   delete [name]     Remove an account
 
 Examples:
-  email-mcp account list
-  email-mcp account add
-  email-mcp account edit personal
-  email-mcp account delete work
+  imap-wizard account list
+  imap-wizard account add
+  imap-wizard account edit personal
+  imap-wizard account delete work
 `);
 }
 

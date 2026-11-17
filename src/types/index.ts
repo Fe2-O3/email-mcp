@@ -1,5 +1,5 @@
 /**
- * Shared TypeScript types for IMAP Wizard (email-mcp).
+ * Shared TypeScript types for IMAP Wizard.
  */
 
 // ---------------------------------------------------------------------------

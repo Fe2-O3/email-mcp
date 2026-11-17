@@ -25,7 +25,7 @@ const LAUNCHD_PLIST = path.join(LAUNCHD_PLIST_DIR, `${LAUNCHD_LABEL}.plist`);
 const CRONTAB_MARKER = '# email-mcp scheduler';
 
 function getExecutablePath(): string {
-  return process.argv[1] ?? 'email-mcp';
+  return process.argv[1] ?? 'imap-wizard';
 }
 
 async function createSchedulerService(): Promise<SchedulerService> {
@@ -163,7 +163,7 @@ async function runInstall(): Promise<void> {
     console.log('   Runs every minute');
   } else {
     console.error(`❌ Unsupported platform: ${platform}`);
-    console.error("   Manually run 'email-mcp scheduler check' on a schedule.");
+    console.error("   Manually run 'imap-wizard scheduler check' on a schedule.");
   }
 }
 
@@ -251,7 +251,7 @@ async function runStatus(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const SCHEDULER_HELP = `
-email-mcp scheduler — Email scheduling management
+imap-wizard scheduler — Email scheduling management
 
 Commands:
   check      Send overdue scheduled emails

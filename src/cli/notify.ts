@@ -11,7 +11,7 @@ import NotifierService from '../services/notifier.service.js';
 import ensureInteractive from './guard.js';
 
 function printNotifyUsage(): void {
-  console.log(`Usage: email-mcp notify <subcommand>
+  console.log(`Usage: imap-wizard notify <subcommand>
 
 Subcommands:
   test     Send a test desktop notification
@@ -20,7 +20,7 @@ Subcommands:
 }
 
 async function runStatus(): Promise<void> {
-  intro('email-mcp notify status');
+  intro('imap-wizard notify status');
 
   const spinner = p_spinner();
   spinner.start('Checking platform notification support…');
@@ -54,7 +54,7 @@ async function runStatus(): Promise<void> {
 
 async function runTest(): Promise<void> {
   ensureInteractive();
-  intro('email-mcp notify test');
+  intro('imap-wizard notify test');
 
   const soundChoice = await select({
     message: 'Include sound with the test notification?',

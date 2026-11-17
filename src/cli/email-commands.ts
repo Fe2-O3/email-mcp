@@ -28,19 +28,19 @@ export interface CliServices {
 }
 
 const USAGE: Record<string, string> = {
-  list: 'email-mcp list [--account NAME] [--mailbox INBOX] [--limit 20] [--page 1] [--unread] [--search TEXT] [--json]',
-  read: 'email-mcp read <id> [--account NAME] [--mailbox INBOX] [--mark-read] [--json]',
-  search: 'email-mcp search <query> [--account NAME] [--mailbox INBOX] [--limit 20] [--json]',
-  mailboxes: 'email-mcp mailboxes [--account NAME] [--json]',
-  flag: 'email-mcp flag <id> [--off] [--account NAME] [--mailbox INBOX]',
-  delete: 'email-mcp delete <id> [--yes] [--account NAME] [--mailbox INBOX]',
-  attach: 'email-mcp attach <id> <filename> [dest-dir] [--account NAME] [--mailbox INBOX]',
-  reply: 'email-mcp reply <id> --body TEXT [--all] [--html] [--attach FILE]... [--account NAME]',
-  send: 'email-mcp send --to a@b[,c@d] --subject S --body B [--cc ..] [--bcc ..] [--html] [--attach FILE]...',
+  list: 'imap-wizard list [--account NAME] [--mailbox INBOX] [--limit 20] [--page 1] [--unread] [--search TEXT] [--json]',
+  read: 'imap-wizard read <id> [--account NAME] [--mailbox INBOX] [--mark-read] [--json]',
+  search: 'imap-wizard search <query> [--account NAME] [--mailbox INBOX] [--limit 20] [--json]',
+  mailboxes: 'imap-wizard mailboxes [--account NAME] [--json]',
+  flag: 'imap-wizard flag <id> [--off] [--account NAME] [--mailbox INBOX]',
+  delete: 'imap-wizard delete <id> [--yes] [--account NAME] [--mailbox INBOX]',
+  attach: 'imap-wizard attach <id> <filename> [dest-dir] [--account NAME] [--mailbox INBOX]',
+  reply: 'imap-wizard reply <id> --body TEXT [--all] [--html] [--attach FILE]... [--account NAME]',
+  send: 'imap-wizard send --to a@b[,c@d] --subject S --body B [--cc ..] [--bcc ..] [--html] [--attach FILE]...',
 };
 
 function emailUsage(command: string): string {
-  return `Usage: ${USAGE[command] ?? 'email-mcp <list|read|search|mailboxes|flag|delete|attach|reply|send>'}`;
+  return `Usage: ${USAGE[command] ?? 'imap-wizard <list|read|search|mailboxes|flag|delete|attach|reply|send>'}`;
 }
 
 async function buildCliServices(): Promise<CliServices> {
@@ -74,7 +74,7 @@ export function resolveAccount(config: AppConfig, requested?: string): AccountCo
     return found;
   }
   if (config.accounts.length === 0) {
-    throw new Error('No accounts configured. Run `email-mcp account add` first.');
+    throw new Error('No accounts configured. Run `imap-wizard account add` first.');
   }
   return config.accounts[0] as AccountConfig;
 }

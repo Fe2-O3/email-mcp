@@ -64,7 +64,7 @@ async function runCommand(
     // command line, and for some failure modes the captured stdout too.
     const failure = error as CommandFailure;
     const reason = failure.killed
-      ? `timed out after ${COMMAND_TIMEOUT_MS / 1000}s — does it wait for input? Unlock your vault before starting email-mcp.`
+      ? `timed out after ${COMMAND_TIMEOUT_MS / 1000}s — does it wait for input? Unlock your vault before starting imap-wizard.`
       : `exited with code ${String(failure.code ?? 'unknown')}`;
     const detail = stderrExcerpt(failure.stderr);
     throw new Error(

@@ -32,7 +32,7 @@ describe('email CLI', () => {
 
     await runEmailCommandWithServices('send', ['--help'], {} as never);
 
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('email-mcp send --to'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('imap-wizard send --to'));
   });
 
   it('selects a requested account and reports unknown names', () => {

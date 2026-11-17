@@ -20,6 +20,8 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+// Stays 'email-mcp' on purpose (also the secret-tool label): renaming would
+// hide existing users' stored passwords. The public command is 'imap-wizard'.
 const SERVICE = 'email-mcp';
 const KEYCHAIN_SENTINEL = 'use_keychain:';
 

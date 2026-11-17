@@ -8,6 +8,8 @@
 import os from 'node:os';
 import path from 'node:path';
 
+// Stays 'email-mcp' on purpose: renaming would orphan existing users' config,
+// data, and cache directories. The public command is 'imap-wizard'.
 const APP_NAME = 'email-mcp';
 
 export const xdg = {

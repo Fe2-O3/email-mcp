@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * IMAP Wizard (email-mcp) — Main entry point.
+ * IMAP Wizard — Main entry point.
  *
  * Subcommands:
  *   stdio     Run as MCP server over stdio (default)
@@ -26,10 +26,10 @@ import { PKG_VERSION } from './server.js';
 const SHUTDOWN_GRACE_MS = 5_000;
 
 const HELP = `
-email-mcp — IMAP Wizard (email MCP server: IMAP + SMTP)
+imap-wizard — IMAP Wizard (email MCP server: IMAP + SMTP)
 
 Usage:
-  email-mcp [command]
+  imap-wizard [command]
 
 Commands:
   stdio       Run as MCP server over stdio (default)
@@ -54,35 +54,35 @@ Commands:
   help        Show this help message
 
 Examples:
-  email-mcp                         # Start MCP server (stdio)
-  email-mcp http --port 8080         # Start Streamable HTTP server on :8080/mcp
-  email-mcp http --host 0.0.0.0 --port 8080   # Bind all interfaces (requires a token)
-  email-mcp account list             # List configured accounts
-  email-mcp account add              # Add a new email account
-  email-mcp account edit personal    # Edit an account
-  email-mcp account delete work      # Delete an account
-  email-mcp setup                    # Alias for account add
-  email-mcp test                     # Test all accounts
-  email-mcp test personal            # Test specific account
-  email-mcp install                  # Register with detected MCP clients
-  email-mcp install status           # Show client registration status
-  email-mcp install remove           # Unregister from MCP clients
-  email-mcp config show              # Show config (passwords masked)
-  email-mcp config edit              # Edit global settings
-  email-mcp config validate          # Syntax, schema, typo'd keys, consistency
-  email-mcp config path              # Print config file path
-  email-mcp config init              # Create template config
-  email-mcp keychain status          # Show Keychain vs plain text passwords
-  email-mcp keychain migrate         # Move passwords to macOS Keychain
-  email-mcp keychain remove [name]   # Remove a password from Keychain
-  email-mcp scheduler check          # Send overdue scheduled emails
-  email-mcp scheduler install        # Install OS periodic check
-  email-mcp list --unread             # List unread messages
-  email-mcp read 1234                 # Read a message
-  email-mcp send --to a@b.com --subject Hello --body "Hi"
-  email-mcp send --help              # Show options for an email command
-  email-mcp notify test              # Send a test notification
-  email-mcp notify status            # Check notification platform support
+  imap-wizard                         # Start MCP server (stdio)
+  imap-wizard http --port 8080         # Start Streamable HTTP server on :8080/mcp
+  imap-wizard http --host 0.0.0.0 --port 8080   # Bind all interfaces (requires a token)
+  imap-wizard account list             # List configured accounts
+  imap-wizard account add              # Add a new email account
+  imap-wizard account edit personal    # Edit an account
+  imap-wizard account delete work      # Delete an account
+  imap-wizard setup                    # Alias for account add
+  imap-wizard test                     # Test all accounts
+  imap-wizard test personal            # Test specific account
+  imap-wizard install                  # Register with detected MCP clients
+  imap-wizard install status           # Show client registration status
+  imap-wizard install remove           # Unregister from MCP clients
+  imap-wizard config show              # Show config (passwords masked)
+  imap-wizard config edit              # Edit global settings
+  imap-wizard config validate          # Syntax, schema, typo'd keys, consistency
+  imap-wizard config path              # Print config file path
+  imap-wizard config init              # Create template config
+  imap-wizard keychain status          # Show Keychain vs plain text passwords
+  imap-wizard keychain migrate         # Move passwords to macOS Keychain
+  imap-wizard keychain remove [name]   # Remove a password from Keychain
+  imap-wizard scheduler check          # Send overdue scheduled emails
+  imap-wizard scheduler install        # Install OS periodic check
+  imap-wizard list --unread             # List unread messages
+  imap-wizard read 1234                 # Read a message
+  imap-wizard send --to a@b.com --subject Hello --body "Hi"
+  imap-wizard send --help              # Show options for an email command
+  imap-wizard notify test              # Send a test notification
+  imap-wizard notify status            # Check notification platform support
 `.trim();
 
 async function runServer(): Promise<void> {
@@ -165,7 +165,7 @@ async function runServer(): Promise<void> {
     // A hung QUIT/LOGOUT must not resurrect the orphan this exists to prevent.
     // The valve is unref'd or it becomes the handle it was meant to release.
     setTimeout(() => {
-      process.stderr.write(`[email-mcp] shutdown (${reason}) timed out — forcing exit\n`);
+      process.stderr.write(`[imap-wizard] shutdown (${reason}) timed out — forcing exit\n`);
       // `process.exitCode` is the house style, but it only takes effect once the
       // loop drains, and a hung shutdown is exactly the case where it will not.
       // Throwing would surface as an uncaught exception from a timer rather than
@@ -202,7 +202,7 @@ async function runServer(): Promise<void> {
         if (Date.now() - lastActivity < idleMs) return;
         clearInterval(timer);
         process.stderr.write(
-          `[email-mcp] no MCP requests for ${idleExitSec}s — exiting (settings.idle_exit = 0 keeps the server running)\n`,
+          `[imap-wizard] no MCP requests for ${idleExitSec}s — exiting (settings.idle_exit = 0 keeps the server running)\n`,
         );
         requestShutdown(`idle ${idleExitSec}s`);
       },
