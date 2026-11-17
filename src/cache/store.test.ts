@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import CacheStore from './store.js';
 
 function makeMessage(overrides: Record<string, unknown> = {}) {
@@ -168,5 +172,348 @@ describe('CacheStore', () => {
 
       expect(store.countMessages('work', 'Archive')).toBe(1);
     });
+  });
+});
+
+const bundle = (text = 'hello') => ({
+  envelope: { subject: 'Hello', date: '2026-08-01T10:00:00.000Z' },
+  bodyStructure: { type: 'text/plain' },
+  headersRaw: 'Subject: Hello\r\n',
+  bodyText: text,
+});
+
+describe('message_body', () => {
+  let store: CacheStore;
+
+  beforeEach(() => {
+    store = new CacheStore(':memory:');
+  });
+
+  afterEach(() => {
+    store.close();
+  });
+
+  it('round-trips a bundle and a skipped row', () => {
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+    store.markBodySkipped('work', 'INBOX', 2, '100', 'oversize', 1);
+
+    expect(store.getBody('work', 'INBOX', 1, '100')).toMatchObject({
+      status: 'ok',
+      extractorVersion: 1,
+      bundle: bundle(),
+    });
+    expect(store.getBody('work', 'INBOX', 2, '100')).toMatchObject({
+      status: 'skipped',
+      skipReason: 'oversize',
+      bundle: undefined,
+    });
+    expect(store.getBody('work', 'INBOX', 1, '999')).toBeUndefined();
+  });
+
+  it('deleting a message row deletes its body', () => {
+    store.putMessages([makeMessage()]);
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+
+    store.deleteMessages('work', 'INBOX', [1], '100');
+
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+  });
+
+  it('resetEpoch deletes bodies of other generations, including orphans', () => {
+    store.putMessages([makeMessage({ uid: 1, uidValidity: '100' })]);
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+    // No message row for this one: only resetEpoch can reach it.
+    store.putBodyBundle('work', 'INBOX', 77, '100', bundle(), 1);
+    store.putBodyBundle('work', 'INBOX', 5, '200', bundle(), 1);
+
+    store.resetEpoch('work', 'INBOX', '200');
+
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+    expect(store.getBody('work', 'INBOX', 77, '100')).toBeUndefined();
+    expect(store.getBody('work', 'INBOX', 5, '200')).toBeDefined();
+  });
+
+  it('clear removes bodies', () => {
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+    store.clear();
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+  });
+
+  it('forgetBodies removes every generation of the given uids', () => {
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+    store.putBodyBundle('work', 'INBOX', 1, '200', bundle(), 1);
+    store.putBodyBundle('work', 'INBOX', 2, '200', bundle(), 1);
+
+    store.forgetBodies('work', 'INBOX', [1]);
+
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+    expect(store.getBody('work', 'INBOX', 1, '200')).toBeUndefined();
+    expect(store.getBody('work', 'INBOX', 2, '200')).toBeDefined();
+  });
+
+  it('counts bytes of ok bodies only', () => {
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle('héllo'), 1);
+    store.markBodySkipped('work', 'INBOX', 2, '100', 'oversize', 1);
+
+    expect(store.bodyBytes()).toBe(
+      Buffer.byteLength('Subject: Hello\r\n') + Buffer.byteLength('héllo'),
+    );
+  });
+
+  describe('listUidsMissingBody', () => {
+    it('is newest first, excludes ok and skipped, includes stale extractor versions', () => {
+      store.putMessages([
+        makeMessage({ uid: 1, internalDate: 1000 }),
+        makeMessage({ uid: 2, internalDate: 4000 }),
+        makeMessage({ uid: 3, internalDate: 3000 }),
+        makeMessage({ uid: 4, internalDate: 2000 }),
+        makeMessage({ uid: 5, internalDate: 5000 }),
+      ]);
+      store.putBodyBundle('work', 'INBOX', 2, '100', bundle(), 2); // current: excluded
+      store.markBodySkipped('work', 'INBOX', 3, '100', 'error', 2); // skipped: excluded
+      store.putBodyBundle('work', 'INBOX', 5, '100', bundle(), 1); // stale: included
+
+      expect(store.listUidsMissingBody('work', 'INBOX', '100', 10, 2)).toEqual([5, 4, 1]);
+      expect(store.listUidsMissingBody('work', 'INBOX', '100', 2, 2)).toEqual([5, 4]);
+    });
+
+    it('can be limited to the newest N messages', () => {
+      store.putMessages([
+        makeMessage({ uid: 1, internalDate: 1000 }),
+        makeMessage({ uid: 2, internalDate: 2000 }),
+        makeMessage({ uid: 3, internalDate: 3000 }),
+      ]);
+
+      expect(store.listUidsMissingBody('work', 'INBOX', '100', 10, 1, 2)).toEqual([3, 2]);
+    });
+  });
+
+  it('evictBodiesLru deletes the least recently accessed first', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000_000);
+      store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+      vi.setSystemTime(2_000_000);
+      store.putBodyBundle('work', 'INBOX', 2, '100', bundle(), 1);
+      vi.setSystemTime(3_000_000);
+      store.markBodySkipped('work', 'INBOX', 3, '100', 'error', 1);
+
+      expect(store.evictBodiesLru(2)).toBe(2);
+      expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+      expect(store.getBody('work', 'INBOX', 2, '100')).toBeUndefined();
+      expect(store.getBody('work', 'INBOX', 3, '100')).toBeDefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('touchBody is throttled to once per hour', () => {
+    vi.useFakeTimers();
+    try {
+      const t0 = 10_000_000;
+      vi.setSystemTime(t0);
+      store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+
+      vi.setSystemTime(t0 + 30 * 60 * 1000);
+      store.touchBody('work', 'INBOX', 1, '100');
+      store.markBodySkipped('work', 'INBOX', 2, '100', 'error', 1); // newer than uid 1
+      // Within the hour the touch was a no-op, so uid 1 is still the oldest.
+      expect(store.evictBodiesLru(1)).toBe(1);
+      expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+
+      store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+      vi.setSystemTime(t0 + 30 * 60 * 1000 + 61 * 60 * 1000);
+      store.touchBody('work', 'INBOX', 1, '100');
+      // After the hour it moved to the front of the LRU: uid 2 is now older.
+      expect(store.evictBodiesLru(1)).toBe(1);
+      expect(store.getBody('work', 'INBOX', 2, '100')).toBeUndefined();
+      expect(store.getBody('work', 'INBOX', 1, '100')).toBeDefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe('findBodyAnyGeneration', () => {
+    it('uses mailbox_state to choose between generations', () => {
+      store.putBodyBundle('work', 'INBOX', 1, '100', bundle('old'), 1);
+      store.putBodyBundle('work', 'INBOX', 1, '200', bundle('new'), 1);
+      store.putMailboxState({
+        account: 'work',
+        mailbox: 'INBOX',
+        uidValidity: '200',
+        syncTier: 'baseline',
+      });
+
+      expect(store.findBodyAnyGeneration('work', 'INBOX', 1)).toMatchObject({
+        uidValidity: '200',
+        bundle: { bodyText: 'new' },
+      });
+    });
+
+    it('accepts a single generation without mailbox_state, rejects ambiguity', () => {
+      store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+      expect(store.findBodyAnyGeneration('work', 'INBOX', 1)?.uidValidity).toBe('100');
+
+      store.putBodyBundle('work', 'INBOX', 1, '200', bundle(), 1);
+      expect(store.findBodyAnyGeneration('work', 'INBOX', 1)).toBeUndefined();
+    });
+  });
+});
+
+describe('schema migration', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cache-migrate-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** The v1 schema, verbatim apart from comments. */
+  const V1_SQL = `
+    CREATE TABLE mailbox_state (
+      account TEXT NOT NULL, mailbox TEXT NOT NULL, uid_validity TEXT NOT NULL,
+      uid_next INTEGER, highest_modseq TEXT, sync_tier TEXT NOT NULL,
+      total_messages INTEGER, unseen_messages INTEGER, last_synced_at INTEGER,
+      PRIMARY KEY (account, mailbox)
+    );
+    CREATE TABLE message (
+      account TEXT NOT NULL, mailbox TEXT NOT NULL, uid INTEGER NOT NULL,
+      uid_validity TEXT NOT NULL, modseq TEXT, envelope_json TEXT NOT NULL,
+      body_structure_json TEXT, flags_json TEXT NOT NULL, message_id TEXT,
+      in_reply_to TEXT, references_json TEXT, internal_date INTEGER NOT NULL,
+      subject TEXT, from_text TEXT, preview TEXT, body_text TEXT,
+      body_fetched_at INTEGER, has_attachments INTEGER NOT NULL DEFAULT 0,
+      cached_at INTEGER NOT NULL,
+      PRIMARY KEY (account, mailbox, uid, uid_validity)
+    );
+    CREATE VIRTUAL TABLE message_fts USING fts5(
+      subject, from_text, body_text, content='message', content_rowid='rowid',
+      tokenize='porter unicode61'
+    );
+    CREATE TRIGGER message_fts_insert AFTER INSERT ON message BEGIN
+      INSERT INTO message_fts (rowid, subject, from_text, body_text)
+      VALUES (new.rowid, new.subject, new.from_text, new.body_text);
+    END;
+    CREATE TRIGGER message_fts_delete AFTER DELETE ON message BEGIN
+      INSERT INTO message_fts (message_fts, rowid, subject, from_text, body_text)
+      VALUES ('delete', old.rowid, old.subject, old.from_text, old.body_text);
+    END;
+    CREATE TRIGGER message_fts_update AFTER UPDATE ON message BEGIN
+      INSERT INTO message_fts (message_fts, rowid, subject, from_text, body_text)
+      VALUES ('delete', old.rowid, old.subject, old.from_text, old.body_text);
+      INSERT INTO message_fts (rowid, subject, from_text, body_text)
+      VALUES (new.rowid, new.subject, new.from_text, new.body_text);
+    END;
+    PRAGMA user_version = 1;
+  `;
+
+  function makeV1File(): string {
+    const file = path.join(dir, 'cache.db');
+    const db = new DatabaseSync(file);
+    db.exec(V1_SQL);
+    db.prepare(
+      `INSERT INTO message (account, mailbox, uid, uid_validity, envelope_json, flags_json,
+         internal_date, subject, from_text, cached_at)
+       VALUES ('work', 'INBOX', 1, '100', '{}', '[]', 1000, 'Quarterly report', 'ada', 1)`,
+    ).run();
+    db.close();
+    return file;
+  }
+
+  function inspect(file: string, sql: string): unknown[] {
+    const db = new DatabaseSync(file);
+    try {
+      return db.prepare(sql).all() as unknown[];
+    } finally {
+      db.close();
+    }
+  }
+
+  it('upgrades a v1 file, keeping its messages', () => {
+    const file = makeV1File();
+
+    new CacheStore(file).close();
+
+    expect(inspect(file, 'PRAGMA user_version')).toEqual([{ user_version: 2 }]);
+    expect(
+      inspect(file, "SELECT name FROM sqlite_master WHERE name = 'message_body'"),
+    ).toHaveLength(1);
+    expect(inspect(file, 'SELECT subject FROM message')).toEqual([{ subject: 'Quarterly report' }]);
+  });
+
+  it('is idempotent on re-open', () => {
+    const file = makeV1File();
+    new CacheStore(file).close();
+
+    const store = new CacheStore(file);
+    expect(store.getMessage('work', 'INBOX', 1, '100')?.subject).toBe('Quarterly report');
+    store.close();
+    expect(inspect(file, 'PRAGMA user_version')).toEqual([{ user_version: 2 }]);
+  });
+
+  it('rebuilds, dropping message_body too, when the file is from a newer build', () => {
+    const file = path.join(dir, 'cache.db');
+    const first = new CacheStore(file);
+    first.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+    first.close();
+    const db = new DatabaseSync(file);
+    db.exec('PRAGMA user_version = 99');
+    db.close();
+
+    const store = new CacheStore(file);
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+    store.close();
+    expect(inspect(file, 'PRAGMA user_version')).toEqual([{ user_version: 2 }]);
+  });
+
+  it('rebuilds instead of failing when a migration step throws', () => {
+    const file = makeV1File();
+
+    const store = new CacheStore(file, [{ to: 2, sql: 'THIS IS NOT SQL' }]);
+
+    expect(store.getMessage('work', 'INBOX', 1, '100')).toBeUndefined();
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeDefined();
+    store.close();
+    expect(inspect(file, 'PRAGMA user_version')).toEqual([{ user_version: 2 }]);
+  });
+
+  it('a flags-only update does not reindex message_fts, but a subject change does', () => {
+    const file = makeV1File();
+    const store = new CacheStore(file);
+    store.close();
+
+    const db = new DatabaseSync(file);
+    try {
+      const countFor = (term: string) =>
+        (
+          db
+            .prepare('SELECT COUNT(*) AS n FROM message_fts WHERE message_fts MATCH ?')
+            .get(term) as {
+            n: number;
+          }
+        ).n;
+      expect(countFor('quarterly')).toBe(1);
+
+      // The migrated trigger must be the column-scoped one, not the v1 one.
+      const trigger = db
+        .prepare("SELECT sql FROM sqlite_master WHERE name = 'message_fts_update'")
+        .get() as { sql: string };
+      expect(trigger.sql).toContain('UPDATE OF subject, from_text, body_text');
+
+      db.exec('UPDATE message SET flags_json = \'["\\\\Seen"]\'');
+      db.exec("INSERT INTO message_fts(message_fts) VALUES ('integrity-check')");
+      expect(countFor('quarterly')).toBe(1);
+
+      db.exec("UPDATE message SET subject = 'Annual summary'");
+      db.exec("INSERT INTO message_fts(message_fts) VALUES ('integrity-check')");
+      expect(countFor('quarterly')).toBe(0);
+      expect(countFor('annual')).toBe(1);
+    } finally {
+      db.close();
+    }
   });
 });

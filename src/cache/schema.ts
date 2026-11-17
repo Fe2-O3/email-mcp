@@ -17,7 +17,40 @@
  */
 
 /** Bumped when the statements below change shape. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/**
+ * Reindex only when an indexed column actually changes.
+ *
+ * Without the column list and WHEN guard this fired on every UPDATE, so a
+ * flag-only resync rewrote the FTS entry for subject, sender and body. The
+ * WHEN clause matters as well as the column list: the sync upsert names
+ * subject and from_text in its SET list on every run, and SQLite's
+ * `UPDATE OF` fires on membership in that list, not on a changed value.
+ */
+export const FTS_UPDATE_TRIGGER_SQL = `CREATE TRIGGER message_fts_update
+AFTER UPDATE OF subject, from_text, body_text ON message
+WHEN old.subject IS NOT new.subject
+  OR old.from_text IS NOT new.from_text
+  OR old.body_text IS NOT new.body_text
+BEGIN
+  INSERT INTO message_fts (message_fts, rowid, subject, from_text, body_text)
+  VALUES ('delete', old.rowid, old.subject, old.from_text, old.body_text);
+  INSERT INTO message_fts (rowid, subject, from_text, body_text)
+  VALUES (new.rowid, new.subject, new.from_text, new.body_text);
+END;`;
+
+/**
+ * Ordered upgrade steps for databases older than `to`. New tables, indexes
+ * and triggers need no step: SCHEMA_SQL is all IF NOT EXISTS and runs on every
+ * open. A step is only for changing something that already exists.
+ */
+export const MIGRATIONS: Array<{ to: number; sql: string }> = [
+  {
+    to: 2,
+    sql: `DROP TRIGGER IF EXISTS message_fts_update;\n${FTS_UPDATE_TRIGGER_SQL}`,
+  },
+];
 
 export const SCHEMA_SQL = `
 -- Per-mailbox sync watermarks.
@@ -94,10 +127,37 @@ CREATE TRIGGER IF NOT EXISTS message_fts_delete AFTER DELETE ON message BEGIN
   VALUES ('delete', old.rowid, old.subject, old.from_text, old.body_text);
 END;
 
-CREATE TRIGGER IF NOT EXISTS message_fts_update AFTER UPDATE ON message BEGIN
-  INSERT INTO message_fts (message_fts, rowid, subject, from_text, body_text)
-  VALUES ('delete', old.rowid, old.subject, old.from_text, old.body_text);
-  INSERT INTO message_fts (rowid, subject, from_text, body_text)
-  VALUES (new.rowid, new.subject, new.from_text, new.body_text);
+${FTS_UPDATE_TRIGGER_SQL.replace('CREATE TRIGGER', 'CREATE TRIGGER IF NOT EXISTS')}
+
+-- Immutable per (uid, uid_validity): everything getEmail derives its output
+-- from except flags. Independent of the message table, so write-back works for any
+-- mailbox, mirrored or not. (message.body_text / putBody are legacy and unused.)
+CREATE TABLE IF NOT EXISTS message_body (
+  account             TEXT    NOT NULL,
+  mailbox             TEXT    NOT NULL,
+  uid                 INTEGER NOT NULL,
+  uid_validity        TEXT    NOT NULL,
+  status              TEXT    NOT NULL,
+  skip_reason         TEXT,
+  extractor_version   INTEGER NOT NULL,
+  envelope_json       TEXT,
+  body_structure_json TEXT,
+  headers_raw         TEXT,
+  body_text           TEXT,
+  body_html           TEXT,
+  bytes               INTEGER NOT NULL DEFAULT 0,
+  fetched_at          INTEGER NOT NULL,
+  accessed_at         INTEGER NOT NULL,
+  PRIMARY KEY (account, mailbox, uid, uid_validity)
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_body_lru ON message_body (accessed_at);
+
+-- A message leaving the mirror (expunge, retention prune, epoch reset) takes
+-- its body with it.
+CREATE TRIGGER IF NOT EXISTS message_body_gc AFTER DELETE ON message BEGIN
+  DELETE FROM message_body
+  WHERE account = old.account AND mailbox = old.mailbox
+    AND uid = old.uid AND uid_validity = old.uid_validity;
 END;
 `;

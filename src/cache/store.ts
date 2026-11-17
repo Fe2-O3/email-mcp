@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { SCHEMA_SQL, SCHEMA_VERSION } from './schema.js';
+import { MIGRATIONS, SCHEMA_SQL, SCHEMA_VERSION } from './schema.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,6 +78,23 @@ export interface MailboxState {
   lastSyncedAt?: number;
 }
 
+/** Immutable per (uid, uidValidity); see BodyBundle in imap.service.ts. */
+export interface BodyBundleData {
+  envelope: unknown;
+  bodyStructure: unknown;
+  headersRaw: string;
+  bodyText?: string;
+  bodyHtml?: string;
+}
+
+export interface BodyRow {
+  status: 'ok' | 'skipped';
+  skipReason?: string;
+  extractorVersion: number;
+  bundle?: BodyBundleData;
+  fetchedAt: number;
+}
+
 export interface PageOptions {
   page: number;
   pageSize: number;
@@ -126,6 +143,41 @@ interface MessageRow {
   cached_at: number;
 }
 
+interface BodyDbRow {
+  uid_validity: string;
+  status: string;
+  skip_reason: string | null;
+  extractor_version: number;
+  envelope_json: string | null;
+  body_structure_json: string | null;
+  headers_raw: string | null;
+  body_text: string | null;
+  body_html: string | null;
+  fetched_at: number;
+}
+
+function rowToBody(row: BodyDbRow): BodyRow {
+  const ok = row.status === 'ok';
+  return {
+    status: ok ? 'ok' : 'skipped',
+    skipReason: row.skip_reason ?? undefined,
+    extractorVersion: row.extractor_version,
+    fetchedAt: row.fetched_at,
+    bundle: ok
+      ? {
+          envelope: row.envelope_json ? JSON.parse(row.envelope_json) : undefined,
+          bodyStructure: row.body_structure_json ? JSON.parse(row.body_structure_json) : undefined,
+          headersRaw: row.headers_raw ?? '',
+          bodyText: row.body_text ?? undefined,
+          bodyHtml: row.body_html ?? undefined,
+        }
+      : undefined,
+  };
+}
+
+/** accessed_at is only rewritten when older than this, so reads are not writes. */
+const TOUCH_THROTTLE_MS = 60 * 60 * 1000;
+
 function rowToMessage(row: MessageRow): CachedMessage {
   return {
     account: row.account,
@@ -173,7 +225,11 @@ export default class CacheStore {
   /**
    * @param dbPath filesystem path, or ':memory:' for tests.
    */
-  constructor(dbPath: string) {
+  constructor(
+    dbPath: string,
+    /** Injectable so tests can exercise the failure path. */
+    private migrations: Array<{ to: number; sql: string }> = MIGRATIONS,
+  ) {
     if (dbPath !== ':memory:') {
       // 0700: the mirror holds message bodies, so it is owner-only. This plus
       // full-disk encryption is the documented at-rest posture.
@@ -209,12 +265,40 @@ export default class CacheStore {
     };
 
     if (version > SCHEMA_VERSION) {
-      this.db.exec('DROP TABLE IF EXISTS message_fts');
-      this.db.exec('DROP TABLE IF EXISTS message');
-      this.db.exec('DROP TABLE IF EXISTS mailbox_state');
-      this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+      this.rebuild();
+      return;
     }
 
+    // Creates anything missing, including tables added since the file was
+    // written. Steps below only change what already exists.
+    this.db.exec(SCHEMA_SQL);
+
+    try {
+      this.migrations
+        .filter((m) => m.to > version)
+        .sort((x, y) => x.to - y.to)
+        .forEach((m) => {
+          this.transaction(() => {
+            this.db.exec(m.sql);
+            this.db.exec(`PRAGMA user_version = ${m.to}`);
+          });
+        });
+    } catch {
+      // A half-migrated mirror is worse than an empty one, and the mirror is
+      // regenerable, so a failed step must never stop startup.
+      this.rebuild();
+      return;
+    }
+
+    this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  }
+
+  /** Discard every table and recreate the current schema. */
+  private rebuild(): void {
+    this.db.exec('DROP TABLE IF EXISTS message_fts');
+    this.db.exec('DROP TABLE IF EXISTS message_body');
+    this.db.exec('DROP TABLE IF EXISTS message');
+    this.db.exec('DROP TABLE IF EXISTS mailbox_state');
     this.db.exec(SCHEMA_SQL);
     this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
@@ -527,6 +611,202 @@ export default class CacheStore {
   }
 
   // -------------------------------------------------------------------------
+  // Message bodies (immutable per uid + uidValidity)
+  // -------------------------------------------------------------------------
+
+  getBody(account: string, mailbox: string, uid: number, uidValidity: string): BodyRow | undefined {
+    const row = this.queryOne<BodyDbRow>(
+      `SELECT * FROM message_body
+       WHERE account = ? AND mailbox = ? AND uid = ? AND uid_validity = ?`,
+      account,
+      mailbox,
+      uid,
+      uidValidity,
+    );
+    return row ? rowToBody(row) : undefined;
+  }
+
+  putBodyBundle(
+    account: string,
+    mailbox: string,
+    uid: number,
+    uidValidity: string,
+    bundle: BodyBundleData,
+    extractorVersion: number,
+  ): void {
+    const bytes =
+      Buffer.byteLength(bundle.headersRaw, 'utf-8') +
+      Buffer.byteLength(bundle.bodyText ?? '', 'utf-8') +
+      Buffer.byteLength(bundle.bodyHtml ?? '', 'utf-8');
+    const now = Date.now();
+
+    this.db
+      .prepare(`
+        INSERT OR REPLACE INTO message_body (
+          account, mailbox, uid, uid_validity, status, skip_reason, extractor_version,
+          envelope_json, body_structure_json, headers_raw, body_text, body_html,
+          bytes, fetched_at, accessed_at
+        ) VALUES (?, ?, ?, ?, 'ok', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        account,
+        mailbox,
+        uid,
+        uidValidity,
+        extractorVersion,
+        JSON.stringify(bundle.envelope ?? null),
+        JSON.stringify(bundle.bodyStructure ?? null),
+        bundle.headersRaw,
+        bundle.bodyText ?? null,
+        bundle.bodyHtml ?? null,
+        bytes,
+        now,
+        now,
+      );
+  }
+
+  /** Remember that a message was not cached, and why, so it is not retried blindly. */
+  markBodySkipped(
+    account: string,
+    mailbox: string,
+    uid: number,
+    uidValidity: string,
+    reason: string,
+    extractorVersion: number,
+  ): void {
+    const now = Date.now();
+    this.db
+      .prepare(`
+        INSERT OR REPLACE INTO message_body (
+          account, mailbox, uid, uid_validity, status, skip_reason, extractor_version,
+          bytes, fetched_at, accessed_at
+        ) VALUES (?, ?, ?, ?, 'skipped', ?, ?, 0, ?, ?)
+      `)
+      .run(account, mailbox, uid, uidValidity, reason, extractorVersion, now, now);
+  }
+
+  /** Record a read for LRU. Skipped when accessed within the last hour. */
+  touchBody(account: string, mailbox: string, uid: number, uidValidity: string): void {
+    const now = Date.now();
+    this.db
+      .prepare(`
+        UPDATE message_body SET accessed_at = ?
+        WHERE account = ? AND mailbox = ? AND uid = ? AND uid_validity = ?
+          AND accessed_at < ?
+      `)
+      .run(now, account, mailbox, uid, uidValidity, now - TOUCH_THROTTLE_MS);
+  }
+
+  /** Drop bodies of these UIDs in every generation. Frees space early; not needed for correctness. */
+  forgetBodies(account: string, mailbox: string, uids: number[]): void {
+    if (uids.length === 0) return;
+    const stmt = this.db.prepare(
+      'DELETE FROM message_body WHERE account = ? AND mailbox = ? AND uid = ?',
+    );
+    this.transaction(() => {
+      uids.forEach((uid) => {
+        stmt.run(account, mailbox, uid);
+      });
+    });
+  }
+
+  /**
+   * Offline lookup when the server cannot confirm the current UIDVALIDITY.
+   *
+   * mailbox_state is the best record of the current generation. Without it, a
+   * single stored generation is accepted; several are ambiguous, so a miss.
+   */
+  findBodyAnyGeneration(
+    account: string,
+    mailbox: string,
+    uid: number,
+  ): (BodyRow & { uidValidity: string }) | undefined {
+    const rows = this.queryAll<BodyDbRow>(
+      `SELECT * FROM message_body
+       WHERE account = ? AND mailbox = ? AND uid = ? AND status = 'ok'`,
+      account,
+      mailbox,
+      uid,
+    );
+    if (rows.length === 0) return undefined;
+
+    const state = this.getMailboxState(account, mailbox);
+    const chosen = state ? rows.find((r) => r.uid_validity === state.uidValidity) : undefined;
+    const row = chosen ?? (state === undefined && rows.length === 1 ? rows[0] : undefined);
+    return row ? { ...rowToBody(row), uidValidity: row.uid_validity } : undefined;
+  }
+
+  /**
+   * Mirrored UIDs with no usable body, newest first.
+   *
+   * Skipped rows are excluded on purpose (backfill must not retry them); ok
+   * rows written by an older extractor count as missing. `newestN` limits the
+   * candidates to the newest N messages of the mailbox.
+   */
+  listUidsMissingBody(
+    account: string,
+    mailbox: string,
+    uidValidity: string,
+    limit: number,
+    extractorVersion: number,
+    newestN?: number,
+  ): number[] {
+    const windowSql =
+      newestN === undefined
+        ? 'SELECT m.uid, m.internal_date FROM message m WHERE m.account = ? AND m.mailbox = ? AND m.uid_validity = ?'
+        : `SELECT m.uid, m.internal_date FROM message m
+           WHERE m.account = ? AND m.mailbox = ? AND m.uid_validity = ?
+           ORDER BY m.internal_date DESC LIMIT ${Math.max(0, Math.floor(newestN))}`;
+
+    return this.queryAll<{ uid: number }>(
+      `SELECT w.uid FROM (${windowSql}) w
+       LEFT JOIN message_body b
+         ON b.account = ? AND b.mailbox = ? AND b.uid = w.uid AND b.uid_validity = ?
+       WHERE b.uid IS NULL OR (b.status = 'ok' AND b.extractor_version < ?)
+       ORDER BY w.internal_date DESC
+       LIMIT ?`,
+      account,
+      mailbox,
+      uidValidity,
+      account,
+      mailbox,
+      uidValidity,
+      extractorVersion,
+      limit,
+    ).map((r) => r.uid);
+  }
+
+  /** Bytes held by cached bodies. */
+  bodyBytes(): number {
+    return (
+      this.queryOne<{ total: number | null }>(
+        "SELECT SUM(bytes) AS total FROM message_body WHERE status = 'ok'",
+      )?.total ?? 0
+    );
+  }
+
+  /** Number of bodies with real content. */
+  countOkBodies(): number {
+    return (
+      this.queryOne<{ total: number }>(
+        "SELECT COUNT(*) AS total FROM message_body WHERE status = 'ok'",
+      )?.total ?? 0
+    );
+  }
+
+  /** Delete the least recently read rows, skipped ones included. */
+  evictBodiesLru(limitRows: number): number {
+    const { changes } = this.db
+      .prepare(`
+        DELETE FROM message_body WHERE rowid IN (
+          SELECT rowid FROM message_body ORDER BY accessed_at ASC LIMIT ?
+        )
+      `)
+      .run(limitRows);
+    return Number(changes);
+  }
+
+  // -------------------------------------------------------------------------
   // Mailbox state
   // -------------------------------------------------------------------------
 
@@ -599,6 +879,14 @@ export default class CacheStore {
         `)
         .run(account, mailbox, newUidValidity);
 
+      // Bodies for UIDs with no message row are not reached by the gc trigger.
+      this.db
+        .prepare(`
+          DELETE FROM message_body
+          WHERE account = ? AND mailbox = ? AND uid_validity <> ?
+        `)
+        .run(account, mailbox, newUidValidity);
+
       this.db
         .prepare(`
           INSERT INTO mailbox_state (account, mailbox, uid_validity, sync_tier)
@@ -623,9 +911,11 @@ export default class CacheStore {
     this.transaction(() => {
       if (account) {
         this.db.prepare('DELETE FROM message WHERE account = ?').run(account);
+        this.db.prepare('DELETE FROM message_body WHERE account = ?').run(account);
         this.db.prepare('DELETE FROM mailbox_state WHERE account = ?').run(account);
       } else {
         this.db.exec('DELETE FROM message');
+        this.db.exec('DELETE FROM message_body');
         this.db.exec('DELETE FROM mailbox_state');
       }
     });
