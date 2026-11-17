@@ -19,4 +19,4 @@ jobs:
       run-integration: true
       integration-artifact-pattern: "reports/integration-*"
       docker-smoke-test: true
-      docker-image: "codefuturist/email-mcp:ci"
+      docker-image: "imap-wizard:ci"
