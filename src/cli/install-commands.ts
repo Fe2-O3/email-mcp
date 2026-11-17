@@ -1,7 +1,7 @@
 /**
  * MCP client installation subcommands.
  *
- * Manages registering / unregistering the email-mcp server with MCP host
+ * Manages registering / unregistering the imap-wizard server with MCP host
  * applications such as Claude Desktop, VS Code, Cursor, and Windsurf.
  *
  * - install          — interactive wizard to register with detected MCP clients
@@ -105,27 +105,27 @@ function getClients(): McpClientDef[] {
 // Transport helpers
 // ---------------------------------------------------------------------------
 
-type Transport = 'npx' | 'pnpm' | 'global' | 'node';
+export type Transport = 'npx' | 'pnpm' | 'global' | 'node';
 
-interface ServerEntry {
+export interface ServerEntry {
   command: string;
   args: string[];
 }
 
-function buildServerEntry(transport: Transport): ServerEntry {
+export function buildServerEntry(transport: Transport): ServerEntry {
   switch (transport) {
     case 'npx':
-      return { command: 'npx', args: ['@codefuturist/email-mcp', 'stdio'] };
+      return { command: 'npx', args: ['-y', '@fe2-o3/imap-wizard', 'stdio'] };
     case 'pnpm':
-      return { command: 'pnpm', args: ['dlx', '@codefuturist/email-mcp', 'stdio'] };
+      return { command: 'pnpm', args: ['dlx', '@fe2-o3/imap-wizard', 'stdio'] };
     case 'global':
-      return { command: 'email-mcp', args: ['stdio'] };
+      return { command: 'imap-wizard', args: ['stdio'] };
     case 'node': {
       const mainJs = path.resolve(process.argv[1] ?? 'dist/main.js');
       return { command: process.execPath, args: [mainJs, 'stdio'] };
     }
     default:
-      return { command: 'npx', args: ['@codefuturist/email-mcp', 'stdio'] };
+      return { command: 'npx', args: ['-y', '@fe2-o3/imap-wizard', 'stdio'] };
   }
 }
 
@@ -173,7 +173,7 @@ function isRegistered(config: Record<string, unknown>, serversKey: string): bool
 
 async function runInstall(): Promise<void> {
   ensureInteractive();
-  intro('email-mcp › Install MCP Server');
+  intro('imap-wizard › Install MCP Server');
 
   const clients = getClients();
 
@@ -217,7 +217,7 @@ async function runInstall(): Promise<void> {
   }));
 
   const selectedIds = await multiselect({
-    message: 'Which MCP clients should email-mcp be registered with?',
+    message: 'Which MCP clients should imap-wizard be registered with?',
     options: choices,
     initialValues: available.filter((c) => !c.registered).map((c) => c.id),
     required: true,
@@ -229,7 +229,7 @@ async function runInstall(): Promise<void> {
 
   // Ask for transport preference
   const transport = await select<Transport>({
-    message: 'How should the MCP client launch email-mcp?',
+    message: 'How should the MCP client launch imap-wizard?',
     options: [
       {
         value: 'npx' as Transport,
@@ -242,8 +242,8 @@ async function runInstall(): Promise<void> {
       },
       {
         value: 'global' as Transport,
-        label: 'Global install (email-mcp on PATH)',
-        hint: 'requires: npm i -g @codefuturist/email-mcp',
+        label: 'Global install (imap-wizard on PATH)',
+        hint: 'requires: npm i -g @fe2-o3/imap-wizard',
       },
       {
         value: 'node' as Transport,
@@ -286,11 +286,11 @@ async function runInstall(): Promise<void> {
 
 async function runRemove(): Promise<void> {
   ensureInteractive();
-  intro('email-mcp › Remove MCP Server');
+  intro('imap-wizard › Remove MCP Server');
 
   const clients = getClients();
 
-  // Find clients that have email-mcp registered (parallel checks)
+  // Find clients that have imap-wizard registered (parallel checks)
   const withStatus = await Promise.all(
     clients.map(async (client) => {
       const exists = await fileExists(client.configPath);
@@ -302,13 +302,13 @@ async function runRemove(): Promise<void> {
   const registered = withStatus.filter((c) => c.registered);
 
   if (registered.length === 0) {
-    log.info('email-mcp is not registered with any detected MCP clients.');
+    log.info('imap-wizard is not registered with any detected MCP clients.');
     outro('Nothing to remove.');
     return;
   }
 
   const selectedIds = await multiselect({
-    message: 'Unregister email-mcp from which clients?',
+    message: 'Unregister imap-wizard from which clients?',
     options: registered.map((c) => ({
       value: c.id,
       label: c.name,
@@ -323,7 +323,7 @@ async function runRemove(): Promise<void> {
   }
 
   const shouldRemove = await confirm({
-    message: `Remove email-mcp from ${selectedIds.length} client(s)?`,
+    message: `Remove imap-wizard from ${selectedIds.length} client(s)?`,
     initialValue: false,
   });
   if (isCancel(shouldRemove) || !shouldRemove) {
@@ -391,12 +391,12 @@ async function runStatus(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function printUsage(): void {
-  console.log(`Usage: email-mcp install [subcommand]
+  console.log(`Usage: imap-wizard install [subcommand]
 
 Subcommands:
-  (default)   Register email-mcp with detected MCP clients
+  (default)   Register imap-wizard with detected MCP clients
   status      Show registration status for all detected clients
-  remove      Unregister email-mcp from MCP clients
+  remove      Unregister imap-wizard from MCP clients
 `);
 }
 
