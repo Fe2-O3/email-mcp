@@ -37,24 +37,18 @@ over plain IMAP and SMTP. No cloud service in the middle.
 
 ## Quick start
 
-You need **Node.js 24+** and **pnpm**. Until the npm package is published, this
-fork is installed from source. Commands below use `node dist/main.js`; once
-`imap-wizard` is on your PATH (for example with `pnpm link --global`), run the
-same commands as `imap-wizard account add`, `imap-wizard test`, and so on.
+You need **Node.js 24+**.
 
 ```bash
-git clone https://github.com/Fe2-O3/imap-wizard.git imap-wizard
-cd imap-wizard
-pnpm install && pnpm build
-
-node dist/main.js account add   # wizard; auto-detects common providers
-node dist/main.js test          # checks IMAP and SMTP for every account
+npx -y imap-wizard account add   # wizard; auto-detects common providers
+npx -y imap-wizard test          # checks IMAP and SMTP for every account
+npx -y imap-wizard install       # registers the server with detected MCP clients
 ```
 
-Then point your client at the built server. Claude Code:
+Or add it to a client by hand. Claude Code:
 
 ```bash
-claude mcp add email -- node /absolute/path/to/imap-wizard/dist/main.js stdio
+claude mcp add email -- npx -y imap-wizard stdio
 ```
 
 Claude Desktop, Cursor and most other clients take the same JSON shape:
@@ -63,20 +57,29 @@ Claude Desktop, Cursor and most other clients take the same JSON shape:
 {
   "mcpServers": {
     "email": {
-      "command": "node",
-      "args": ["/absolute/path/to/imap-wizard/dist/main.js", "stdio"]
+      "command": "npx",
+      "args": ["-y", "imap-wizard", "stdio"]
     }
   }
 }
 ```
 
+Prefer a global command? `npm i -g imap-wizard`, then run `imap-wizard account add`
+and so on. To build from source instead:
+
+```bash
+git clone https://github.com/Fe2-O3/imap-wizard.git
+cd imap-wizard
+pnpm install && pnpm build
+node dist/main.js account add
+```
+
+and point the client at `node /absolute/path/to/imap-wizard/dist/main.js stdio`.
+
 Ask your assistant *"What's unread in my inbox?"* to check it works.
 Setup for other clients is under [More clients](#more-clients).
 
 > [!NOTE]
-> The npm package `imap-wizard` is not published yet. Until it is, the
-> `npx` and `pnpm dlx` options in `imap-wizard install` will not find it. Pick
-> **"Direct node"** there, or write the config by hand as shown above.
 > An existing `~/.config/email-mcp` config keeps working unchanged.
 
 ---
@@ -455,7 +458,7 @@ imap-wizard [command]
   account list|add|edit|delete
   setup                     Alias for 'account add'
   test [account]            Test IMAP and SMTP connections
-  install [status|remove]   Register with MCP clients (pick "Direct node" until the npm package is published)
+  install [status|remove]   Register with MCP clients
   config show|edit|validate|path|init
   keychain status|migrate|remove
   scheduler check|list|install|uninstall|status

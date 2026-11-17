@@ -43,7 +43,7 @@ updated to the new numbers.
 2. **FIXED. `smithery.yaml` ran upstream's package.** It now runs
    `npx -y imap-wizard stdio`.
 3. **PARTLY FIXED. `server.json` names an npm package that does not exist.**
-   It now names `imap-wizard`, which is not published yet, so the
+   It now names `imap-wizard`, published to npm as 0.3.0, so the
    registry entry will not install until the package is published. Its
    description is 97 characters (the MCP registry schema is believed to cap
    descriptions at 100, not checked against the live schema).
