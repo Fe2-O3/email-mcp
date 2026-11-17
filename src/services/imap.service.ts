@@ -473,6 +473,20 @@ async function messageToEmail(
   return assembleEmail(bundle, (msg.flags ?? []) as Iterable<string>, uid);
 }
 
+/**
+ * Narrow port to the local body cache, so ImapService does not depend on
+ * SQLite and an absent cache leaves today's code path untouched. Every
+ * implementation must swallow its own errors: the cache never turns a working
+ * read into a failure.
+ */
+export interface BodyCachePort {
+  /** Current-extractor, status ok only. Touches accessed_at. */
+  get(account: string, mailbox: string, uid: number, uidValidity: string): BodyBundle | undefined;
+  /** Decides ok vs skipped (oversize or incomplete). */
+  put(account: string, mailbox: string, uid: number, uidValidity: string, bundle: BodyBundle): void;
+  forget(account: string, mailbox: string, uids: number[]): void;
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -487,6 +501,9 @@ export default class ImapService {
 
   private readonly onReconnect: (event: ReconnectEvent) => void;
 
+  /** Absent unless `cache.read_through` is on; absent means today's behavior exactly. */
+  private bodyCache?: BodyCachePort;
+
   constructor(private connections: IConnectionManager) {
     // The label strategy is probed from server capabilities and folder layout,
     // so it is only valid for the connection that produced it. A reconnect may
@@ -497,6 +514,21 @@ export default class ImapService {
       this.labelStrategyPending.delete(account);
     };
     eventBus.on('imap:reconnect', this.onReconnect);
+  }
+
+  /** Route `getEmail` through the local body cache. */
+  attachBodyCache(port: BodyCachePort): void {
+    this.bodyCache = port;
+  }
+
+  /** Free cached bodies of messages that just left a mailbox. Hygiene only: correctness never depends on it. */
+  private forgetBodies(account: string, mailbox: string, uids: number[]): void {
+    if (!this.bodyCache) return;
+    try {
+      this.bodyCache.forget(account, sanitizeMailboxName(mailbox), uids);
+    } catch {
+      // Cache hygiene must not fail a move or delete that already succeeded.
+    }
   }
 
   /**
@@ -810,6 +842,26 @@ export default class ImapService {
 
     const lock = await client.getMailboxLock(safeMailbox);
     try {
+      // A message's body, headers and structure never change for a given
+      // (UIDVALIDITY, UID), so a hit needs no freshness model: the FLAGS fetch
+      // below is what proves the message still exists and supplies live flags.
+      const selected = client.mailbox;
+      const uidValidity = this.bodyCache && selected ? selected.uidValidity?.toString() : undefined;
+      if (this.bodyCache && uidValidity) {
+        const cached = this.bodyCache.get(accountName, safeMailbox, uid, uidValidity);
+        if (cached) {
+          const current = await client.fetchOne(
+            String(uid),
+            { uid: true, flags: true },
+            { uid: true },
+          );
+          if (!current) {
+            throw new Error(`Email ${emailId} not found in ${mailbox}`);
+          }
+          return assembleEmail(cached, (current.flags ?? []) as Iterable<string>, uid);
+        }
+      }
+
       const msg = await client.fetchOne(
         String(uid),
         {
@@ -829,7 +881,15 @@ export default class ImapService {
         throw new Error(`Email ${emailId} not found in ${mailbox}`);
       }
 
-      return await messageToEmail(msg as unknown as Record<string, unknown>, client, uid);
+      const raw = msg as unknown as Record<string, unknown>;
+      const bundle = await fetchBodyBundle(raw, client, uid);
+      const email = assembleEmail(bundle, (raw.flags ?? []) as Iterable<string>, uid);
+      // Written only after the answer is built, so a failure can never leave a
+      // cache row behind for a read that did not succeed.
+      if (this.bodyCache && uidValidity) {
+        this.bodyCache.put(accountName, safeMailbox, uid, uidValidity, bundle);
+      }
+      return email;
     } finally {
       lock.release();
     }
@@ -1257,6 +1317,7 @@ export default class ImapService {
       if (!ok) {
         throw new Error(`IMAP server rejected the move from "${safeSource}" to "${safeDest}".`);
       }
+      this.forgetBodies(accountName, safeSource, [parseInt(emailId, 10)]);
     } finally {
       lock.release();
     }
@@ -1278,6 +1339,7 @@ export default class ImapService {
         if (!ok) {
           throw new Error('IMAP server rejected the delete operation.');
         }
+        this.forgetBodies(accountName, safeMailbox, [parseInt(emailId, 10)]);
       } finally {
         lock.release();
       }
@@ -1295,6 +1357,7 @@ export default class ImapService {
         if (!ok) {
           throw new Error('IMAP server rejected the move to Trash.');
         }
+        this.forgetBodies(accountName, safeMailbox, [parseInt(emailId, 10)]);
       } finally {
         lock.release();
       }
@@ -1410,6 +1473,7 @@ export default class ImapService {
       );
       if (ok) {
         result.succeeded = ids.length;
+        this.forgetBodies(accountName, mailbox, ids);
       } else {
         result.failed = ids.length;
         result.errors = ['IMAP server rejected the move operation.'];
@@ -1445,6 +1509,7 @@ export default class ImapService {
         const ok = await client.messageDelete(range, { uid: true });
         if (ok) {
           result.succeeded = ids.length;
+          this.forgetBodies(accountName, mailbox, ids);
         } else {
           result.failed = ids.length;
           result.errors = ['IMAP server rejected the delete operation.'];
@@ -1469,6 +1534,7 @@ export default class ImapService {
         );
         if (ok) {
           result.succeeded = ids.length;
+          this.forgetBodies(accountName, mailbox, ids);
         } else {
           result.failed = ids.length;
           result.errors = ['IMAP server rejected the move to Trash.'];

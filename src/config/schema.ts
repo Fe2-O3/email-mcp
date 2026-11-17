@@ -157,7 +157,16 @@ export const CacheConfigSchema = z.object({
   mailboxes: z.array(z.string()).default(() => ['INBOX']),
   /** How far back to mirror. 0 means no limit. */
   window_days: z.number().int().min(0).default(90),
-  /** Newest N messages to prefetch bodies for; the rest cache on read. */
+  /**
+   * Serve repeat get_email reads from the local body cache and write bodies
+   * back. Off means the live path exactly as before.
+   */
+  read_through: z.boolean().default(false),
+  /** With read_through on and the server unreachable, serve cached bodies with a warning. */
+  offline_reads: z.boolean().default(true),
+  /** LRU budget for cached bodies, inside max_size_mb. */
+  body_max_mb: z.number().int().min(1).default(200),
+  /** Backfill bodies for the newest N messages per synced mailbox; 0 disables backfill. */
   body_messages: z.number().int().min(0).default(500),
   /** Backstop on mirror size. */
   max_size_mb: z.number().int().min(1).default(500),
@@ -183,6 +192,9 @@ export const SettingsSchema = z.object({
     enabled: true,
     mailboxes: ['INBOX'],
     window_days: 90,
+    read_through: false,
+    offline_reads: true,
+    body_max_mb: 200,
     body_messages: 500,
     max_size_mb: 500,
     sync_interval: 300,
@@ -230,6 +242,9 @@ export const AppConfigFileSchema = z.object({
         enabled: true,
         mailboxes: ['INBOX'],
         window_days: 90,
+        read_through: false,
+        offline_reads: true,
+        body_max_mb: 200,
         body_messages: 500,
         max_size_mb: 500,
         sync_interval: 300,

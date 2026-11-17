@@ -151,6 +151,9 @@ export interface CacheConfig {
   enabled: boolean;
   mailboxes: string[];
   windowDays: number;
+  readThrough: boolean;
+  offlineReads: boolean;
+  bodyMaxMb: number;
   bodyMessages: number;
   maxSizeMb: number;
   syncInterval: number;

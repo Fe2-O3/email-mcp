@@ -8,6 +8,7 @@
 
 import type { McpServer, Server } from '@modelcontextprotocol/server';
 
+import BodyCache from './cache/body-cache.js';
 import CacheStore from './cache/store.js';
 import SyncEngine from './cache/sync-engine.js';
 import { loadConfig } from './config/loader.js';
@@ -83,6 +84,11 @@ export async function buildServices(): Promise<AppServices> {
         windowDays: config.settings.cache.windowDays,
         maxSizeMb: config.settings.cache.maxSizeMb,
       });
+      // Read-through is opt-in. Without it the service has no port attached and
+      // takes exactly the live path it always did.
+      if (config.settings.cache.readThrough) {
+        imapService.attachBodyCache(new BodyCache(cacheStore, config.settings.cache.bodyMaxMb));
+      }
     } catch (err) {
       cacheStore = undefined;
       syncEngine = undefined;

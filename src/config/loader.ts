@@ -68,6 +68,9 @@ function loadFromEnv(): RawAppConfig | null {
           .map((m) => m.trim())
           .filter(Boolean),
         window_days: parseInt(process.env.MCP_EMAIL_CACHE_WINDOW_DAYS ?? '90', 10),
+        read_through: process.env.MCP_EMAIL_CACHE_READ_THROUGH === 'true',
+        offline_reads: process.env.MCP_EMAIL_CACHE_OFFLINE_READS !== 'false',
+        body_max_mb: parseInt(process.env.MCP_EMAIL_CACHE_BODY_MAX_MB ?? '200', 10),
         body_messages: parseInt(process.env.MCP_EMAIL_CACHE_BODY_MESSAGES ?? '500', 10),
         max_size_mb: parseInt(process.env.MCP_EMAIL_CACHE_MAX_SIZE_MB ?? '500', 10),
         sync_interval: parseInt(process.env.MCP_EMAIL_CACHE_SYNC_INTERVAL ?? '300', 10),
@@ -259,6 +262,9 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
         enabled: raw.settings.cache.enabled,
         mailboxes: raw.settings.cache.mailboxes,
         windowDays: raw.settings.cache.window_days,
+        readThrough: raw.settings.cache.read_through,
+        offlineReads: raw.settings.cache.offline_reads,
+        bodyMaxMb: raw.settings.cache.body_max_mb,
         bodyMessages: raw.settings.cache.body_messages,
         maxSizeMb: raw.settings.cache.max_size_mb,
         syncInterval: raw.settings.cache.sync_interval,
@@ -449,7 +455,10 @@ max_attachment_mb = 25  # base64-encoded attachment total per message, MB
 # enabled = true          # set false to always read live from IMAP
 # mailboxes = ["INBOX"]   # synced in the background; others cache on read
 # window_days = 90        # how far back to mirror (0 = no limit)
-# body_messages = 500     # newest N messages to prefetch bodies for
+# body_messages = 500     # backfill bodies for the newest N messages (0 = off)
+# read_through = false    # serve repeat get_email reads from the local body cache
+# offline_reads = true    # with read_through on, serve cached bodies when the server is unreachable
+# body_max_mb = 200       # LRU budget for cached bodies, inside max_size_mb
 # max_size_mb = 500       # backstop on mirror size
 # sync_interval = 300     # seconds between background reconciles
 
