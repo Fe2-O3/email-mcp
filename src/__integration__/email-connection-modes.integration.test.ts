@@ -86,14 +86,13 @@ describe('Connection Modes', () => {
       await services.connections.closeAll();
     });
 
-    it('should connect via IMAP with STARTTLS', async () => {
-      const mailboxes = await services.imapService.listMailboxes(account.name);
-      expect(mailboxes.find((m) => m.path === 'INBOX')).toBeDefined();
-    });
-
-    it('should list emails via IMAP with STARTTLS', async () => {
-      const list = await services.imapService.listEmails(account.name);
-      expect(list.items).toBeInstanceOf(Array);
+    // GreenMail's IMAP does not advertise STARTTLS on its plain port. With
+    // `starttls: true` the client sets imapflow's `doSTARTTLS`, which makes the
+    // upgrade mandatory, so every IMAP call must refuse to continue in
+    // plaintext rather than silently downgrade. That refusal is what we test.
+    it('refuses IMAP in plaintext when the server cannot STARTTLS', async () => {
+      await expect(services.imapService.listMailboxes(account.name)).rejects.toThrow(/STARTTLS/i);
+      await expect(services.imapService.listEmails(account.name)).rejects.toThrow(/STARTTLS/i);
     });
 
     it('should send email via SMTP with STARTTLS', async () => {
@@ -107,21 +106,6 @@ describe('Connection Modes', () => {
           body: 'Sent over STARTTLS connection',
         }),
       ).rejects.toThrow(/STARTTLS/i);
-    });
-
-    it('should fetch full email content via STARTTLS', async () => {
-      const list = await services.imapService.listEmails(account.name, { pageSize: 1 });
-      expect(list.items.length).toBeGreaterThan(0);
-      const email = await services.imapService.getEmail(account.name, list.items[0].id);
-      expect(email.subject).toBeTruthy();
-    });
-
-    it('should set flags via STARTTLS', async () => {
-      const list = await services.imapService.listEmails(account.name, { pageSize: 1 });
-      expect(list.items.length).toBeGreaterThan(0);
-      await services.imapService.setFlags(account.name, list.items[0].id, 'INBOX', 'read');
-      const flags = await services.imapService.getEmailFlags(account.name, list.items[0].id);
-      expect(flags.seen).toBe(true);
     });
   });
 
