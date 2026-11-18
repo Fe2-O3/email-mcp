@@ -153,7 +153,10 @@ describe('ImapService.getEmail read-through', () => {
       });
     });
     expect(client.download).toHaveBeenCalledTimes(2);
-    expect(client.getMailboxLock).toHaveBeenCalledWith('INBOX');
+    expect(client.getMailboxLock).toHaveBeenCalledWith(
+      'INBOX',
+      expect.objectContaining({ acquireTimeout: 60_000 }),
+    );
     expect(store.getBody('acct', 'INBOX', 42, '100')).toBeUndefined();
   });
 

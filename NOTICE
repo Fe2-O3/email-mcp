@@ -32,6 +32,8 @@ The adapted files are:
                                              common-name fallback added here)
   src/safety/untrusted-content.ts            untrusted-text markers (notice line and
                                              single-pass escaping added here)
+  src/services/mailbox-lock.ts               bounded mailbox lock wait (closing the
+                                             stuck connection is added here)
   src/tools/toolsets.ts                      toolset grouping idea (tool lists
                                              and filter are original)
   src/tools/export.tool.ts                   export_email tool (idea and shape;

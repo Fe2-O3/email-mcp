@@ -453,7 +453,10 @@ describe('ImapService', () => {
 
     it('trims surrounding whitespace before locking the mailbox', async () => {
       await service.getEmailFlags('test', '1', '  INBOX  ').catch(() => {});
-      expect(client.getMailboxLock).toHaveBeenCalledWith('INBOX');
+      expect(client.getMailboxLock).toHaveBeenCalledWith(
+        'INBOX',
+        expect.objectContaining({ acquireTimeout: 60_000 }),
+      );
     });
   });
 
@@ -644,6 +647,29 @@ describe('ImapService', () => {
       await expect(service.deleteMailbox('test', 'a')).rejects.toThrow(/cannot delete/);
     });
 
+    it('a stuck mailbox lock fails the call with a clear error and recycles the connection', async () => {
+      vi.useFakeTimers();
+      try {
+        const closeFn = vi.fn();
+        (client as unknown as { close: () => void }).close = closeFn;
+        client.getMailboxLock = vi.fn(
+          (_p: string, opts: { acquireTimeout?: number }) =>
+            new Promise((_res, rej) => {
+              setTimeout(
+                () => rej(Object.assign(new Error('Timed out'), { code: 'LockTimeout' })),
+                opts.acquireTimeout,
+              );
+            }),
+        ) as never;
+        const result = service.deleteDraft('test', 1, 'Drafts').catch((e: Error) => e);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(((await result) as Error).message).toMatch(/stayed busy/);
+        expect(closeFn).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     describe('protected mailboxes', () => {
       const listing = [
         { path: 'INBOX', delimiter: '/', flags: new Set<string>() },
@@ -748,7 +774,10 @@ describe('ImapService', () => {
 
       await service.moveEmail('test', '42', 'INBOX', 'Archive');
 
-      expect(client.getMailboxLock).toHaveBeenCalledWith('INBOX');
+      expect(client.getMailboxLock).toHaveBeenCalledWith(
+        'INBOX',
+        expect.objectContaining({ acquireTimeout: 60_000 }),
+      );
       expect(client.messageMove).toHaveBeenCalledWith('42', 'Archive', { uid: true });
       expect(client._releaseFn).toHaveBeenCalled();
     });

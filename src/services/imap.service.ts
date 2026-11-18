@@ -38,6 +38,7 @@ import type { ReconnectEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
 import type { LabelStrategy } from './label-strategy.js';
 import { detectLabelStrategy } from './label-strategy.js';
+import lockMailboxBounded from './mailbox-lock.js';
 import assertMailboxRemovable from './protected-mailboxes.js';
 
 /**
@@ -623,7 +624,7 @@ export default class ImapService {
    * Lock a caller-supplied mailbox path.
    *
    * Trims and rejects the IMAP wildcards `*` and `%` first. Prefer this over
-   * `client.getMailboxLock()` for any path that originated outside this
+   * `getMailboxLock()` for any path that originated outside this
    * process — it keeps validation from drifting method by method, and
    * normalizes the path so " INBOX " and "INBOX" address one mailbox.
    *
@@ -635,7 +636,7 @@ export default class ImapService {
     // Every read and write opens a mailbox first, so this is the most common
     // place a server refusal surfaces — and the least useful one to report as
     // a bare "Command failed".
-    return imapCommand(`Opening mailbox "${path}"`, () => client.getMailboxLock(path));
+    return imapCommand(`Opening mailbox "${path}"`, () => lockMailboxBounded(client, path));
   }
 
   private async getLabelStrategy(accountName: string): Promise<LabelStrategy> {
@@ -900,7 +901,7 @@ export default class ImapService {
 
     let lock: Awaited<ReturnType<ImapFlow['getMailboxLock']>>;
     try {
-      lock = await client.getMailboxLock(safeMailbox);
+      lock = await lockMailboxBounded(client, safeMailbox);
     } catch (err) {
       const offline = this.readOffline(err, accountName, safeMailbox, uid);
       if (offline) return offline;
@@ -1333,7 +1334,7 @@ export default class ImapService {
     const folders: string[] = [];
     const findInMailbox = async (mbPath: string): Promise<boolean> => {
       try {
-        const lock = await client.getMailboxLock(mbPath);
+        const lock = await lockMailboxBounded(client, mbPath);
         try {
           const results = await client.search(
             { header: { 'message-id': messageId } },
@@ -1374,7 +1375,7 @@ export default class ImapService {
     const safeSource = sanitizeMailboxName(sourceMailbox);
     const safeDest = sanitizeMailboxName(destinationMailbox);
     await ImapService.assertRealMailbox(client, safeSource);
-    const lock = await client.getMailboxLock(safeSource);
+    const lock = await lockMailboxBounded(client, safeSource);
     try {
       const ok = await imapCommand(`Moving message to "${safeDest}"`, () =>
         client.messageMove(emailId, safeDest, { uid: true }),
@@ -1398,7 +1399,7 @@ export default class ImapService {
     const safeMailbox = sanitizeMailboxName(mailbox);
 
     if (permanent) {
-      const lock = await client.getMailboxLock(safeMailbox);
+      const lock = await lockMailboxBounded(client, safeMailbox);
       try {
         const ok = await client.messageDelete(emailId, { uid: true });
         if (!ok) {
@@ -1414,7 +1415,7 @@ export default class ImapService {
       const trash = mailboxes.find((mb) => mb.specialUse === '\\Trash');
       const trashPath = trash?.path ?? 'Trash';
 
-      const lock = await client.getMailboxLock(safeMailbox);
+      const lock = await lockMailboxBounded(client, safeMailbox);
       try {
         const ok = await imapCommand(`Moving message to "${trashPath}"`, () =>
           client.messageMove(emailId, trashPath, { uid: true }),
@@ -1441,7 +1442,7 @@ export default class ImapService {
   ): Promise<void> {
     const client = await this.connections.getImapClient(accountName);
     const safeMailbox = sanitizeMailboxName(mailbox);
-    const lock = await client.getMailboxLock(safeMailbox);
+    const lock = await lockMailboxBounded(client, safeMailbox);
     try {
       const flagMap: Record<string, { flags: string[]; add: boolean }> = {
         read: { flags: ['\\Seen'], add: true },
@@ -2005,7 +2006,7 @@ export default class ImapService {
     const client = await this.connections.getImapClient(accountName);
 
     const lock = await imapCommand(`Opening mailbox "${safeMailbox}"`, () =>
-      client.getMailboxLock(safeMailbox, { readOnly: true }),
+      lockMailboxBounded(client, safeMailbox, { readOnly: true }),
     );
     try {
       const meta = await client.fetchOne(
@@ -2623,7 +2624,7 @@ export default class ImapService {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    const lock = await client.getMailboxLock(safeMailbox);
+    const lock = await lockMailboxBounded(client, safeMailbox);
     let receivedToday = 0;
     try {
       const todayUids = await client.search({ since: startOfToday }, { uid: true });

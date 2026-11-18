@@ -10,6 +10,7 @@
 import type { ImapFlow } from 'imapflow';
 import type { LabelInfo, LabelStrategyType } from '../types/index.js';
 import { imapCommand } from '../utils/imap-error.js';
+import lockMailboxBounded from './mailbox-lock.js';
 
 // ---------------------------------------------------------------------------
 // Strategy interface
@@ -49,7 +50,7 @@ function createProtonMailStrategy(): LabelStrategy {
 
     addLabel: async (client, emailId, mailbox, label) => {
       const targetPath = `${LABELS_PREFIX}${label}`;
-      const lock = await client.getMailboxLock(mailbox);
+      const lock = await lockMailboxBounded(client, mailbox);
       try {
         const result = await imapCommand(`Adding label "${label}"`, () =>
           client.messageCopy(emailId, targetPath, { uid: true }),
@@ -79,7 +80,7 @@ function createProtonMailStrategy(): LabelStrategy {
       const labelPath = `${LABELS_PREFIX}${label}`;
 
       // Fetch Message-ID from source mailbox
-      const srcLock = await client.getMailboxLock(mailbox);
+      const srcLock = await lockMailboxBounded(client, mailbox);
       let messageId: string | undefined;
       try {
         const msg = await client.fetchOne(emailId, { envelope: true }, { uid: true });
@@ -97,7 +98,7 @@ function createProtonMailStrategy(): LabelStrategy {
 
       // Find the email's UID inside the label folder and delete it
       const labelLock = await imapCommand(`Opening label folder "${labelPath}"`, () =>
-        client.getMailboxLock(labelPath),
+        lockMailboxBounded(client, labelPath),
       );
       try {
         const results = await client.search({ header: { 'message-id': messageId } }, { uid: true });
@@ -160,7 +161,7 @@ function createGmailStrategy(): LabelStrategy {
     },
 
     addLabel: async (client, emailId, mailbox, label) => {
-      const lock = await client.getMailboxLock(mailbox);
+      const lock = await lockMailboxBounded(client, mailbox);
       try {
         const result = await client.messageFlagsAdd(emailId, [label], {
           uid: true,
@@ -175,7 +176,7 @@ function createGmailStrategy(): LabelStrategy {
     },
 
     removeLabel: async (client, emailId, mailbox, label) => {
-      const lock = await client.getMailboxLock(mailbox);
+      const lock = await lockMailboxBounded(client, mailbox);
       try {
         const result = await client.messageFlagsRemove(emailId, [label], {
           uid: true,
@@ -212,7 +213,7 @@ function createKeywordStrategy(): LabelStrategy {
     listLabels: async (client) => {
       // IMAP keywords cannot be enumerated server-wide.
       // We sample the INBOX's PERMANENTFLAGS for known keywords.
-      const lock = await client.getMailboxLock('INBOX');
+      const lock = await lockMailboxBounded(client, 'INBOX');
       try {
         const status = client.mailbox;
         const keywords: LabelInfo[] = [];
@@ -231,7 +232,7 @@ function createKeywordStrategy(): LabelStrategy {
     },
 
     addLabel: async (client, emailId, mailbox, label) => {
-      const lock = await client.getMailboxLock(mailbox);
+      const lock = await lockMailboxBounded(client, mailbox);
       try {
         const result = await client.messageFlagsAdd(emailId, [label], { uid: true });
         if (!result) {
@@ -243,7 +244,7 @@ function createKeywordStrategy(): LabelStrategy {
     },
 
     removeLabel: async (client, emailId, mailbox, label) => {
-      const lock = await client.getMailboxLock(mailbox);
+      const lock = await lockMailboxBounded(client, mailbox);
       try {
         const result = await client.messageFlagsRemove(emailId, [label], { uid: true });
         if (!result) {
@@ -285,7 +286,7 @@ export async function detectLabelStrategy(client: ImapFlow): Promise<LabelStrate
   }
 
   // 3. Check PERMANENTFLAGS for \* (arbitrary keywords allowed)
-  const lock = await client.getMailboxLock('INBOX');
+  const lock = await lockMailboxBounded(client, 'INBOX');
   try {
     const mb = client.mailbox;
     if (mb && typeof mb === 'object' && 'permanentFlags' in mb) {

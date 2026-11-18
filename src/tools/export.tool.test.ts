@@ -74,7 +74,10 @@ describe('export_email', () => {
     expect(result.content[1].text).toContain(source.toString('base64'));
     expect(JSON.parse(result.content[0].text).filename).toBe('2026-03-04_7.eml');
     // Read-only mailbox, BODY.PEEK via source:true, no flag command.
-    expect(client.getMailboxLock).toHaveBeenCalledWith('INBOX', { readOnly: true });
+    expect(client.getMailboxLock).toHaveBeenCalledWith('INBOX', {
+      readOnly: true,
+      acquireTimeout: 60_000,
+    });
     expect(client.fetchOne).toHaveBeenCalledWith('7', { uid: true, source: true }, { uid: true });
     expect(client.messageFlagsAdd).not.toHaveBeenCalled();
     expect(client.messageFlagsSet).not.toHaveBeenCalled();
