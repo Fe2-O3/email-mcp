@@ -146,11 +146,20 @@ describe('stdio server lifecycle', () => {
         env: sandboxEnv(sandbox),
       });
 
+      let stderr = '';
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
       await handshakeAndWaitForReady(child);
 
       child.stdin.end();
 
       await expect(waitForExit(child, LIFECYCLE_BUDGET_MS)).resolves.toBe(0);
+      // The log says why it stopped, so a client's "disconnected" is not read as a crash.
+      expect(stderr).toContain('Shutting down: the MCP client closed the connection');
+      // Node's SQLite notice is not shown as if it were a problem.
+      expect(stderr).not.toContain('ExperimentalWarning');
     },
     LIFECYCLE_BUDGET_MS * 2,
   );

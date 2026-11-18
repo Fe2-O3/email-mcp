@@ -12,7 +12,12 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 - Pick what your AI can do. Setup now asks "What should your AI be able to do?" with tick boxes: Read mail, Send and reply, Organize, Filter rules, Calendar and reminders, Alerts. Reading is always on.
 - New `imap-wizard tools` command to change the choice later (`show`, `set read,send`, `reset`). It edits only the one `tools` line in config.toml, so comments stay.
+- The log now says why the server stopped, for example "the MCP client closed the connection". Clients often call any stop "unexpected", so this tells a normal stop from a crash.
 - New `settings.tools` setting (env `MCP_EMAIL_TOOLS`). When set it wins over `toolset`. The `full`, `core` and `minimal` presets and `read_only` work as before.
+
+### Changed
+
+- Less log noise. A background sync cut off by shutdown is logged as info, not a warning. Node's "SQLite is an experimental feature" notice is no longer printed on every start; other warnings still are.
 
 ## [0.3.6] — 2026-11-18
 

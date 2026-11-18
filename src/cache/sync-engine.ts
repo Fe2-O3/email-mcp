@@ -457,7 +457,12 @@ export default class SyncEngine {
       await this.backfillBodies(account, mailbox, this.abort.signal);
     } catch (err) {
       result.error = err instanceof Error ? err.message : String(err);
-      await mcpLog('warning', 'cache', `Sync failed for ${account}/${mailbox}: ${result.error}`);
+      if (this.abort.signal.aborted) {
+        // Cut off by shutdown: expected, so not a warning.
+        await mcpLog('info', 'cache', `Sync stopped for ${account}/${mailbox}: shutting down`);
+      } else {
+        await mcpLog('warning', 'cache', `Sync failed for ${account}/${mailbox}: ${result.error}`);
+      }
     } finally {
       lock?.release();
     }

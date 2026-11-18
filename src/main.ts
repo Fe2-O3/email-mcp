@@ -12,10 +12,14 @@
  *   list/read/search/...  Read and compose email from the terminal
  */
 
+// First, so it runs before anything loads node:sqlite.
+import './quiet-warnings.js';
+
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import type { BackgroundHandle } from './app.js';
 import { buildServer, buildServices, startBackgroundServices } from './app.js';
+import { mcpLog } from './logging.js';
 import { PKG_VERSION } from './server.js';
 
 /**
@@ -24,6 +28,14 @@ import { PKG_VERSION } from './server.js';
  * past that, dropping the sockets beats leaking the process we are shutting down.
  */
 const SHUTDOWN_GRACE_MS = 5_000;
+
+/** Plain words for why the server is stopping, for the log. */
+function shutdownReasonText(reason: string): string {
+  if (reason.startsWith('stdin')) return `the MCP client closed the connection (${reason})`;
+  if (reason === 'SIGTERM' || reason === 'SIGINT') return `asked to stop (${reason})`;
+  if (reason.startsWith('idle')) return `no requests for a while (${reason}, settings.idle_exit)`;
+  return reason;
+}
 
 const HELP = `
 imap-wizard — IMAP Wizard (email MCP server: IMAP + SMTP)
@@ -164,6 +176,8 @@ async function runServer(): Promise<void> {
     // EOF, 'close' and a signal routinely arrive together.
     if (shuttingDown) return;
     shuttingDown = true;
+    // Say why, so a stop in the client's log can be told apart from a crash.
+    await mcpLog('info', 'server', `Shutting down: ${shutdownReasonText(reason)}`);
 
     // A hung QUIT/LOGOUT must not resurrect the orphan this exists to prevent.
     // The valve is unref'd or it becomes the handle it was meant to release.

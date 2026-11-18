@@ -448,6 +448,29 @@ describe('SyncEngine', () => {
       expect(result.error).toMatch(/ECONNRESET/);
     });
 
+    it('warns on a real failure, but not on one caused by shutdown', async () => {
+      const writes: string[] = [];
+      const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+      try {
+        engine = build();
+        client.getMailboxLock.mockRejectedValue(new Error('Connection not available'));
+        await engine.syncMailbox('work', 'INBOX');
+        expect(writes.join('')).toMatch(/WARNING \[cache\] Sync failed for work\/INBOX/);
+
+        writes.length = 0;
+        engine.stop();
+        await engine.syncMailbox('work', 'INBOX');
+        const out = writes.join('');
+        expect(out).not.toContain('WARNING');
+        expect(out).toContain('Sync stopped for work/INBOX: shutting down');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it('releases the mailbox lock even when the fetch throws', async () => {
       engine = build();
       client.search.mockResolvedValue([1]);

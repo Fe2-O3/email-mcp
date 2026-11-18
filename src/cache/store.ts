@@ -11,9 +11,19 @@
  */
 
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
 import { MIGRATIONS, SCHEMA_SQL, SCHEMA_VERSION } from './schema.js';
+
+// Loaded with require, not a static import: Node prints its "SQLite is
+// experimental" notice the moment node:sqlite loads, and a static import loads
+// it before any code runs, so main.ts could never filter the notice out
+// (see quiet-warnings.ts). require runs in order, after that filter is set.
+const { DatabaseSync } = createRequire(import.meta.url)(
+  'node:sqlite',
+) as typeof import('node:sqlite');
+type DatabaseSync = DatabaseSyncType;
 
 // ---------------------------------------------------------------------------
 // Types
