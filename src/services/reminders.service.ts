@@ -10,6 +10,8 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import osascriptFailure from '../utils/osascript-error.js';
+
 const execFile = promisify(execFileCb);
 
 // ---------------------------------------------------------------------------
@@ -132,6 +134,20 @@ function escapeAS(s: string): string {
     .replace(/\t/g, '\\t');
 }
 
+/** The due date as readable text, formatted here; falls back to the text given. */
+function formatDue(dueDate: string): string {
+  const d = new Date(dueDate);
+  if (Number.isNaN(d.getTime())) return dueDate;
+  return d.toLocaleString('en-US', {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function buildReminderAppleScript(input: ReminderInput, confirm: boolean): string {
   const priority = PRIORITY_MAP[input.priority ?? 'none'];
   const title = escapeAS(input.title);
@@ -142,16 +158,18 @@ function buildReminderAppleScript(input: ReminderInput, confirm: boolean): strin
   const lines: string[] = [];
 
   if (confirm) {
-    const dlgParts: string[] = [`\uD83D\uDD14 ${title}`];
+    // Plain text here; each line is escaped exactly once when it is emitted.
+    const rawNotes = input.notes ?? '';
+    const dlgParts: string[] = [`\uD83D\uDD14 ${input.title}`];
     if (dueDate) {
-      dlgParts.push(`\uD83D\uDD50 Due: ${dueDate}`);
+      dlgParts.push(`\uD83D\uDD50 Due: ${formatDue(dueDate)}`);
     }
-    if (notes) {
-      const short = notes.length > 200 ? `${notes.substring(0, 200)}\u2026` : notes;
+    if (rawNotes) {
+      const short = rawNotes.length > 200 ? `${rawNotes.substring(0, 200)}\u2026` : rawNotes;
       dlgParts.push(`\uD83D\uDCDD ${short}`);
     }
-    if (listName) {
-      dlgParts.push(`\uD83D\uDCCB List: ${listName}`);
+    if (input.listName) {
+      dlgParts.push(`\uD83D\uDCCB List: ${input.listName}`);
     }
     if (priority > 0) {
       let pLabel = 'Low';
@@ -256,11 +274,13 @@ async function addReminderMacOS(
       message: reminderStatusMessage(result.status, input.title, result.listName),
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/user canceled|(-128)/i.test(msg)) {
+    // Never echo err.message: Node puts the whole script in it, and the script
+    // holds email text.
+    const msg = osascriptFailure(err);
+    if (/user canceled|\(-128\)/i.test(msg)) {
       return { status: 'cancelled', message: 'Cancelled by user.' };
     }
-    if (/not authorized|access/i.test(msg)) {
+    if (/not authorized|\(-1743\)/i.test(msg)) {
       return {
         status: 'no_display',
         message:

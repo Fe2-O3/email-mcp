@@ -79,4 +79,14 @@ describe('Audit Logger', () => {
     await audit.log('test', 'x', {}, 'ok');
     expect(mockFs.mkdir).toHaveBeenCalledBefore(mockFs.appendFile);
   });
+
+  it('creates the folder owner-only and appends with an owner-only mode', async () => {
+    await audit.log('send_email', 'a', {}, 'ok');
+    expect(mockFs.mkdir).toHaveBeenCalledWith(expect.any(String), {
+      recursive: true,
+      mode: 0o700,
+    });
+    expect(mockFs.appendFile.mock.calls[0][2]).toMatchObject({ mode: 0o600 });
+    expect(mockFs.chmod).toHaveBeenCalledWith(expect.any(String), 0o600);
+  });
 });

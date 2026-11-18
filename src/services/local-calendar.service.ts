@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { mcpLog } from '../logging.js';
+import osascriptFailure from '../utils/osascript-error.js';
 
 const execFile = promisify(execFileCb);
 
@@ -67,6 +68,13 @@ export interface LocalCalendarEventInput {
   conferenceProvider?: string;
   /** ICS UID for duplicate detection */
   icsUid?: string;
+  /**
+   * Runs only after the user has accepted the confirmation dialog (or at once
+   * when no dialog is shown), just before the event is written. Use it to save
+   * attachments so nothing reaches the disk for an event the user declined.
+   * Whatever it returns replaces the event's notes and saved attachments.
+   */
+  prepare?: () => Promise<{ notes?: string; savedAttachments?: SavedAttachment[] }>;
 }
 
 export type AddEventStatus = 'added' | 'cancelled' | 'timed_out' | 'no_display' | 'duplicate';
@@ -171,17 +179,83 @@ export function dateToAppleScriptLines(varName: string, d: Date): string[] {
   ];
 }
 
+/** A readable date range for the confirmation dialog, formatted here, not in AppleScript. */
+function formatDialogRange(start: Date, end: Date): string {
+  const day: Intl.DateTimeFormatOptions = {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  };
+  const startText = start.toLocaleString('en-US', day);
+  const sameDay = start.toDateString() === end.toDateString();
+  const endText = sameDay
+    ? end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : end.toLocaleString('en-US', day);
+  return `${startText} \u2013 ${endText}`;
+}
+
+/** AppleScript lines that show the confirmation dialog and return on Cancel. */
+function buildDialogLines(opts: JXAScriptOptions): string[] {
+  const { event, calendarName, alarmMinutes, attachCount, attendeeCount } = opts;
+  // Plain text here; each line is escaped exactly once when it is emitted.
+  const dialogLines: string[] = [`\uD83D\uDCC5 ${event.title}`];
+  dialogLines.push(`\uD83D\uDD50 ${formatDialogRange(event.start, event.end)}`);
+  if (event.location) dialogLines.push(`\uD83D\uDCCD ${event.location}`);
+  if (event.url) {
+    const domain = event.url.replace(/^https?:\/\//, '').split('/')[0];
+    dialogLines.push(`\uD83C\uDFA5 ${event.urlLabel || event.conferenceProvider || domain}`);
+  }
+  if (event.dialIn) dialogLines.push(`\uD83D\uDCDE ${event.dialIn}`);
+  if (event.meetingId) {
+    const pin = event.passcode ? ` \u00B7 PIN: ${event.passcode}` : '';
+    dialogLines.push(`\uD83D\uDD11 ID: ${event.meetingId}${pin}`);
+  }
+  if (attendeeCount > 0) {
+    dialogLines.push(`\uD83D\uDC65 ${attendeeCount} attendee${attendeeCount > 1 ? 's' : ''}`);
+  }
+  if (attachCount > 0) {
+    dialogLines.push(
+      `\uD83D\uDCCE ${attachCount} attachment${attachCount > 1 ? 's' : ''} will be saved locally`,
+    );
+  }
+  dialogLines.push(
+    `\uD83D\uDCC6 ${calendarName || 'Default Calendar'} \u00B7 \u23F0 ${alarmMinutes} min before`,
+  );
+
+  const lines = [`set dialogText to "${escapeAS(dialogLines[0])}"`];
+  dialogLines.slice(1).forEach((dl) => {
+    lines.push(`set dialogText to dialogText & return & "${escapeAS(dl)}"`);
+  });
+  lines.push(
+    'try',
+    '  display dialog dialogText with title "IMAP Wizard \u2014 Add Calendar Event?" buttons {"Cancel", "Add to Calendar"} default button "Add to Calendar" cancel button "Cancel" giving up after 60',
+    '  set dlgResult to button returned of result',
+    '  if dlgResult is not "Add to Calendar" then',
+    '    return "{\\"status\\":\\"timed_out\\"}"',
+    '  end if',
+    'on error',
+    '  return "{\\"status\\":\\"cancelled\\"}"',
+    'end try',
+    '',
+  );
+  return lines;
+}
+
+/** The confirmation dialog on its own: answers accepted, cancelled or timed_out. */
+function buildDialogScript(opts: JXAScriptOptions): string {
+  return [...buildDialogLines(opts), 'return "{\\"status\\":\\"accepted\\"}"'].join('\n');
+}
+
 function buildAppleScript(opts: JXAScriptOptions): string {
-  const { event, calendarName, alarmMinutes, attachCount, attendeeCount, confirm } = opts;
+  const { event, calendarName, alarmMinutes, confirm } = opts;
 
   const title = escapeAS(event.title);
   const location = escapeAS(event.location ?? '');
   const notes = escapeAS(event.notes ?? '');
   const url = escapeAS(event.url ?? '');
-  const urlLabel = escapeAS(event.urlLabel ?? event.conferenceProvider ?? '');
-  const dialIn = escapeAS(event.dialIn ?? '');
-  const meetingId = escapeAS(event.meetingId ?? '');
-  const passcode = escapeAS(event.passcode ?? '');
   const calName = escapeAS(calendarName);
 
   const lines: string[] = [
@@ -194,50 +268,7 @@ function buildAppleScript(opts: JXAScriptOptions): string {
   ];
 
   if (confirm) {
-    const dialogLines: string[] = [`\uD83D\uDCC5 ${title}`];
-    dialogLines.push('\uD83D\uDD50 " & (eventStart as text) & " \u2013 " & (eventEnd as text) & "');
-    if (location) {
-      dialogLines.push(`\uD83D\uDCCD ${location}`);
-    }
-    if (url) {
-      const domain = url.replace(/^https?:\/\//, '').split('/')[0];
-      dialogLines.push(`\uD83C\uDFA5 ${urlLabel || domain}`);
-    }
-    if (dialIn) {
-      dialogLines.push(`\uD83D\uDCDE ${dialIn}`);
-    }
-    if (meetingId) {
-      const pin = passcode ? ` \u00B7 PIN: ${passcode}` : '';
-      dialogLines.push(`\uD83D\uDD11 ID: ${meetingId}${pin}`);
-    }
-    if (attendeeCount > 0) {
-      dialogLines.push(`\uD83D\uDC65 ${attendeeCount} attendee${attendeeCount > 1 ? 's' : ''}`);
-    }
-    if (attachCount > 0) {
-      dialogLines.push(
-        `\uD83D\uDCCE ${attachCount} attachment${attachCount > 1 ? 's' : ''} saved locally`,
-      );
-    }
-    dialogLines.push(
-      `\uD83D\uDCC6 ${calName || 'Default Calendar'} \u00B7 \u23F0 ${alarmMinutes} min before`,
-    );
-
-    lines.push(`set dialogText to "${escapeAS(dialogLines[0])}"`);
-    dialogLines.slice(1).forEach((dl) => {
-      lines.push(`set dialogText to dialogText & return & "${escapeAS(dl)}"`);
-    });
-    lines.push(
-      'try',
-      '  display dialog dialogText with title "IMAP Wizard \u2014 Add Calendar Event?" buttons {"Cancel", "Add to Calendar"} default button "Add to Calendar" cancel button "Cancel" giving up after 60',
-      '  set dlgResult to button returned of result',
-      '  if dlgResult is not "Add to Calendar" then',
-      '    return "{\\"status\\":\\"timed_out\\"}"',
-      '  end if',
-      'on error',
-      '  return "{\\"status\\":\\"cancelled\\"}"',
-      'end try',
-      '',
-    );
+    lines.push(...buildDialogLines(opts));
   }
 
   lines.push('tell application "Calendar"');
@@ -287,8 +318,20 @@ function toICSDate(d: Date): string {
   return `${d.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`;
 }
 
-function escapeICS(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+/** @internal Exported for testing. */
+export function escapeICS(s: string): string {
+  return (
+    s
+      // A bare CR can end a line for some calendar programs, so it never
+      // survives: CRLF and CR become the escaped new line, other controls go.
+      .replace(/\r\n?/g, '\n')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
+      .replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u2028\u2029]/g, '')
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\n/g, '\\n')
+  );
 }
 
 function buildICS(event: LocalCalendarEventInput): string {
@@ -429,65 +472,86 @@ end absNum
     });
     return JSON.parse(stdout.trim()) as ExistingEventResult;
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    return { found: false, error: reason };
+    return { found: false, error: osascriptFailure(err) };
   }
 }
 
+async function runCalendarScript(script: string): Promise<{
+  status: AddEventStatus | 'accepted';
+  eventId?: string;
+  calendarName?: string;
+}> {
+  const { stdout } = await execFile('osascript', ['-e', script], { timeout: 90_000 });
+  return JSON.parse(stdout.trim()) as {
+    status: AddEventStatus | 'accepted';
+    eventId?: string;
+    calendarName?: string;
+  };
+}
+
 async function addEventMacOS(
-  event: LocalCalendarEventInput,
+  eventIn: LocalCalendarEventInput,
   calendarName: string | undefined,
   confirm: boolean,
 ): Promise<AddEventResult> {
+  let event = eventIn;
   const alarmMinutes = event.alarmMinutes ?? 15;
   const attachCount =
     (event.savedAttachments?.length ?? 0) + (event.pendingAttachments?.length ?? 0);
   const attendeeCount = event.attendeeCount ?? 0;
-
-  const script = buildAppleScript({
-    event,
+  const scriptOptions = (ev: LocalCalendarEventInput, withDialog: boolean): JXAScriptOptions => ({
+    event: ev,
     calendarName: calendarName ?? '',
     alarmMinutes,
     attachCount,
     attendeeCount,
-    confirm,
+    confirm: withDialog,
   });
 
   try {
-    const { stdout } = await execFile('osascript', ['-e', script], {
-      timeout: 90_000,
-    });
-    const result = JSON.parse(stdout.trim()) as {
-      status: AddEventStatus;
-      eventId?: string;
-      calendarName?: string;
-      error?: string;
-    };
+    // The dialog is its own step, so nothing is saved for an event the user
+    // declines: attachments are written by `prepare`, after Add is pressed.
+    if (confirm) {
+      const answer = await runCalendarScript(buildDialogScript(scriptOptions(event, true)));
+      if (answer.status !== 'accepted') {
+        return {
+          status: answer.status,
+          message: statusMessage(answer.status, event.title, undefined),
+        };
+      }
+    }
+    if (event.prepare) {
+      event = { ...event, ...(await event.prepare()) };
+    }
+    const result = await runCalendarScript(buildAppleScript(scriptOptions(event, false)));
     return {
-      status: result.status,
+      status: result.status as AddEventStatus,
       eventId: result.eventId,
       calendarName: result.calendarName,
-      message: statusMessage(result.status, event.title, result.calendarName),
+      message: statusMessage(result.status as AddEventStatus, event.title, result.calendarName),
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/user canceled|(-128)/i.test(msg)) {
+    // Never echo err.message: Node puts the whole script in it, and the script
+    // holds email text.
+    const reason = osascriptFailure(err);
+    if (/user canceled|\(-128\)/i.test(reason)) {
       return { status: 'cancelled', message: 'Cancelled by user.' };
     }
-    if (/not authorized|access/i.test(msg)) {
+    if (/not authorized|\(-1743\)/i.test(reason)) {
       return {
         status: 'no_display',
         message: 'Calendar access denied. Run check_calendar_permissions for setup instructions.',
       };
     }
-    return { status: 'no_display', message: `Could not add event: ${msg}` };
+    return { status: 'no_display', message: `Could not add event: ${reason}` };
   }
 }
 
 async function addEventLinux(
-  event: LocalCalendarEventInput,
+  eventIn: LocalCalendarEventInput,
   _calendarName?: string,
 ): Promise<AddEventResult> {
+  const event = eventIn.prepare ? { ...eventIn, ...(await eventIn.prepare()) } : eventIn;
   const tmpFile = join(tmpdir(), `email-mcp-event-${crypto.randomUUID()}.ics`);
   const ics = buildICS(event);
   await writeFile(tmpFile, ics, 'utf8');
@@ -499,7 +563,7 @@ async function addEventLinux(
       message: `Calendar file opened: ${event.title}. Confirm import in your calendar application.`,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = osascriptFailure(err);
     return {
       status: 'no_display',
       message: `Could not open calendar app (xdg-open failed): ${msg}`,
@@ -664,7 +728,7 @@ end jsonEscape
     // mailbox that genuinely has no events: no error, no log line, nothing the
     // user could act on. Surface the cause and rethrow, so `list_events` reports
     // a timeout as a timeout.
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = osascriptFailure(err);
     mcpLog('warning', 'calendar', `list_events failed: ${reason}`).catch(() => {
       /* logging must not mask the original failure */
     });
@@ -711,6 +775,13 @@ export default class LocalCalendarService {
     opts: { confirm?: boolean; skipDuplicateCheck?: boolean } = {},
   ): Promise<AddEventResult> {
     const confirm = opts.confirm !== false;
+
+    if (Number.isNaN(event.start.getTime()) || Number.isNaN(event.end.getTime())) {
+      return {
+        status: 'no_display',
+        message: 'Cannot add the event: it has no valid start or end time. Nothing was added.',
+      };
+    }
 
     // Duplicate detection (macOS only, can opt out)
     if (this.platform === 'darwin' && opts.skipDuplicateCheck !== true) {

@@ -32,7 +32,8 @@ function redactParams(params: Record<string, unknown>): Record<string, unknown> 
 }
 
 async function ensureLogDir(): Promise<void> {
-  await fs.mkdir(path.dirname(AUDIT_LOG_PATH), { recursive: true });
+  // The log holds recipients and subjects: owner-only folder and file.
+  await fs.mkdir(path.dirname(AUDIT_LOG_PATH), { recursive: true, mode: 0o700 });
 }
 
 /**
@@ -58,7 +59,13 @@ async function log(
   };
 
   const line = `${JSON.stringify(entry)}\n`;
-  await fs.appendFile(AUDIT_LOG_PATH, line, 'utf-8');
+  await fs.appendFile(AUDIT_LOG_PATH, line, { encoding: 'utf-8', mode: 0o600 });
+  // `mode` only applies when the file is created; tighten an older, wider one.
+  try {
+    await fs.chmod(AUDIT_LOG_PATH, 0o600);
+  } catch {
+    // The entry is already written; a failed tighten must not fail the action.
+  }
 }
 
 const audit = { log, AUDIT_LOG_PATH } as const;

@@ -7,7 +7,7 @@
  */
 
 import { mkdir, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 
 import { assertSafeWritePath } from '../safety/local-paths.js';
 
@@ -18,6 +18,27 @@ export function safeFileName(name: string, fallback: string): string {
     .join('')
     .trim();
   return base && base !== '.' && base !== '..' ? base : fallback;
+}
+
+/** File types that run, or change how a program behaves, when opened or used. */
+const RUN_ON_OPEN_EXTENSIONS = new Set(['.command', '.terminal', '.app', '.scpt', '.sh', '.plist']);
+
+/**
+ * Why a file name may not be written, or undefined when it is fine. A dot-name
+ * (.npmrc, .pre-commit-config.yaml, .envrc) changes how tools behave in the
+ * folder it lands in, and the types above run when opened. A mail's sender
+ * chooses the bytes, so neither is written.
+ */
+export function refusedFileName(target: string): string | undefined {
+  const name = basename(target);
+  if (name.startsWith('.')) {
+    return `Refusing to save "${name}": file names that start with a dot change how programs behave and are not written. Choose a name without the leading dot.`;
+  }
+  const ext = extname(name).toLowerCase();
+  if (RUN_ON_OPEN_EXTENSIONS.has(ext)) {
+    return `Refusing to save "${name}": ${ext} files run when opened and are not written. Choose a different file type.`;
+  }
+  return undefined;
 }
 
 export async function saveNewFile(
@@ -36,6 +57,8 @@ export async function saveNewFile(
     info?.isDirectory() || expanded.endsWith(sep) || expanded.endsWith('/')
       ? join(expanded, generatedName)
       : expanded;
+  const refused = refusedFileName(target);
+  if (refused) throw new Error(refused);
   // Judge the final path before anything is created, so a refusal leaves no directories behind.
   await assertSafeWritePath(target);
   await mkdir(dirname(target), { recursive: true });

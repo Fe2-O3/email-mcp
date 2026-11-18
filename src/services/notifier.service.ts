@@ -432,21 +432,36 @@ export default class NotifierService {
   }
 
   private static async execWindows(title: string, body: string): Promise<void> {
+    // The alert text goes to PowerShell as environment variables, which it
+    // reads as plain data. It is never pasted into the script, so no character
+    // in a subject (curly quotes included) can end a string and run as code.
     const ps =
       `[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); ` +
       `$n = New-Object System.Windows.Forms.NotifyIcon; ` +
       `$n.Icon = [System.Drawing.SystemIcons]::Information; ` +
       `$n.Visible = $true; ` +
-      `$n.ShowBalloonTip(5000, '${title}', '${body}', 'Info')`;
-    await NotifierService.execCommand('powershell', ['-Command', ps]);
+      `$n.ShowBalloonTip(5000, $env:IMAP_WIZARD_ALERT_TITLE, $env:IMAP_WIZARD_ALERT_BODY, 'Info')`;
+    await NotifierService.execCommand('powershell', ['-NoProfile', '-Command', ps], {
+      IMAP_WIZARD_ALERT_TITLE: title,
+      IMAP_WIZARD_ALERT_BODY: body,
+    });
   }
 
-  private static async execCommand(bin: string, args: string[]): Promise<void> {
+  private static async execCommand(
+    bin: string,
+    args: string[],
+    extraEnv?: Record<string, string>,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
-      execFile(bin, args, { timeout: 5000 }, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+      execFile(
+        bin,
+        args,
+        { timeout: 5000, ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}) },
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        },
+      );
     });
   }
 

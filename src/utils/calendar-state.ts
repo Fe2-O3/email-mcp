@@ -10,7 +10,7 @@
  * of this state — it only gates the automatic hook trigger.
  */
 
-import { mkdir, open, readFile, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, open, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { CALENDAR_STATE_FILE } from '../config/xdg.js';
@@ -34,17 +34,31 @@ function stateKey(accountName: string, emailId: string): string {
 }
 
 async function readState(): Promise<StateFile> {
+  let raw: string;
   try {
-    const raw = await readFile(CALENDAR_STATE_FILE, 'utf8');
-    return JSON.parse(raw) as StateFile;
-  } catch {
-    return { processedEmails: {} };
+    raw = await readFile(CALENDAR_STATE_FILE, 'utf8');
+  } catch (err) {
+    // Only "no file yet" means "nothing processed". Any other failure must not
+    // look like an empty history: the next write would erase it.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { processedEmails: {} };
+    throw err;
   }
+  return JSON.parse(raw) as StateFile;
 }
 
 async function writeState(state: StateFile): Promise<void> {
-  await mkdir(dirname(CALENDAR_STATE_FILE), { recursive: true });
-  await writeFile(CALENDAR_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  await mkdir(dirname(CALENDAR_STATE_FILE), { recursive: true, mode: 0o700 });
+  // Temp file then rename: a reader never sees a half-written file. Owner-only,
+  // because it holds account names, mail ids and event titles.
+  const tmp = `${CALENDAR_STATE_FILE}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await writeFile(tmp, JSON.stringify(state, null, 2), { encoding: 'utf8', mode: 0o600 });
+    await rename(tmp, CALENDAR_STATE_FILE);
+  } catch (err) {
+    await rm(tmp, { force: true });
+    throw err;
+  }
+  await chmod(CALENDAR_STATE_FILE, 0o600);
 }
 
 /**
@@ -52,7 +66,7 @@ async function writeState(state: StateFile): Promise<void> {
  * Uses exclusive file creation (O_CREAT | O_EXCL) to prevent concurrent writes.
  */
 async function withStateLock<T>(fn: () => Promise<T>): Promise<T> {
-  await mkdir(dirname(LOCK_FILE), { recursive: true });
+  await mkdir(dirname(LOCK_FILE), { recursive: true, mode: 0o700 });
 
   const acquire = async (retries: number): Promise<Awaited<ReturnType<typeof open>>> => {
     try {

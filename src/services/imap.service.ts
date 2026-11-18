@@ -2716,8 +2716,10 @@ export default class ImapService {
     // other write: nothing may land in a protected place or leave the folder through a symlink.
     const guard = { allowRoots: [CALENDAR_ATTACHMENTS_DIR] };
     await assertSafeWritePath(path.join(destDir, 'probe'), guard);
-    const { mkdir } = await import('node:fs/promises');
-    await mkdir(destDir, { recursive: true });
+    const { mkdir, chmod } = await import('node:fs/promises');
+    // Attachments are mail content: owner-only folder and files.
+    await mkdir(destDir, { recursive: true, mode: 0o700 });
+    await chmod(destDir, 0o700);
 
     // Use the attachment parts directly, not by filename, to avoid
     // cross-copying when two attachments share a basename.
@@ -2812,7 +2814,9 @@ export default class ImapService {
         }
         await assertSafeWritePath(localPath, { ...guard, within: destDir });
         const { writeFile } = await import('node:fs/promises');
-        await writeFile(localPath, Buffer.from(downloaded.contentBase64, 'base64'));
+        await writeFile(localPath, Buffer.from(downloaded.contentBase64, 'base64'), {
+          mode: 0o600,
+        });
         return {
           filename: meta.filename,
           localPath,

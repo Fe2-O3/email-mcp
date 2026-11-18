@@ -233,7 +233,13 @@ export default class CacheStore {
     if (dbPath !== ':memory:') {
       // 0700: the mirror holds message bodies, so it is owner-only. This plus
       // full-disk encryption is the documented at-rest posture.
-      fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
+      const dir = path.dirname(dbPath);
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      // A folder that already existed keeps its old mode, and the -wal and
+      // -shm files SQLite creates copy the database file's mode: so make the
+      // folder owner-only and create the database file owner-only up front.
+      fs.chmodSync(dir, 0o700);
+      fs.closeSync(fs.openSync(dbPath, 'a', 0o600));
     }
 
     // `timeout` sets busy_timeout, so concurrent readers wait rather than
@@ -250,7 +256,13 @@ export default class CacheStore {
     this.migrate();
 
     if (dbPath !== ':memory:') {
-      fs.chmodSync(dbPath, 0o600);
+      for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+        try {
+          fs.chmodSync(file, 0o600);
+        } catch {
+          // The side files exist only while the database is in use.
+        }
+      }
     }
   }
 

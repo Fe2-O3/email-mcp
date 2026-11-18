@@ -612,34 +612,26 @@ export default class HooksService {
       const meetingUrl = extractMeetingUrl(combined);
       const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);
 
-      // Save attachments
-      let savedAttachments: Awaited<ReturnType<typeof this.imapService.saveEmailAttachments>> = [];
-      if (full.attachments.length > 0) {
-        const destDir = path.join(
-          CALENDAR_ATTACHMENTS_DIR,
-          `${email.account}-${email.meta.id}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
-        );
-        savedAttachments = await this.imapService.saveEmailAttachments(
-          email.account,
-          email.meta.id,
-          email.mailbox,
-          destDir,
-        );
-      }
-
-      const notes = buildCalendarNotes({
-        emailFrom: full.from.name ? `${full.from.name} <${full.from.address}>` : full.from.address,
-        emailSubject: full.subject,
-        emailDate: new Date(full.date).toLocaleString(),
-        meetingUrl: meetingUrl?.url,
-        meetingUrlLabel: meetingUrl?.label,
-        dialIn: conference?.dialIn,
-        meetingId: conference?.meetingId,
-        passcode: conference?.passcode,
-        conferenceProvider: conference?.provider,
-        bodyExcerpt: bodyText !== '' ? bodyText : bodyHtml,
-        savedAttachments,
-      });
+      // Attachments are saved only once the user has accepted the dialog (or
+      // at once when the operator turned the dialog off), never before.
+      const buildNotes = (
+        saved: Awaited<ReturnType<typeof this.imapService.saveEmailAttachments>>,
+      ) =>
+        buildCalendarNotes({
+          emailFrom: full.from.name
+            ? `${full.from.name} <${full.from.address}>`
+            : full.from.address,
+          emailSubject: full.subject,
+          emailDate: new Date(full.date).toLocaleString(),
+          meetingUrl: meetingUrl?.url,
+          meetingUrlLabel: meetingUrl?.label,
+          dialIn: conference?.dialIn,
+          meetingId: conference?.meetingId,
+          passcode: conference?.passcode,
+          conferenceProvider: conference?.provider,
+          bodyExcerpt: bodyText !== '' ? bodyText : bodyHtml,
+          savedAttachments: saved,
+        });
 
       const result = await this.localCalendar.addEvent(
         {
@@ -647,11 +639,29 @@ export default class HooksService {
           start,
           end,
           location,
-          notes,
+          notes: buildNotes([]),
           url: meetingUrl?.url,
           urlLabel: meetingUrl?.label,
           alarmMinutes: this.config.calendarAlarmMinutes ?? 15,
-          savedAttachments,
+          pendingAttachments: full.attachments.map((a) => ({
+            filename: a.filename,
+            mimeType: a.mimeType,
+            size: a.size,
+          })),
+          prepare: async () => {
+            if (full.attachments.length === 0) return {};
+            const destDir = path.join(
+              CALENDAR_ATTACHMENTS_DIR,
+              `${email.account}-${email.meta.id}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
+            );
+            const saved = await this.imapService.saveEmailAttachments(
+              email.account,
+              email.meta.id,
+              email.mailbox,
+              destDir,
+            );
+            return { notes: buildNotes(saved), savedAttachments: saved };
+          },
           dialIn: conference?.dialIn,
           meetingId: conference?.meetingId,
           passcode: conference?.passcode,

@@ -199,7 +199,8 @@ export default function registerCalendarTools(
         const meetingUrl = extractMeetingUrl(combinedText);
         const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);
 
-        // 4. Save attachments (before dialog so filenames are shown)
+        // 4. Attachments are saved only after the user accepts the dialog (see
+        // `prepare` below); the dialog shows how many will be saved.
         let savedAttachments: {
           filename: string;
           localPath: string;
@@ -207,45 +208,34 @@ export default function registerCalendarTools(
           mimeType: string;
           size: number;
         }[] = [];
+        const willSave = saveAttachments && email.attachments.length > 0;
 
-        if (saveAttachments && email.attachments.length > 0) {
-          const destDir = join(
-            CALENDAR_ATTACHMENTS_DIR,
-            `${account}-${emailId}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
-          );
-          savedAttachments = await imapService.saveEmailAttachments(
-            account,
-            emailId,
-            mailbox,
-            destDir,
-          );
-        }
-
-        // 5. Build rich notes
-        const notes = buildCalendarNotes({
-          emailFrom: email.from.name
-            ? `${email.from.name} <${email.from.address}>`
-            : email.from.address,
-          emailSubject: email.subject,
-          emailDate: new Date(email.date).toLocaleString('en', {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          organizer: eventOrganizer,
-          attendees: eventAttendees,
-          meetingUrl: meetingUrl?.url,
-          meetingUrlLabel: meetingUrl?.label,
-          dialIn: conference?.dialIn,
-          meetingId: conference?.meetingId,
-          passcode: conference?.passcode,
-          conferenceProvider: conference?.provider,
-          bodyExcerpt: bodyText || bodyHtml,
-          savedAttachments,
-        });
+        // 5. Build rich notes (again with the saved files once they exist)
+        const buildNotes = (saved: typeof savedAttachments): string =>
+          buildCalendarNotes({
+            emailFrom: email.from.name
+              ? `${email.from.name} <${email.from.address}>`
+              : email.from.address,
+            emailSubject: email.subject,
+            emailDate: new Date(email.date).toLocaleString('en', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            organizer: eventOrganizer,
+            attendees: eventAttendees,
+            meetingUrl: meetingUrl?.url,
+            meetingUrlLabel: meetingUrl?.label,
+            dialIn: conference?.dialIn,
+            meetingId: conference?.meetingId,
+            passcode: conference?.passcode,
+            conferenceProvider: conference?.provider,
+            bodyExcerpt: bodyText || bodyHtml,
+            savedAttachments: saved,
+          });
 
         // 6. Add to calendar (shows dialog if confirm=true, dedup check is automatic)
         const result = await localCalendarService.addEvent(
@@ -254,12 +244,32 @@ export default function registerCalendarTools(
             start: eventStart,
             end: eventEnd,
             location: eventLocation,
-            notes,
+            notes: buildNotes([]),
             url: meetingUrl?.url,
             urlLabel: meetingUrl?.label,
             alarmMinutes,
             attendeeCount: eventAttendees.length,
-            savedAttachments,
+            pendingAttachments: willSave
+              ? email.attachments.map((a) => ({
+                  filename: a.filename,
+                  mimeType: a.mimeType,
+                  size: a.size,
+                }))
+              : undefined,
+            prepare: async () => {
+              if (!willSave) return {};
+              const destDir = join(
+                CALENDAR_ATTACHMENTS_DIR,
+                `${account}-${emailId}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
+              );
+              savedAttachments = await imapService.saveEmailAttachments(
+                account,
+                emailId,
+                mailbox,
+                destDir,
+              );
+              return { notes: buildNotes(savedAttachments), savedAttachments };
+            },
             dialIn: conference?.dialIn,
             meetingId: conference?.meetingId,
             passcode: conference?.passcode,
