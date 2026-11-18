@@ -132,8 +132,9 @@ export const AccountConfigSchema = z
 
 /**
  * Global Sieve settings. `allowed_redirects` is the only thing that can allow a
- * forward (Sieve redirect, notify mailto:, or a local rule). A human edits it in
- * this file; no tool writes it.
+ * standing forward (Sieve redirect, notify mailto:, or a local rule). A human
+ * edits it in this file; no tool writes it. One-off sends (send_email,
+ * forward_email and the like) are not limited by it.
  */
 export const SieveGlobalConfigSchema = z.object({
   allowed_redirects: z

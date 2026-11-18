@@ -6,6 +6,10 @@ services:
     stdin_open: true # required for stdio transport
     volumes:
       - ${EMAIL_MCP_CONFIG:-~/.config/email-mcp}:/home/node/.config/email-mcp:ro
+      # Scheduled emails, local rules and the audit log live here; without these
+      # volumes they are lost when the container stops.
+      - email-mcp-state:/home/node/.local/state/email-mcp
+      - email-mcp-data:/home/node/.local/share/email-mcp
 
   # ── Method 2: Streamable HTTP (opt-in) ──────────────────────────────────────
   # Start with:  docker compose --profile http up
@@ -25,3 +29,9 @@ services:
       - "${EMAIL_MCP_HTTP_PORT:-8080}:8080"
     volumes:
       - ${EMAIL_MCP_CONFIG:-~/.config/email-mcp}:/home/node/.config/email-mcp:ro
+      - email-mcp-state:/home/node/.local/state/email-mcp
+      - email-mcp-data:/home/node/.local/share/email-mcp
+
+volumes:
+  email-mcp-state:
+  email-mcp-data:

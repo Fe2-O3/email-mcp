@@ -738,10 +738,13 @@ max_attachment_mb = 25  # base64-encoded attachment total per message, MB
 # webhook_url = ""        # HTTP POST to Slack/Discord/ntfy.sh/etc.
 # webhook_events = ["urgent", "high"]  # which priorities trigger webhook
 
-# Mail filter rules. Forwarding (Sieve redirect, notify mailto:, and the local
-# rule forward action) is allowed ONLY to the addresses or domains listed here.
-# Edit this list yourself: no IMAP Wizard tool can change it, and no tool
-# argument can get around it. A domain does not cover its subdomains.
+# Mail filter rules. Standing forwards (Sieve redirect, notify mailto:, and the
+# local rule forward action) are allowed ONLY to the addresses or domains listed
+# here. Edit this list yourself: no IMAP Wizard tool can change it, and no tool
+# argument can get around it. A domain does not cover its subdomains. Running
+# servers read this list again each time, so an edit applies without a restart.
+# It does not limit one-off sends: send_email, reply_email and forward_email can
+# send to any address, and your MCP client's approval prompt is the check there.
 # The Sieve filter command hands mail to a program on the server. It is refused
 # unless the program is named here (also edited by you only).
 # [sieve]

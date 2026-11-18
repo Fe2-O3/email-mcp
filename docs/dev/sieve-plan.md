@@ -122,6 +122,10 @@ OAuth.
    the user directs to edit that file outside this server, may change it. **No
    MCP tool can read-modify-write the allowlist**, and no tool argument can
    bypass it. A test must assert that no registered tool writes `config.toml`.
+   The list covers standing forwards only. One-off sends (`send_email`,
+   `reply_email`, `forward_email`, `send_draft`, `schedule_email`,
+   `apply_template`) stay open to any address; the MCP client's approval prompt
+   is the only check on them (owner decision, 2026-11-18).
 
 ## Implementation notes (2026-11-17)
 

@@ -101,7 +101,7 @@ export function registerSieveReadTools(
               {
                 allowedRedirects: await manager.allowedRedirects(),
                 allowedRedirectsNote:
-                  'Forwarding is allowed only to these addresses or domains. Only a person editing config.toml ([sieve] allowed_redirects) can change them.',
+                  'Sieve redirects, notify mailto: and local-rule forwards may go only to these addresses or domains. Only a person editing config.toml ([sieve] allowed_redirects) can change them. One-off sends such as send_email and forward_email are not limited by this list.',
                 allowedPrograms: await manager.allowedPrograms(),
                 allowedProgramsNote:
                   'The filter command may run only these server programs. Only a person editing config.toml ([sieve] allowed_programs) can change them.',

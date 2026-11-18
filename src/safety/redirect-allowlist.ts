@@ -3,10 +3,14 @@
  *
  * A silent forwarding rule leaks every future email. A model can be steered by
  * the content of an email, so a `confirm: true` argument protects nothing. The
- * only thing that can allow a forward is this list, and only a human edits it:
- * no MCP tool reads-modifies-writes config.toml, and no tool argument bypasses
- * the list. Sieve `redirect` / `notify mailto:` and the local-rule forward action
- * all check here.
+ * only thing that can allow a standing forward is this list, and only a human
+ * edits it: no MCP tool reads-modifies-writes config.toml, and no tool argument
+ * bypasses the list. Sieve `redirect` / `notify mailto:` and the local-rule
+ * forward action all check here.
+ *
+ * It does not cover one-off sends. send_email, reply_email, forward_email,
+ * send_draft, schedule_email and apply_template can send to any address (owner
+ * decision); the MCP client's own approval prompt is the only check on those.
  *
  * Entries are exact addresses (`alice@example.com`) or exact domains
  * (`example.com` or `@example.com`). A domain does not cover its subdomains, and

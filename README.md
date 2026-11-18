@@ -2,14 +2,14 @@
 
 # IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 61 tools plus an opt-in verification tool, 1205 tests green, 20 upstream bugs fixed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 61 tools plus an opt-in verification tool, 1571 tests green, 20 upstream bugs fixed" width="100%">
 
 **Let your AI assistant read, search, send and sort your email over plain IMAP and SMTP.**
 
 [![release](https://img.shields.io/github/v/release/Fe2-O3/imap-wizard?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/imap-wizard/releases)
 [![npm](https://img.shields.io/npm/v/imap-wizard?color=CB3837&style=flat-square&logo=npm)](https://www.npmjs.com/package/imap-wizard)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-1205%20passing-22c55e?style=flat-square)](#development)
+[![tests](https://img.shields.io/badge/tests-1571%20passing-22c55e?style=flat-square)](#development)
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
 <a href="#quick-start">Quick start</a> ·
@@ -25,8 +25,9 @@
 - **Local and private.** It runs on your machine and talks straight to your
   mail server. No cloud service in the middle, no telemetry, no account to make.
 - **Safe by default.** Reading never marks mail as read. A read-only mode hides
-  every write tool. Retried sends are caught, and email text is marked as
-  untrusted so a message cannot pose as instructions.
+  every tool that changes mail (`export_email` and `download_attachment` can
+  still save new files to folders you allow). Retried sends are caught, and
+  email text is marked as untrusted so a message cannot pose as instructions.
 - **Fixes real bugs.** It is a fork of
   [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) that fixes
   bugs upstream still has. [See the list](#relationship-to-upstream).
@@ -93,8 +94,8 @@ Now ask your assistant: *"What's unread in my inbox?"*
 
 - **Global command:** `npm i -g imap-wizard`, then use `imap-wizard` in place of
   `npx -y imap-wizard` (for example `imap-wizard account add`).
-- **Docker:** `ghcr.io/fe2-o3/imap-wizard` (tags `v0.3.3` and `latest`). See
-  [Docker](#docker).
+- **Docker:** `ghcr.io/fe2-o3/imap-wizard` (a tag per version, and `latest`).
+  See [Docker](#docker).
 - **MCP Registry:** listed as `io.github.Fe2-O3/imap-wizard`.
 - **From source:**
 
@@ -137,12 +138,15 @@ Now ask your assistant: *"What's unread in my inbox?"*
   strict servers. [Full list with upstream status](#relationship-to-upstream).
 - **Reading never changes your mailbox.** `get_email` and `export_email` fetch
   with IMAP `BODY.PEEK`. Mail stays unread unless you ask (`markRead: true`).
-- **A real read-only mode.** With `read_only = true`, write tools are not
-  registered at all, so the assistant cannot even see them.
+- **A real read-only mode.** With `read_only = true`, tools that change mail
+  are not registered at all, so the assistant cannot even see them.
+  `export_email` and `download_attachment` stay, and can still save new files
+  to folders you allow.
 - **Handles big mailboxes.** Message fetches go out in chunks, so a mailbox with
   tens of thousands of messages does not overflow the server's command limit.
 - **Does not hang.** Waiting for a mailbox lock stops after 60 seconds. A stuck
-  connection is closed and opened again.
+  connection is closed and opened again. A connection is replaced every 30
+  minutes, but never while a call is still using it.
 - **No plaintext passwords needed.** Use the macOS Keychain, Linux
   `secret-tool`, a password command (1Password, Bitwarden, `pass`), or OAuth2.
 - **Fewer tools when you want them.** A `core` or `minimal` toolset sends the
@@ -155,19 +159,21 @@ Now ask your assistant: *"What's unread in my inbox?"*
 | Control | Default | What it does |
 |---|---|---|
 | Non-destructive reads | always | Reads use `BODY.PEEK`. Marking read takes an explicit `markRead: true` |
-| `read_only` | off | Hides every write tool and stops background services. `markRead` is refused |
-| Send rate limit | 10 per minute per account | Set with `settings.rate_limit` |
-| Duplicate-send guard | on | A retried send is spotted and refused unless you pass `allow_duplicate` |
+| `read_only` | off | Hides every tool that changes mail and stops background services. `markRead` is refused. `export_email` and `download_attachment` can still save new files to allowed folders |
+| Send rate limit | 10 per minute per account | Set with `settings.rate_limit`. Counted per running server: each AI window starts its own server with its own count, so two windows can send 20 |
+| Duplicate-send guard | on | A retried send is spotted and refused unless you pass `allow_duplicate` (on `send_email`, `reply_email`, `forward_email` and `send_draft`). A send whose result is unknown is never retried for you: check Sent first |
+| Who can receive mail | your client's approval | `send_email`, `reply_email`, `forward_email` and the other send tools can send to any address; your MCP client's approval prompt is the check. The forwarding allowlist below covers standing forwards (Sieve and local rules) only |
 | Audit log | on | Writes are logged, with sensitive fields hidden, to `~/.local/share/email-mcp/audit.log` |
 | Untrusted-content markers | always | Email text in tool output is wrapped in `<<<UNTRUSTED_EXTERNAL_CONTENT>>>` markers that tell the model it is data, not instructions |
 | Safe file reading | always | Attachments sent by file path must be absolute, regular files; hidden files and folders (`~/.ssh`, `.env`), system folders, `~/Library` and this app's own folders are refused, symlinks included |
 | Preview before writing | opt-in per call | `dryRun: true` on send, reply, forward, `send_draft`, move, delete, `bulk_action`, mailbox and label deletes shows what would happen without doing it |
-| One background worker | always | With several AI windows open, only one process runs the watcher, alerts and AI triage; another takes over within 2 minutes if it stops |
-| Safe file saving | always | `download_attachment` and `export_email` save only to absolute paths, never overwrite a file, and refuse system folders, hidden folders, the home folder itself and this app's own folders |
+| One background worker | always | With several AI windows open, only one process runs the watcher, alerts and AI triage; another takes over within 2 minutes if it stops. If the lock file in the state folder cannot be used, none of them runs these until it can |
+| Safe file saving | always | `download_attachment` (with `savePath`, up to 50 MB) and `export_email` save only to absolute paths, never overwrite a file, and refuse system folders, hidden folders, the home folder itself, this app's own folders, names that start with a dot and files that run when opened (`.command`, `.app`, `.sh` and similar). Two attachments with one name: pick one with `occurrence` |
+| Alert webhook | off | Set only in `config.toml` (`settings.hooks.alerts.webhook_url`). `configure_alerts` cannot set or change it, and read tools show only its host |
 | Protected mailboxes | always | `delete_mailbox` and `rename_mailbox` refuse INBOX, Sent, Drafts, Trash, Junk and Archive |
 | Encrypted logins | enforced | A config with `tls = false` and `starttls = false` to a non-local host is refused when it loads |
 | Credential redaction | always | Passwords and tokens in error text become `[redacted]`. The server's own reason for a failed login is kept |
-| Mailbox-lock timeout | 60 s | A stuck connection is recycled instead of freezing later calls |
+| Mailbox-lock timeout | 60 s | A stuck connection is recycled instead of freezing later calls. A call that waits behind the background mirror sync just fails and can be retried; the sync keeps going |
 | HTTP transport token | required | `http` mode makes a bearer token, even on localhost |
 | Verification-code tool | off | `get_verification_code` exists only when you turn it on. It never reads your clipboard |
 | Body cache (`read_through`) | **off** | Message bodies are saved to disk only if you turn it on. [Details](#local-body-cache-opt-in) |
@@ -239,9 +245,9 @@ prints it. The `account add` wizard writes it for you. A typical file:
 
 ```toml
 [settings]
-read_only = false   # true hides every write tool
+read_only = false   # true hides every tool that changes mail
 toolset = "full"    # "core" or "minimal" for a shorter tool list
-rate_limit = 10     # max sends per minute per account
+rate_limit = 10     # max sends per minute per account, per running server
 
 [[accounts]]
 name = "personal"
@@ -262,7 +268,9 @@ tls = true
 
 Check any edit with `imap-wizard config validate`. It names the bad line,
 suggests fixes for misspelled keys, and exits `1` on errors, so it also works
-in CI.
+in CI. The server also warns about unknown keys every time it starts, so a typo
+such as `read_onyl = true` does not go unnoticed, and it refuses to start when
+two accounts share a name.
 
 <details>
 <summary><strong>Password options</strong></summary>
@@ -271,11 +279,14 @@ in CI.
 
 - **OS keychain:** `password = "use_keychain:<name>"`. macOS uses Keychain,
   Linux uses `secret-tool` (libsecret). `imap-wizard keychain migrate` moves
-  existing plaintext passwords over.
+  existing plaintext passwords over. If the item cannot be read, that account
+  does not connect at all (it never sends the placeholder as a password) and a
+  warning says why.
 - **Password command:** `password_command = "op read 'op://Private/mail/password'"`
   (or `bw get password ...`, `pass show ...`). It runs once at startup, must
   print the password, and is stopped after 10 seconds. It wins over `password`
-  if both are set.
+  if both are set. Commands run one account at a time; if one fails, only that
+  account is turned off.
 - **OAuth2:** an `[accounts.oauth2]` block instead of a password.
 - **Plaintext:** allowed. The file is readable only by you, and `config show`
   hides the password.
@@ -294,6 +305,7 @@ in CI.
 | `settings.cache.enabled` | `true` | Local header-and-flags copy (`mailboxes = ["INBOX"]`, `window_days = 90`, `max_size_mb = 500`) |
 | `settings.watcher.enabled` | `false` | IMAP IDLE watcher for new mail, with optional hooks and alerts |
 | `settings.verification.enabled` | `false` | Registers `get_verification_code` |
+| `append_sent` (per account) | on, off for Gmail | File a copy of each sent message in Sent. Gmail files sent mail itself, so a second copy would appear there |
 
 </details>
 
@@ -309,15 +321,28 @@ Set these in your client's MCP config instead of writing a file:
 | `MCP_EMAIL_PASSWORD` or `MCP_EMAIL_PASSWORD_COMMAND` | your app password, or a command that prints it |
 
 Settings have matching variables too, for example `MCP_EMAIL_READ_ONLY=true`,
-`MCP_EMAIL_TOOLSET`, `MCP_EMAIL_RATE_LIMIT` and `MCP_EMAIL_IDLE_EXIT`.
+`MCP_EMAIL_TOOLSET`, `MCP_EMAIL_RATE_LIMIT` and `MCP_EMAIL_IDLE_EXIT`. The
+filter-rule lists are `MCP_EMAIL_SIEVE_ALLOWED_REDIRECTS` and
+`MCP_EMAIL_SIEVE_ALLOWED_PROGRAMS` (comma-separated). Yes/no variables take
+`true`/`false`, `1`/`0` or `yes`/`no`; anything else stops the server with an
+error instead of being read as "no".
+
+If a `config.toml` exists too, the account comes from the variables but the
+`[settings]` still come from the file, and the server prints one line saying
+so. `read_only` turned on in either place wins.
 
 ### Docker
 
-The image runs the stdio server. Mount your config folder read-only:
+The image runs the stdio server. Mount your config folder read-only, and give
+the state and data folders a volume each. Scheduled emails, local rules and
+the audit log live there; without the volumes they are lost when the container
+stops:
 
 ```bash
 docker run --rm -i \
   -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro \
+  -v imap-wizard-state:/home/node/.local/state/email-mcp \
+  -v imap-wizard-data:/home/node/.local/share/email-mcp \
   ghcr.io/fe2-o3/imap-wizard:latest
 ```
 
@@ -331,6 +356,8 @@ As a client config:
       "args": [
         "run", "--rm", "-i",
         "-v", "/absolute/path/to/.config/email-mcp:/home/node/.config/email-mcp:ro",
+        "-v", "imap-wizard-state:/home/node/.local/state/email-mcp",
+        "-v", "imap-wizard-data:/home/node/.local/share/email-mcp",
         "ghcr.io/fe2-o3/imap-wizard:latest"
       ]
     }
@@ -340,7 +367,9 @@ As a client config:
 
 The container cannot reach your OS keychain, so use a password in the config
 file or the environment variables above. For HTTP mode, see
-[docker-compose.yml](docker-compose.yml).
+[docker-compose.yml](docker-compose.yml), which sets up the same volumes. HTTP
+mode saves its token in the config folder, which is read-only here, so pass
+`EMAIL_MCP_HTTP_TOKEN` yourself.
 
 ### Filter rules
 
@@ -362,11 +391,23 @@ Safety:
   only to addresses or domains you list yourself in `config.toml`. No tool can
   change that list, and no tool argument can get around it. Other ways of
   sending mail out (`notify`, `report`, `pipe`, `execute`) are blocked the same
-  way.
+  way. A running server reads the list again every time a forward fires or a
+  script is checked, so removing an address takes effect without a restart.
+- The list covers standing forwards only. One-off sends (`send_email`,
+  `reply_email`, `forward_email` and the other send tools) can go to any
+  address; your MCP client's approval prompt is the check there.
+- The Sieve `filter` command (hand mail to a program on the server) is refused
+  unless you name the program in `[sieve] allowed_programs`.
+- A local rule cannot move mail into Trash, Junk, Drafts, Sent, Archive or
+  another special-use folder, or into a folder the watcher watches, and a rule
+  whose patterns match every message (such as `*`) is refused. Use labels or
+  flags instead. A rule made for an account stops running if that account name
+  is later pointed at another server or login.
 
 ```toml
 [sieve]
 allowed_redirects = ["me@work.example", "example.org"]   # you edit this, never the AI
+allowed_programs = ["my-filter-program"]                 # also only you
 
 [accounts.sieve]        # optional; defaults to the IMAP host, port 4190, STARTTLS
 enabled = true
@@ -513,6 +554,8 @@ It refuses to listen on a non-local address without a token.
 | A server process keeps running after you quit | Your client never closes the pipe | Set `settings.idle_exit = 1800`, or close the client cleanly |
 | `Cannot find module .../nodemailer/...` after an update | The old server process is still running | Restart your client (in Claude Code: `/mcp`, then reconnect) |
 | `install` says no clients found | It only knows Claude Desktop, Cursor and Windsurf | Use `claude mcp add` or the JSON above |
+| `Warning: account "x" cannot log in` at start | Its Keychain item or `password_command` could not be read | Run `imap-wizard keychain migrate`, or fix the command. The other accounts still work |
+| The watcher and alerts never run | The writer lock in `~/.local/state/email-mcp/` cannot be used (read-only folder, full disk) | Make that folder writable. The server tries again every 30 seconds |
 
 ---
 
@@ -573,7 +616,7 @@ request bodies. See the [CHANGELOG](CHANGELOG.md).
 pnpm install
 pnpm check             # Biome lint and format
 pnpm typecheck
-pnpm test              # unit tests (1205 across 102 files)
+pnpm test              # unit tests (1571 across 130 files)
 pnpm test:integration  # against a throwaway GreenMail server (needs Docker)
 pnpm smoke             # every tool against a real configured account
 ```

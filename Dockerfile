@@ -37,8 +37,13 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
-# Create config directory for volume mount
-RUN mkdir -p /home/node/.config/email-mcp && chown -R node:node /home/node/.config
+# Folders for volume mounts. config: read-only from the host. state (scheduled
+# email queue, writer lock) and data (local rules, audit log): mount volumes
+# here, or they are lost when the container stops. cache: the local mirror,
+# safe to lose. Created here so a new named volume starts owned by `node`.
+RUN mkdir -p /home/node/.config/email-mcp /home/node/.local/state/email-mcp \
+      /home/node/.local/share/email-mcp /home/node/.cache/email-mcp \
+    && chown -R node:node /home/node/.config /home/node/.local /home/node/.cache
 
 ENV NODE_ENV=production
 

@@ -42,7 +42,7 @@
     "hooks:install": "lefthook install --force",
     "hooks:uninstall": "lefthook uninstall",
     "docker:build": "docker build -t imap-wizard .",
-    "docker:run": "docker run --rm -i -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro imap-wizard",
+    "docker:run": "docker run --rm -i -v ~/.config/email-mcp:/home/node/.config/email-mcp:ro -v imap-wizard-state:/home/node/.local/state/email-mcp -v imap-wizard-data:/home/node/.local/share/email-mcp imap-wizard",
     "docker:compose": "docker compose up",
     "docker:clean": "docker images --format '{{.Repository}}:{{.Tag}}' | grep imap-wizard | xargs docker rmi -f 2>/dev/null; true",
     "docker:prune": "docker image prune -f && docker buildx prune -f",
