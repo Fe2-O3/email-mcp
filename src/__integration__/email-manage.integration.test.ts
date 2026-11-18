@@ -98,6 +98,14 @@ describe('Email Management Operations', () => {
   // move_email
   // ---------------------------------------------------------------------------
 
+  /** Permanently delete every message in a folder so it can be deleted. */
+  async function emptyMailbox(mailbox: string): Promise<void> {
+    const left = await services.imapService.listEmails(TEST_ACCOUNT_NAME, { mailbox });
+    for (const item of left.items) {
+      await services.imapService.deleteEmail(TEST_ACCOUNT_NAME, item.id, mailbox, true);
+    }
+  }
+
   describe('moveEmail', () => {
     it('should move an email to another folder', async () => {
       // Create destination folder
@@ -119,7 +127,9 @@ describe('Email Management Operations', () => {
       });
       expect(destList.items.length).toBeGreaterThanOrEqual(1);
 
-      // Cleanup
+      // Cleanup: deleteMailbox refuses a folder that still holds mail, so
+      // permanently delete the moved message(s) first.
+      await emptyMailbox('TestArchive');
       await services.imapService.deleteMailbox(TEST_ACCOUNT_NAME, 'TestArchive');
     });
   });
@@ -234,7 +244,14 @@ describe('Email Management Operations', () => {
 
       expect(result.succeeded).toBe(ids.length);
 
-      // Cleanup
+      // The moved messages really are in the destination.
+      const destList = await services.imapService.listEmails(TEST_ACCOUNT_NAME, {
+        mailbox: 'BulkDest',
+      });
+      expect(destList.items.length).toBeGreaterThanOrEqual(ids.length);
+
+      // Cleanup: deleteMailbox refuses a folder that still holds mail.
+      await emptyMailbox('BulkDest');
       await services.imapService.deleteMailbox(TEST_ACCOUNT_NAME, 'BulkDest');
     });
   });
