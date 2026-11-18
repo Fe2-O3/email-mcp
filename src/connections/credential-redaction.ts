@@ -78,14 +78,46 @@ function percentEncodedPattern(encoded: string): string {
   return exactPattern(encoded).replace(/%[0-9A-F]{2}/gu, hexDigitsInEitherCase);
 }
 
-/** A shape's length is that of the text it matches, not of its pattern, whose escapes are longer. */
+/**
+ * The base64 characters that depend only on the secret, for each of the three byte offsets it
+ * can start at inside a longer encoded text ("user:password" for HTTP Basic, a SASL blob with any
+ * prefix). The characters at each end also carry bits of the bytes around it, so they are left out.
+ */
+function base64Alignments(secret: string): string[] {
+  const bytes = Buffer.from(secret, 'utf8');
+  return [0, 1, 2].map((offset) => {
+    const encoded = Buffer.concat([Buffer.alloc(offset), bytes]).toString('base64');
+    const first = Math.ceil((8 * offset) / 6);
+    const end = Math.floor((8 * (offset + bytes.length)) / 6);
+    return encoded.slice(first, end);
+  });
+}
+
+interface Shape {
+  /** Length of the text it matches, not of its pattern, whose escapes are longer. */
+  length: number;
+  /**
+   * The plain and JSON forms of a long secret, which a server may echo in another case. Never a
+   * short shape (it would withhold whole messages that hold common words) and never an encoded
+   * form, whose case is part of what it says.
+   */
+  anyCase: boolean;
+}
+
 function secretShapes(sent: SentCredentials): SecretShapes {
-  const lengths = new Map<string, number>();
+  const shapes = new Map<string, Shape>();
+  const add = (pattern: string, length: number, anyCase = false): void => {
+    const known = shapes.get(pattern);
+    shapes.set(pattern, { length, anyCase: anyCase || (known?.anyCase ?? false) });
+  };
   sent.secrets
     .filter((secret): secret is string => typeof secret === 'string' && secret.length > 0)
     .forEach((secret) => {
+      add(exactPattern(secret), secret.length, true);
+      // A server or provider that quotes the secret inside JSON escapes " and \.
+      const jsonEscaped = JSON.stringify(secret).slice(1, -1);
+      if (jsonEscaped !== secret) add(exactPattern(jsonEscaped), jsonEscaped.length, true);
       [
-        secret,
         // AUTH LOGIN
         base64(secret),
         // AUTH PLAIN, without and with an authorization identity
@@ -94,26 +126,46 @@ function secretShapes(sent: SentCredentials): SecretShapes {
         // XOAUTH2
         base64(`user=${sent.user}\u0001auth=Bearer ${secret}\u0001\u0001`),
       ].forEach((shape) => {
-        lengths.set(exactPattern(shape), shape.length);
+        add(exactPattern(shape), shape.length);
       });
+      // Too short a middle would match unrelated base64; the whole-text forms above still apply.
+      base64Alignments(secret)
+        .filter((middle) => middle.length >= SECRET_SHAPE_MIN_CHARS)
+        .forEach((middle) => {
+          add(exactPattern(middle), middle.length);
+        });
       // encodeURIComponent throws on a lone surrogate; U+FFFD is what UTF-8 put on the wire for it.
       const encoded = encodeURIComponent(secret.replace(/\p{Cs}/gu, '\uFFFD'));
-      lengths.set(percentEncodedPattern(encoded), encoded.length);
+      add(percentEncodedPattern(encoded), encoded.length);
     });
-  const shapes: SecretShapes = { long: [], short: [] };
-  lengths.forEach((length, pattern) => {
-    shapes[length < SECRET_SHAPE_MIN_CHARS ? 'short' : 'long'].push(new RegExp(pattern, 'u'));
+  const result: SecretShapes = { long: [], short: [] };
+  shapes.forEach(({ length, anyCase }, pattern) => {
+    result[length < SECRET_SHAPE_MIN_CHARS ? 'short' : 'long'].push(
+      new RegExp(pattern, anyCase && length >= SECRET_SHAPE_MIN_CHARS ? 'iu' : 'u'),
+    );
   });
-  return shapes;
+  return result;
 }
 
 /** A lookahead match is empty, so the scan steps on one character and finds overlapping echoes. */
 function echoesOf(text: string, shape: RegExp): Span[] {
-  const scan = new RegExp(`(?=(${shape.source}))`, 'gu');
+  const scan = new RegExp(`(?=(${shape.source}))`, shape.ignoreCase ? 'giu' : 'gu');
   return Array.from(
     text.matchAll(scan),
     (match): Span => [match.index, match.index + (match[1] ?? '').length],
   );
+}
+
+// A token endpoint's answer, quoted in an error: its tokens were never sent, so no shape knows them.
+const JSON_TOKEN_VALUE = /"(?:access_token|refresh_token|id_token)"\s*:\s*"((?:[^"\\]|\\.)*)"/giu;
+
+function jsonTokenSpans(text: string): Span[] {
+  return [...text.matchAll(JSON_TOKEN_VALUE)]
+    .filter((match) => (match[1] ?? '').length > 0)
+    .map((match): Span => {
+      const end = match.index + match[0].length - 1;
+      return [end - (match[1] ?? '').length, end];
+    });
 }
 
 function bearerSpans(text: string): Span[] {
@@ -164,6 +216,7 @@ export function redactSentCredentials(text: string, sent: SentCredentials): stri
   const spans = mergeSpans([
     ...shapes.long.flatMap((shape) => echoesOf(text, shape)),
     ...bearerSpans(text),
+    ...jsonTokenSpans(text),
     ...xoauth2BlobSpans(text),
   ]);
   // Spans index the original text, so one marker cannot form or split another match.
