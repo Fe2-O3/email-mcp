@@ -30,6 +30,10 @@ vi.mock('./watcher.tool.js', () => ({
   registerWatcherWriteTools: vi.fn(),
 }));
 vi.mock('./verification.tool.js', () => ({ default: vi.fn() }));
+vi.mock('./sieve.tool.js', () => ({
+  registerSieveReadTools: vi.fn(),
+  registerSieveWriteTools: vi.fn(),
+}));
 
 import registerAccountsTools from './accounts.tool.js';
 import registerBulkTools from './bulk.tool.js';
@@ -40,6 +44,7 @@ import registerLabelTools from './label.tool.js';
 import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
 import registerSendTools from './send.tool.js';
+import { registerSieveReadTools, registerSieveWriteTools } from './sieve.tool.js';
 import { registerTemplateWriteTools } from './templates.tool.js';
 import registerVerificationTool from './verification.tool.js';
 
@@ -116,6 +121,8 @@ describe('registerAllTools', () => {
     expect(registerFolderTools).toHaveBeenCalled();
     expect(registerTemplateWriteTools).toHaveBeenCalled();
     expect(registerSchedulerTools).toHaveBeenCalled();
+    expect(registerSieveReadTools).toHaveBeenCalled();
+    expect(registerSieveWriteTools).toHaveBeenCalled();
   });
 
   it('skips write tools when readOnly is true', () => {
@@ -145,6 +152,8 @@ describe('registerAllTools', () => {
     expect(registerFolderTools).not.toHaveBeenCalled();
     expect(registerTemplateWriteTools).not.toHaveBeenCalled();
     expect(registerSchedulerTools).not.toHaveBeenCalled();
+    expect(registerSieveReadTools).toHaveBeenCalled();
+    expect(registerSieveWriteTools).not.toHaveBeenCalled();
   });
 
   it('does not register verification lookup unless explicitly enabled', () => {

@@ -110,3 +110,72 @@ export function loopbackSieveAccount(
     ...overrides,
   };
 }
+
+export interface ScriptStore {
+  scripts: Map<string, string>;
+  active: () => string | null;
+  /** Reply function for startFakeSieveServer. */
+  reply: (cmd: ReceivedCommand) => string | undefined;
+}
+
+const quote = (s: string): string => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const literal = (s: string): string => `{${Buffer.byteLength(s)}}\r\n${s}\r\n`;
+
+/** First quoted argument of a command line. */
+function argOf(line: string): string {
+  const match = /^[A-Z]+ "((?:\\.|[^"\\])*)"/.exec(line);
+  return (match?.[1] ?? '').replace(/\\(.)/g, '$1');
+}
+
+/** An in-memory ManageSieve server state behind the fake socket. */
+export function scriptStore(
+  initial: Record<string, string>,
+  activeName: string | null,
+  options: {
+    /** CHECKSCRIPT (and PUTSCRIPT) answer NO with this text when it returns one. */
+    reject?: (content: string) => string | undefined;
+    /** PUTSCRIPT answers NO (QUOTA) for these names. */
+    quotaFor?: (name: string) => boolean;
+  } = {},
+): ScriptStore {
+  const scripts = new Map(Object.entries(initial));
+  let active = activeName;
+  const reply = (cmd: ReceivedCommand): string | undefined => {
+    const verb = cmd.line.split(' ')[0];
+    const name = argOf(cmd.line);
+    switch (verb) {
+      case 'LISTSCRIPTS':
+        return `${[...scripts.keys()].map((n) => `${quote(n)}${n === active ? ' ACTIVE' : ''}\r\n`).join('')}OK\r\n`;
+      case 'GETSCRIPT':
+        return scripts.has(name)
+          ? `${literal(scripts.get(name) as string)}OK\r\n`
+          : 'NO (NONEXISTENT) "There is no script by that name"\r\n';
+      case 'CHECKSCRIPT': {
+        const why = options.reject?.(cmd.literal ?? '');
+        return why ? `NO ${literal(why).trimEnd()}\r\n` : 'OK\r\n';
+      }
+      case 'PUTSCRIPT': {
+        if (options.quotaFor?.(name)) return 'NO (QUOTA/MAXSCRIPTS) "Too many scripts"\r\n';
+        const why = options.reject?.(cmd.literal ?? '');
+        if (why) return `NO ${literal(why).trimEnd()}\r\n`;
+        scripts.set(name, cmd.literal ?? '');
+        return 'OK\r\n';
+      }
+      case 'DELETESCRIPT':
+        if (name === active) return 'NO (ACTIVE) "Script is active"\r\n';
+        if (!scripts.delete(name)) return 'NO (NONEXISTENT) "No such script"\r\n';
+        return 'OK\r\n';
+      case 'SETACTIVE':
+        if (name === '') {
+          active = null;
+          return 'OK\r\n';
+        }
+        if (!scripts.has(name)) return 'NO (NONEXISTENT) "No such script"\r\n';
+        active = name;
+        return 'OK\r\n';
+      default:
+        return 'NO "unknown command"\r\n';
+    }
+  };
+  return { scripts, active: () => active, reply };
+}

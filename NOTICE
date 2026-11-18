@@ -55,6 +55,8 @@ The adapted files are:
                                              implicit TLS and OAuth added here)
   src/services/sieve.service.protocol.test.ts
                                              socket-level tests for the above
+  src/tools/sieve.tool.ts                    Sieve tool shapes (the previews,
+                                             backups and allowlist are original)
 
 "Mailoo" and "Bitfloo" are names of their respective owners. They are used here
 only to attribute the code above and are not used as branding for this project.

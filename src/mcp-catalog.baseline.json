@@ -2837,6 +2837,169 @@
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "disableAll": {
+              "default": false,
+              "description": "Deactivate every script (name must be empty)",
+              "type": "boolean"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
+            "name": {
+              "default": "",
+              "description": "Script to activate; empty only with disableAll",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "sieve_activate_script",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "content": {
+              "description": "Sieve script source to check (RFC 5228)",
+              "type": "string"
+            },
+            "name": {
+              "description": "Stored script to check (or its name, with content)",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "sieve_check_script",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
+            "name": {
+              "description": "Script name from sieve_list_scripts",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["account", "name"],
+          "type": "object"
+        },
+        "name": "sieve_delete_script",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "name": {
+              "description": "Script name from sieve_list_scripts",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["account", "name"],
+          "type": "object"
+        },
+        "name": "sieve_get_script",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "sieve_list_scripts",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "apply": {
+              "default": false,
+              "description": "Actually save the script. Without it this only previews.",
+              "type": "boolean"
+            },
+            "content": {
+              "description": "Sieve script source (RFC 5228)",
+              "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
+            "name": {
+              "description": "Script name",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["account", "name", "content"],
+          "type": "object"
+        },
+        "name": "sieve_put_script",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "sieve_status",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
             "sound": {
               "default": false,
               "description": "Include a sound alert in the test notification",
@@ -4710,6 +4873,80 @@
           ],
           "type": "object"
         }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "content": {
+              "description": "Sieve script source to check (RFC 5228)",
+              "type": "string"
+            },
+            "name": {
+              "description": "Stored script to check (or its name, with content)",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "sieve_check_script",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "name": {
+              "description": "Script name from sieve_list_scripts",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["account", "name"],
+          "type": "object"
+        },
+        "name": "sieve_get_script",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "sieve_list_scripts",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "sieve_status",
+        "outputSchema": null
       }
     ]
   },

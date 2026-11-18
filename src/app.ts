@@ -27,6 +27,7 @@ import LocalCalendarService from './services/local-calendar.service.js';
 import OAuthService from './services/oauth.service.js';
 import RemindersService from './services/reminders.service.js';
 import SchedulerService from './services/scheduler.service.js';
+import SieveService from './services/sieve.service.js';
 import SmtpService from './services/smtp.service.js';
 import TemplateService from './services/template.service.js';
 import WatcherService from './services/watcher.service.js';
@@ -46,6 +47,7 @@ export interface AppServices {
   schedulerService: SchedulerService;
   watcherService: WatcherService;
   hooksService: HooksService;
+  sieveService: SieveService;
   /** Absent when the local mirror is disabled in config. */
   cacheStore?: CacheStore;
   syncEngine?: SyncEngine;
@@ -72,6 +74,9 @@ export async function buildServices(): Promise<AppServices> {
   const schedulerService = new SchedulerService(smtpService, imapService);
   const watcherService = new WatcherService(config.settings.watcher, config.accounts, oauthService);
   const hooksService = new HooksService(config.settings.hooks, imapService);
+  const sieveService = new SieveService({
+    getAccessToken: async (oauth2) => oauthService.getAccessToken(oauth2),
+  });
 
   // The mirror is optional and must never block startup: if SQLite cannot be
   // opened (read-only volume, corrupt file, unwritable XDG dir) the server
@@ -121,6 +126,7 @@ export async function buildServices(): Promise<AppServices> {
     schedulerService,
     watcherService,
     hooksService,
+    sieveService,
     cacheStore,
     syncEngine,
   };
@@ -148,6 +154,7 @@ export function buildServer(services: AppServices): McpServer {
     services.schedulerService,
     services.watcherService,
     services.hooksService,
+    { sieveService: services.sieveService },
   );
   registerAllResources(
     server,

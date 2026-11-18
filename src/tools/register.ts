@@ -13,10 +13,19 @@ import type ImapService from '../services/imap.service.js';
 import type LocalCalendarService from '../services/local-calendar.service.js';
 import type RemindersService from '../services/reminders.service.js';
 import type SchedulerService from '../services/scheduler.service.js';
+import SieveService from '../services/sieve.service.js';
+import SieveManager from '../services/sieve-manager.service.js';
 import type SmtpService from '../services/smtp.service.js';
 import type TemplateService from '../services/template.service.js';
 import type WatcherService from '../services/watcher.service.js';
 import type { AppConfig } from '../types/index.js';
+
+/** Services that only some tool groups need; defaults are built when absent. */
+export interface ToolExtras {
+  /** ManageSieve client. Pass one with an OAuth token source in production. */
+  sieveService?: SieveService;
+}
+
 import registerAccountsTools from './accounts.tool.js';
 import registerAnalyticsTools from './analytics.tool.js';
 import registerAttachmentTools from './attachments.tool.js';
@@ -35,6 +44,7 @@ import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
 import registerSecurityTools from './security.tool.js';
 import registerSendTools from './send.tool.js';
+import { registerSieveReadTools, registerSieveWriteTools } from './sieve.tool.js';
 import { registerTemplateReadTools, registerTemplateWriteTools } from './templates.tool.js';
 import registerThreadTools from './thread.tool.js';
 import { restrictToToolset } from './toolsets.js';
@@ -54,10 +64,19 @@ export default function registerAllTools(
   schedulerService: SchedulerService,
   watcherService: WatcherService,
   hooksService: HooksService,
+  extras: ToolExtras = {},
 ): void {
   const { readOnly, toolset } = config.settings;
   // Tools outside the configured toolset are skipped at registration.
   const server = restrictToToolset(fullServer, toolset);
+  // The forwarding allowlist is read from config here, once. No tool receives a
+  // way to change it, and nothing below writes config.toml.
+  const sieveManager = new SieveManager({
+    sieve: extras.sieveService ?? new SieveService(),
+    allowlist: config.sieve?.allowedRedirects ?? [],
+    listFolders: async (account) =>
+      (await imapService.listMailboxes(account)).map((mailbox) => mailbox.path),
+  });
 
   // Read tools — always registered
   registerAccountsTools(server, connections);
@@ -81,6 +100,8 @@ export default function registerAllTools(
   registerLocateTools(server, imapService);
   registerSecurityTools(server, imapService);
   registerWatcherReadTools(server, watcherService, hooksService);
+  // Only in the full toolset: no core/minimal list names them.
+  registerSieveReadTools(server, connections, sieveManager);
   if (config.settings.verification.enabled) {
     // Explicit opt-in, so it is registered in every toolset.
     registerVerificationTool(fullServer, imapService, config);
@@ -97,5 +118,6 @@ export default function registerAllTools(
     registerTemplateWriteTools(server, templateService, imapService, smtpService);
     registerSchedulerTools(server, schedulerService);
     registerWatcherWriteTools(server, hooksService);
+    registerSieveWriteTools(server, connections, sieveManager);
   }
 }
