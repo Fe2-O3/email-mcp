@@ -229,7 +229,15 @@ export default class HooksService {
     this.pendingEmails.push(...items);
 
     this.batchTimer ??= setTimeout(() => {
-      this.flushBatch().catch(() => {});
+      const size = this.pendingEmails.length;
+      this.flushBatch().catch((err: unknown) => {
+        // The batch is gone; at least say so, once per batch.
+        mcpLog(
+          'warning',
+          'hooks',
+          `Handling ${size} new message(s) failed, so no rule, alert or triage ran for them: ${err instanceof Error ? err.message : String(err)}`,
+        ).catch(() => undefined);
+      });
     }, this.config.batchDelay * 1000);
   }
 

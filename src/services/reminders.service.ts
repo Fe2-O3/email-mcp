@@ -119,8 +119,10 @@ async function listListsMacOS(): Promise<ReminderListInfo[]> {
     const raw = stdout.trim();
     if (!raw) return [];
     return raw.split(', ').map((name) => ({ id: name, name }));
-  } catch {
-    return [];
+  } catch (err) {
+    throw new Error(
+      `Could not read Reminders: ${osascriptFailure(err)}. Run check_calendar_permissions to check access.`,
+    );
   }
 }
 
@@ -381,8 +383,11 @@ end jsonEscape
   try {
     const { stdout } = await execFile('osascript', ['-e', script], { timeout: 15_000 });
     return JSON.parse(stdout.trim()) as ReminderSummary[];
-  } catch {
-    return [];
+  } catch (err) {
+    // Not "no reminders": a refused Automation permission looks just like it.
+    throw new Error(
+      `Could not read Reminders: ${osascriptFailure(err)}. Run check_calendar_permissions to check access.`,
+    );
   }
 }
 

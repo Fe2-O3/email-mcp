@@ -20,6 +20,15 @@ import type { EmailTemplate } from '../types/index.js';
  * Validate that a parsed object looks like an EmailTemplate.
  * Returns the template or throws with a descriptive message.
  */
+/** "line 3, column 7" for a TOML syntax error, undefined for anything else. */
+function describeTomlError(err: unknown): string | undefined {
+  const { line, column } = (err ?? {}) as { line?: unknown; column?: unknown };
+  if (typeof line === 'number' && typeof column === 'number') {
+    return `TOML syntax error at line ${line}, column ${column}`;
+  }
+  return undefined;
+}
+
 function validateTemplate(raw: Record<string, unknown>, filename: string): EmailTemplate {
   const { name, description, subject, body, variables } = raw;
 
@@ -69,15 +78,24 @@ export default class TemplateService {
    * Returns metadata only (name, description, variables).
    */
   async listTemplates(): Promise<EmailTemplate[]> {
+    return (await this.loadTemplates()).templates;
+  }
+
+  /**
+   * Every template, plus one line per file that could not be used. A broken
+   * file is still skipped, but no longer silently: list_templates names it.
+   */
+  async loadTemplates(): Promise<{ templates: EmailTemplate[]; problems: string[] }> {
     try {
       await fs.access(this.templatesDir);
     } catch {
-      return []; // Directory doesn't exist yet — no templates
+      return { templates: [], problems: [] }; // Directory doesn't exist yet — no templates
     }
 
     const entries = await fs.readdir(this.templatesDir);
     const tomlFiles = entries.filter((f) => f.endsWith('.toml'));
     const templates: EmailTemplate[] = [];
+    const problems: string[] = [];
 
     // eslint-disable-next-line no-restricted-syntax
     for (const file of tomlFiles) {
@@ -87,12 +105,15 @@ export default class TemplateService {
         const content = await fs.readFile(filePath, 'utf-8');
         const raw = parseTOML(content) as Record<string, unknown>;
         templates.push(validateTemplate(raw, file));
-      } catch {
-        // Skip invalid templates silently
+      } catch (err) {
+        // A TOML error quotes the lines around it; only its position is kept.
+        problems.push(
+          `${file}: ${describeTomlError(err) ?? (err instanceof Error ? err.message : String(err))}`,
+        );
       }
     }
 
-    return templates;
+    return { templates, problems };
   }
 
   /**

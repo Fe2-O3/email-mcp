@@ -415,8 +415,11 @@ async function listCalendarsMacOS(): Promise<CalendarInfo[]> {
     const raw = stdout.trim();
     if (!raw) return [];
     return raw.split(', ').map((name) => ({ id: name, name }));
-  } catch {
-    return [];
+  } catch (err) {
+    // Not "no calendars": a refused Automation permission looks just like it.
+    throw new Error(
+      `Could not read Calendar: ${osascriptFailure(err)}. Run check_calendar_permissions to check access.`,
+    );
   }
 }
 

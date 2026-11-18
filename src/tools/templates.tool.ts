@@ -26,14 +26,18 @@ export function registerTemplateReadTools(
     },
     async () => {
       try {
-        const templates = await templateService.listTemplates();
+        const { templates, problems } = await templateService.loadTemplates();
+        const skipped =
+          problems.length > 0
+            ? `\n\n⚠️ ${problems.length} template file(s) could not be read and were skipped:\n${problems.map((p) => `- ${p}`).join('\n')}`
+            : '';
 
         if (templates.length === 0) {
           return {
             content: [
               {
                 type: 'text' as const,
-                text: `No templates found. Create .toml files in ${templateService.directory}/ to add templates.\n\nExample template:\n  name = "meeting-followup"\n  description = "Follow-up after a meeting"\n  subject = "Follow-up: {{topic}}"\n  body = "Hi {{name}},\\n\\nThank you for..."\n  variables = ["topic", "name"]`,
+                text: `No templates found. Create .toml files in ${templateService.directory}/ to add templates.\n\nExample template:\n  name = "meeting-followup"\n  description = "Follow-up after a meeting"\n  subject = "Follow-up: {{topic}}"\n  body = "Hi {{name}},\\n\\nThank you for..."\n  variables = ["topic", "name"]${skipped}`,
               },
             ],
           };
@@ -49,7 +53,7 @@ export function registerTemplateReadTools(
           content: [
             {
               type: 'text' as const,
-              text: `📋 ${templates.length} template${templates.length === 1 ? '' : 's'} available:\n\n${lines.join('\n')}`,
+              text: `📋 ${templates.length} template${templates.length === 1 ? '' : 's'} available:\n\n${lines.join('\n')}${skipped}`,
             },
           ],
         };
