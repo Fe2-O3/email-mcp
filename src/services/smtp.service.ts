@@ -13,7 +13,7 @@ import type { IConnectionManager } from '../connections/types.js';
 import { mcpLog } from '../logging.js';
 import type RateLimiter from '../safety/rate-limiter.js';
 import { sanitizeTemplateVariable } from '../safety/validation.js';
-import type { DryRunPlan, SendResult } from '../types/index.js';
+import type { AccountConfig, DryRunPlan, SendResult } from '../types/index.js';
 import type ImapService from './imap.service.js';
 import {
   type OutgoingAttachmentInput,
@@ -134,6 +134,9 @@ export interface ForwardOptions {
   /** Extra attachments added to the forward: inline base64 `content`, or a local file `path`. */
   attachments?: OutgoingAttachmentInput[];
 }
+
+/** SMTP servers that put every message sent through them in the Sent folder themselves. */
+const SMTP_HOSTS_THAT_FILE_SENT = new Set(['smtp.gmail.com', 'smtp.googlemail.com']);
 
 export default class SmtpService {
   private readonly pendingSentFilings = new Set<Promise<void>>();
@@ -626,6 +629,14 @@ export default class SmtpService {
    * does not return it (only json/stream transports set `info.message`).
    */
   private fileToSent(accountName: string, mailOptions: Record<string, unknown>): void {
+    // The send already worked: nothing here may throw back into it.
+    let wanted = true;
+    try {
+      wanted = SmtpService.appendsSent(this.connections.getAccount(accountName));
+    } catch {
+      // Unknown account: the APPEND below fails on its own and is logged.
+    }
+    if (!wanted) return;
     const filing = (async () => {
       try {
         const { default: MailComposer } = await import('nodemailer/lib/mail-composer/index.js');
@@ -645,6 +656,16 @@ export default class SmtpService {
       () => this.pendingSentFilings.delete(filing),
       () => this.pendingSentFilings.delete(filing),
     );
+  }
+
+  /**
+   * Whether this app files the Sent copy. Gmail files every message sent
+   * through its SMTP server in Sent on its own, so a copy from here is a
+   * duplicate there. `append_sent` in the account settles it either way.
+   */
+  static appendsSent(account: Pick<AccountConfig, 'appendSent' | 'smtp'>): boolean {
+    if (account.appendSent !== undefined) return account.appendSent;
+    return !SMTP_HOSTS_THAT_FILE_SENT.has((account.smtp?.host ?? '').trim().toLowerCase());
   }
 
   /** Wait for best-effort Sent-folder copies before a one-shot CLI closes connections. */

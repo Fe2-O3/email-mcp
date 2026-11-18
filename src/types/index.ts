@@ -76,6 +76,8 @@ export interface AccountConfig {
   credentialError?: string;
   /** Optional per-account outbound attachment cap in MB. */
   maxAttachmentMb?: number;
+  /** File sent mail in Sent over IMAP. Absent: on, except for providers that file it themselves. */
+  appendSent?: boolean;
   oauth2?: OAuth2Config;
   imap: ImapConfig;
   smtp: SmtpConfig;

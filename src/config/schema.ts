@@ -79,6 +79,11 @@ export const AccountConfigSchema = z
     password_command: z.string().min(1, 'password_command cannot be empty').optional(),
     /** Override the effective outbound attachment cap for this account, in MB. */
     max_attachment_mb: z.number().int().min(1).optional(),
+    /**
+     * File a copy of each sent message in the Sent folder over IMAP. Default:
+     * on, except for Gmail, which files SMTP sends in Sent itself.
+     */
+    append_sent: z.boolean().optional(),
     oauth2: OAuth2ConfigSchema.optional(),
     imap: ImapConfigSchema,
     smtp: SmtpConfigSchema,

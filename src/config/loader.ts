@@ -277,6 +277,7 @@ async function normalizeAccount(raw: RawAccountConfig): Promise<AccountConfig> {
     password,
     passwordCommand: raw.password_command,
     maxAttachmentMb: raw.max_attachment_mb,
+    ...(raw.append_sent === undefined ? {} : { appendSent: raw.append_sent }),
     oauth2: raw.oauth2 ? normalizeOAuth2(raw.oauth2) : undefined,
     imap: {
       host: raw.imap.host,

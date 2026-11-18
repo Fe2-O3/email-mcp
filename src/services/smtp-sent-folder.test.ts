@@ -133,3 +133,49 @@ describe('sent messages are filed into the Sent folder', () => {
     expect(raw.toString()).toContain('Subject: Fwd: orig');
   });
 });
+
+// Gmail files every SMTP submission in Sent itself; an APPEND on top is a second copy.
+describe('providers that file sent mail themselves', () => {
+  function serviceFor(smtpHost: string, appendSentSetting?: boolean) {
+    const appendSent = vi.fn().mockResolvedValue({ appended: true, folder: 'Sent' });
+    const sendMail = vi.fn().mockResolvedValue({ messageId: '<sent@example.invalid>' });
+    const connections = {
+      getAccount: () => ({
+        email: 'me@example.invalid',
+        smtp: { host: smtpHost },
+        ...(appendSentSetting === undefined ? {} : { appendSent: appendSentSetting }),
+      }),
+      getSmtpTransport: async () => ({ sendMail }),
+      invalidateSmtpTransport: vi.fn(),
+    };
+    const service = new SmtpService(
+      connections as never,
+      { tryConsume: () => true } as never,
+      { appendSent } as never,
+    );
+    return { service, appendSent };
+  }
+
+  async function send(service: SmtpService): Promise<void> {
+    await service.sendEmail('work', { to: ['c@example.invalid'], subject: 's', body: 'b' });
+    await service.waitForSentFilings();
+  }
+
+  it('does not file a second copy on Gmail', async () => {
+    const { service, appendSent } = serviceFor('smtp.gmail.com');
+    await send(service);
+    expect(appendSent).not.toHaveBeenCalled();
+  });
+
+  it('files a copy on Gmail when append_sent = true', async () => {
+    const { service, appendSent } = serviceFor('smtp.gmail.com', true);
+    await send(service);
+    expect(appendSent).toHaveBeenCalledOnce();
+  });
+
+  it('does not file a copy anywhere when append_sent = false', async () => {
+    const { service, appendSent } = serviceFor('smtp.example.invalid', false);
+    await send(service);
+    expect(appendSent).not.toHaveBeenCalled();
+  });
+});
