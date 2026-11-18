@@ -5,8 +5,9 @@
  */
 
 import { ImapFlow } from 'imapflow';
+import type { AccountConfig } from '../types/index.js';
 
-type ImapClientOptions = ConstructorParameters<typeof ImapFlow>[0];
+type ImapClientOptions = NonNullable<ConstructorParameters<typeof ImapFlow>[0]>;
 
 /**
  * imapflow's constructor falls back to `servername = false` when the host is
@@ -27,4 +28,28 @@ export function createImapClient(options: ImapClientOptions): ImapFlow {
   const client = new ImapFlow(options);
   normalizeTlsServername(client as unknown as { servername?: string | false | undefined });
   return client;
+}
+
+/**
+ * The connection options for an account, shared by the pooled client, the
+ * IDLE watcher and the account test, so none of them can drift from the
+ * others. With `starttls` set, `doSTARTTLS: true` makes ImapFlow refuse to
+ * log in when the upgrade fails; without it, a server (or anyone on the path)
+ * that hides STARTTLS gets the login in plain text.
+ */
+export function imapClientOptions(
+  account: Pick<AccountConfig, 'imap'>,
+  auth: ImapClientOptions['auth'],
+  extra: Partial<ImapClientOptions> = {},
+): ImapClientOptions {
+  return {
+    host: account.imap.host,
+    port: account.imap.port,
+    secure: account.imap.tls,
+    tls: { rejectUnauthorized: account.imap.verifySsl },
+    auth,
+    logger: false,
+    ...(account.imap.starttls ? { doSTARTTLS: true as const } : {}),
+    ...extra,
+  };
 }

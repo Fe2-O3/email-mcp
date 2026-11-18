@@ -214,6 +214,9 @@ export function startBackgroundServices(
         if (schedulerInterval) clearInterval(schedulerInterval);
         if (cacheInterval) clearInterval(cacheInterval);
         syncEngine?.stop();
+        // Clears the alert notifier's timer too, which otherwise kept a
+        // read-only stdio server alive until the 5-second forced exit.
+        hooksService.stop();
         // Same teardown as write mode: read-only still opens IMAP connections and the mirror.
         imapService.dispose();
         services.cacheStore?.close();

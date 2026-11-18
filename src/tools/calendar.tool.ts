@@ -647,7 +647,8 @@ export default function registerCalendarTools(
 
       // Meeting URL detection
       const meetingUrl = extractMeetingUrl(combined);
-      if (!detectedEvent && meetingUrl) {
+      // The email's own date is the guess for the start; with no readable date there is no guess.
+      if (!detectedEvent && meetingUrl && !Number.isNaN(new Date(email.date).getTime())) {
         detectedEvent = {
           source: 'meeting_url',
           confidence: 'medium',

@@ -8,6 +8,7 @@ import type ImapService from './imap.service.js';
 vi.mock('./notifier.service.js', () => ({
   default: class {
     notify = vi.fn().mockResolvedValue(undefined);
+    start = vi.fn();
     stop = vi.fn();
   },
 }));

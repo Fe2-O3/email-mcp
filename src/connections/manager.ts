@@ -15,7 +15,7 @@ import { mcpLog } from '../logging.js';
 import eventBus from '../services/event-bus.js';
 import type OAuthService from '../services/oauth.service.js';
 import type { AccountConfig } from '../types/index.js';
-import { createImapClient } from '../utils/imap-client.js';
+import { createImapClient, imapClientOptions } from '../utils/imap-client.js';
 import { redactedError, sentCredentials } from './credential-redaction.js';
 import type { IConnectionManager } from './types.js';
 
@@ -151,17 +151,7 @@ export default class ConnectionManager implements IConnectionManager {
         auth = { user: account.username, pass: account.password };
       }
 
-      const client = createImapClient({
-        host: account.imap.host,
-        port: account.imap.port,
-        secure: account.imap.tls,
-        tls: {
-          rejectUnauthorized: account.imap.verifySsl,
-        },
-        auth,
-        logger: false,
-        ...(account.imap.starttls ? { doSTARTTLS: true as const } : {}),
-      });
+      const client = createImapClient(imapClientOptions(account, auth));
 
       // Evict only if this exact client is still the pooled one. A newer client
       // may already have replaced it, and deleting unconditionally would drop a
@@ -337,16 +327,9 @@ export default class ConnectionManager implements IConnectionManager {
         auth = { user: account.username, pass: account.password };
       }
 
-      client = createImapClient({
-        host: account.imap.host,
-        port: account.imap.port,
-        secure: account.imap.tls,
-        tls: {
-          rejectUnauthorized: account.imap.verifySsl,
-        },
-        auth,
-        logger: false,
-      });
+      // Same options as the pool: a test that skipped STARTTLS would pass
+      // against a server whose STARTTLS was stripped, and prove nothing.
+      client = createImapClient(imapClientOptions(account, auth));
 
       // Not pooled, so nothing to evict — but the listener still has to exist
       // or a mid-probe socket error crashes the process during setup.

@@ -154,11 +154,22 @@ export default class NotifierService {
 
   constructor(config: AlertsConfig) {
     this.config = config;
+    this.start();
+  }
 
-    // Reset desktop rate counter every 60s
+  /**
+   * Arm the per-minute reset of the desktop alert limit. Called again when the
+   * hooks restart (this process won the writer lease back): without it the
+   * count never reset after a stop, and desktop alerts ended after five.
+   */
+  start(): void {
+    if (this.desktopResetTimer) return;
+    this.desktopCount = 0;
     this.desktopResetTimer = setInterval(() => {
       this.desktopCount = 0;
     }, 60_000);
+    // A rate-limit reset is no reason to keep the process alive at shutdown.
+    this.desktopResetTimer.unref?.();
   }
 
   stop(): void {

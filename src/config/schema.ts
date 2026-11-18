@@ -111,6 +111,16 @@ export const AccountConfigSchema = z
         });
       }
     });
+    // Implicit TLS and STARTTLS together cannot both happen on one IMAP
+    // connection: ImapFlow refuses the pair, so the main connection never
+    // worked. Refuse it here, where the message can say what to change.
+    if (account.imap.tls && account.imap.starttls) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['imap', 'starttls'],
+        message: `Account ${JSON.stringify(account.name)}: IMAP has both tls = true and starttls = true. Use tls = true (usually port 993) or starttls = true with tls = false (usually port 143), not both.`,
+      });
+    }
     // ManageSieve logs in with the same credentials.
     const { sieve } = account;
     if (sieve?.enabled && !sieve.tls && !sieve.starttls) {

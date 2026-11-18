@@ -156,6 +156,57 @@ describe('stdio server lifecycle', () => {
   );
 
   it(
+    'exits cleanly and promptly in read-only mode when the client closes stdin',
+    async () => {
+      sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'email-mcp-lifecycle-'));
+
+      child = spawn(process.execPath, ['--import', 'tsx', ENTRY, 'stdio'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...sandboxEnv(sandbox), MCP_EMAIL_READ_ONLY: 'true' },
+      });
+      const proc = child;
+
+      // Read-only starts no background writers, so there is no ready log to
+      // wait for: the answer to `initialize` is the signal.
+      await new Promise<void>((resolve, reject) => {
+        let stdout = '';
+        proc.stdout.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString();
+          if (stdout.includes('"id":1')) {
+            proc.stdin.write(
+              `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
+            );
+            resolve();
+          }
+        });
+        proc.once('exit', (code) => reject(new Error(`exited during handshake (${code})`)));
+        proc.stdin.write(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'initialize',
+            params: {
+              protocolVersion: '2024-11-05',
+              capabilities: {},
+              clientInfo: { name: 'lifecycle-test', version: '1.0.0' },
+            },
+          })}\n`,
+        );
+      });
+      // Let the post-handshake block run before the client goes away.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const closedAt = Date.now();
+      proc.stdin.end();
+      // A timer left running used to hold the process until the 5-second
+      // forced exit, which then exited 1.
+      await expect(waitForExit(proc, LIFECYCLE_BUDGET_MS)).resolves.toBe(0);
+      expect(Date.now() - closedAt).toBeLessThan(1_000);
+    },
+    LIFECYCLE_BUDGET_MS * 2,
+  );
+
+  it(
     'exits on its own after idle_exit seconds with no client requests',
     async () => {
       sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'email-mcp-lifecycle-'));

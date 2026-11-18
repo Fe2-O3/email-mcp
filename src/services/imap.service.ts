@@ -194,6 +194,26 @@ function extractAttachmentParts(bodyStructure: unknown, partPath = ''): Attachme
   return parts;
 }
 
+/** What a message's date reads as when its Date header is not a real date. */
+export const DATE_UNKNOWN = 'date unknown';
+
+/**
+ * A message date as a Date, or undefined when it is not a real date. ImapFlow
+ * keeps an unreadable Date header ("sometime soon") as the raw string, and
+ * `new Date(text).toISOString()` then throws, which used to fail a whole page
+ * of results and stall the new-mail watcher on one spam message.
+ */
+export function safeDate(value: unknown): Date | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const date = value instanceof Date ? value : new Date(value as string);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/** `safeDate` as ISO text. */
+export function safeIsoDate(value: unknown): string | undefined {
+  return safeDate(value)?.toISOString();
+}
+
 /**
  * Map a raw ImapFlow fetch result to `EmailMeta`.
  *
@@ -244,9 +264,12 @@ export function messageToEmailMeta(msg: Record<string, unknown>): EmailMeta {
       return { ...addr, name: addr.name ? sanitizeUntrusted(addr.name) : addr.name };
     })(),
     to: parseAddresses(envelope.to as Record<string, string>[]),
-    date: envelope.date
-      ? new Date(envelope.date as string).toISOString()
-      : new Date().toISOString(),
+    // A header that is not a real date falls back to the server's arrival
+    // time when it was fetched, else reads "date unknown"; never a throw.
+    date:
+      safeIsoDate(envelope.date) ??
+      safeIsoDate(msg.internalDate) ??
+      (envelope.date ? DATE_UNKNOWN : new Date().toISOString()),
     seen: flags.has('\\Seen'),
     flagged: flags.has('\\Flagged'),
     answered: flags.has('\\Answered'),
@@ -254,6 +277,32 @@ export function messageToEmailMeta(msg: Record<string, unknown>): EmailMeta {
     labels,
     bulk,
   };
+}
+
+/**
+ * `messageToEmailMeta` for a page of results: one message that cannot be
+ * mapped becomes a placeholder row with its UID, never a failed page. A
+ * message with no UID still fails, since no row could address it.
+ */
+export function metaOrPlaceholder(msg: Record<string, unknown>): EmailMeta {
+  try {
+    return messageToEmailMeta(msg);
+  } catch (err) {
+    if (typeof msg.uid !== 'number') throw err;
+    return {
+      id: String(msg.uid),
+      messageId: '',
+      subject: '(this message could not be read)',
+      from: { address: 'unknown' },
+      to: [],
+      date: DATE_UNKNOWN,
+      seen: false,
+      flagged: false,
+      answered: false,
+      hasAttachments: false,
+      labels: [],
+    };
+  }
 }
 
 /** A displayable (non-attachment) text part discovered in the MIME tree. */
@@ -868,7 +917,7 @@ export default class ImapService {
         },
         { uid: true },
       )) {
-        items.push(messageToEmailMeta(msg as unknown as Record<string, unknown>));
+        items.push(metaOrPlaceholder(msg as unknown as Record<string, unknown>));
       }
 
       // Servers answer a UID range in ascending order regardless of the
@@ -1023,7 +1072,7 @@ export default class ImapService {
         labels,
         subject: (envelope.subject as string) ?? '(no subject)',
         from,
-        date: envelope.date ? new Date(envelope.date as string).toISOString() : '',
+        date: safeIsoDate(envelope.date) ?? (envelope.date ? DATE_UNKNOWN : ''),
       };
     } finally {
       lock.release();
@@ -1180,7 +1229,7 @@ export default class ImapService {
         },
         { uid: true },
       )) {
-        items.push(messageToEmailMeta(msg as unknown as Record<string, unknown>));
+        items.push(metaOrPlaceholder(msg as unknown as Record<string, unknown>));
       }
 
       // Same in-page re-application as list_emails: the range comes back
@@ -2992,7 +3041,7 @@ export default class ImapService {
 
       const contactMap = new Map<
         string,
-        { name?: string; email: string; frequency: number; lastSeen: Date }
+        { name?: string; email: string; frequency: number; lastSeen?: Date }
       >();
 
       // eslint-disable-next-line no-restricted-syntax
@@ -3001,7 +3050,8 @@ export default class ImapService {
           string,
           unknown
         >;
-        const date = envelope.date ? new Date(envelope.date as string) : new Date();
+        // An unreadable Date header counts the contact but says nothing about when.
+        const date = safeDate(envelope.date) ?? (envelope.date ? undefined : new Date());
 
         const addressLists = [
           envelope.from as { name?: string; address?: string }[] | undefined,
@@ -3016,7 +3066,7 @@ export default class ImapService {
             const existing = contactMap.get(key);
             if (existing) {
               existing.frequency += 1;
-              if (date > existing.lastSeen) {
+              if (date && (!existing.lastSeen || date > existing.lastSeen)) {
                 existing.lastSeen = date;
                 if (addr.name) existing.name = addr.name;
               }
@@ -3039,7 +3089,7 @@ export default class ImapService {
           name: c.name,
           email: c.email,
           frequency: c.frequency,
-          lastSeen: c.lastSeen.toISOString(),
+          lastSeen: c.lastSeen ? c.lastSeen.toISOString() : DATE_UNKNOWN,
         }));
 
       return contacts;
@@ -3140,8 +3190,8 @@ export default class ImapService {
         }
 
         // Track daily volume
-        const date = envelope.date ? new Date(envelope.date as string) : new Date();
-        const dayKey = date.toISOString().split('T')[0];
+        const date = safeDate(envelope.date) ?? (envelope.date ? undefined : new Date());
+        const dayKey = date ? date.toISOString().split('T')[0] : 'undated';
         dailyMap.set(dayKey, (dailyMap.get(dayKey) ?? 0) + 1);
       }
 

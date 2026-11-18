@@ -68,7 +68,9 @@ describe('startBackgroundServices', () => {
     expect(f.schedulerService.checkAndSend).not.toHaveBeenCalled();
 
     await handle.stop();
-    expect(f.hooksService.stop).not.toHaveBeenCalled();
+    // stop() is safe on hooks that never started, and it clears the alert
+    // notifier's timer, which otherwise held a read-only server open.
+    expect(f.hooksService.stop).toHaveBeenCalledTimes(1);
     expect(f.watcherService.stop).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });

@@ -151,6 +151,7 @@ export default class HooksService {
    */
   start(lowLevelServer: Server | null): void {
     this.lowLevelServer = lowLevelServer;
+    this.notifier.start();
 
     if (this.config.onNewEmail === 'none' && !this.localRules) return;
 
@@ -180,6 +181,17 @@ export default class HooksService {
     if (this.batchTimer) {
       clearTimeout(this.batchTimer);
       this.batchTimer = null;
+    }
+    if (this.pendingEmails.length > 0) {
+      // Not flushed: stop() runs when this process loses the writer lease,
+      // and acting on mail after that would race the new leader. Say what
+      // was dropped instead of losing it silently.
+      const dropped = this.pendingEmails.length;
+      mcpLog(
+        'warning',
+        'hooks',
+        `${dropped} new email(s) waiting for rules, alerts or triage were not handled because this process stopped handling mail.`,
+      ).catch(() => {});
     }
     this.pendingEmails = [];
     if (this.rateResetTimer) {

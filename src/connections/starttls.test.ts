@@ -37,6 +37,22 @@ describe('IMAP STARTTLS', () => {
     expect(opts.doSTARTTLS).toBe(true);
   });
 
+  it('the account test (testImap) demands STARTTLS too', async () => {
+    MockImapFlow.mockClear();
+    const account = {
+      name: 'test3',
+      email: 'a@b.invalid',
+      username: 'a@b.invalid',
+      password: 'p',
+      imap: { host: 'h', port: 143, tls: false, starttls: true, verifySsl: true },
+      smtp: { host: 'h', port: 465, tls: true, starttls: false, verifySsl: true },
+    } as unknown as never;
+    // A test that skipped STARTTLS would pass against a stripped server and prove nothing.
+    await ConnectionManager.testImap(account);
+    const opts = (MockImapFlow.mock.calls[0]?.[0] as Record<string, unknown>) ?? {};
+    expect(opts).toMatchObject({ secure: false, doSTARTTLS: true });
+  });
+
   it('omits doSTARTTLS when not configured', async () => {
     MockImapFlow.mockClear();
     const account = {
