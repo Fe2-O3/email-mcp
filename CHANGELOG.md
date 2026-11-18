@@ -8,6 +8,19 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-11-18
+
+### Added
+
+- **Server-side filter rules (Sieve over ManageSieve):** `sieve_status`, `sieve_list_scripts`, `sieve_get_script`, `sieve_check_script`, `sieve_put_script`, `sieve_activate_script`, `sieve_delete_script`. Previews and diffs by default (`apply: true` to save), the server's CHECKSCRIPT when offered, automatic backups before replace or delete, refusal to delete the active script, `disableAll: true` needed to turn every script off. STARTTLS or implicit TLS with full certificate checks; SASL PLAIN or OAuth. Client adapted from Mailoo by Bitfloo.
+- **Local rules** for providers without Sieve: `list_local_rules`, `add_local_rule`, `remove_local_rule`. Match on from, to, subject or header; move, label, flag, mark read, or forward. They run in the watcher while IMAP Wizard runs and are stored in `local-rules.json`.
+- Config: `[sieve] allowed_redirects` and per-account `[accounts.sieve]` (`enabled`, `host`, `port`, `tls`, `starttls`), with `MCP_EMAIL_SIEVE_*` env vars.
+
+### Security
+
+- Forwarding by any rule (Sieve `redirect`, including `:copy`; local forward) is allowed only to addresses or domains in `allowed_redirects`, which a person edits in `config.toml`. No tool writes `config.toml` (enforced by a test) and no argument bypasses the check. `notify`, `report`, `pipe`, `execute` and targets the scanner cannot read for sure are blocked the same way. Included scripts are fetched and scanned too.
+- Local forwards never send mail from the account itself or from the forward target, to prevent loops.
+
 ## [0.3.4] — 2026-11-18
 
 ### Added
@@ -164,6 +177,7 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 - README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
 - Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
+[0.3.5]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.5
 [0.3.4]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.4
 [0.3.3]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.2

@@ -62,7 +62,7 @@
   <text x="366" y="230" font-family="ui-sans-serif, sans-serif" font-size="12" fill="#bfdbfe">Streamable HTTP (token required)</text>
   <rect x="350" y="258" width="260" height="96" rx="10" fill="url(#accent)" opacity="0.16"/>
   <rect x="350" y="258" width="260" height="96" rx="10" fill="none" stroke="#8b5cf6" stroke-width="1.5"/>
-  <text x="480" y="286" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="15" font-weight="700" fill="#f1f5f9">51 tools &#183; 7 prompts</text>
+  <text x="480" y="286" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="15" font-weight="700" fill="#f1f5f9">61 tools &#183; 7 prompts</text>
   <text x="480" y="308" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="15" font-weight="700" fill="#f1f5f9">6 resources</text>
   <text x="480" y="334" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#c7d2fe">read &#183; write &#183; manage &#183; labels</text>
   <text x="480" y="352" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#c7d2fe">watcher &#183; calendar &#183; security</text>
@@ -126,6 +126,6 @@
 
   <!-- footer strip -->
   <rect x="40" y="462" width="1160" height="46" rx="12" fill="#0f172a" stroke="#2b3a5c" stroke-width="1"/>
-  <text x="620" y="483" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="12.5" fill="#cbd5e1">TLS, STARTTLS or plain per account &#183; OAuth2 for Gmail-style providers &#183; 1008 tests guard all of it</text>
+  <text x="620" y="483" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="12.5" fill="#cbd5e1">TLS, STARTTLS or plain per account &#183; OAuth2 for Gmail-style providers &#183; 1205 tests guard all of it</text>
   <text x="620" y="500" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="11.5" fill="#64748b">Nothing is phoned home: no telemetry, no external API key, no account data leaving the host.</text>
 </svg>

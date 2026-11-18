@@ -2,14 +2,14 @@
 
 # IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 51 tools plus an opt-in verification tool, 1008 tests green, 20 upstream bugs fixed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 61 tools plus an opt-in verification tool, 1205 tests green, 20 upstream bugs fixed" width="100%">
 
 **Let your AI assistant read, search, send and sort your email over plain IMAP and SMTP.**
 
 [![release](https://img.shields.io/github/v/release/Fe2-O3/imap-wizard?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/imap-wizard/releases)
 [![npm](https://img.shields.io/npm/v/imap-wizard?color=CB3837&style=flat-square&logo=npm)](https://www.npmjs.com/package/imap-wizard)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-1008%20passing-22c55e?style=flat-square)](#development)
+[![tests](https://img.shields.io/badge/tests-1205%20passing-22c55e?style=flat-square)](#development)
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
 <a href="#quick-start">Quick start</a> ·
@@ -184,8 +184,8 @@ post exploits in public.
 
 ## Tools
 
-**51 tools** (26 read, 25 write), plus **1 opt-in tool**, **7 prompts** and
-**6 resources**. In read-only mode only the 26 read tools are registered.
+**61 tools** (31 read, 30 write), plus **1 opt-in tool**, **7 prompts** and
+**6 resources**. In read-only mode only the 31 read tools are registered.
 
 | Group | Tools |
 |---|---|
@@ -197,6 +197,8 @@ post exploits in public.
 | **Organize** *(write)* | `move_email` `delete_email` `mark_email` `bulk_action` `create_mailbox` `rename_mailbox` `delete_mailbox` |
 | **Labels** *(write)* | `list_labels` `add_label` `remove_label` `create_label` `delete_label` |
 | **Calendar and alerts** *(write)* | `add_to_calendar` `create_reminder` `configure_alerts` `test_notification` |
+| **Filter rules (read)** | `sieve_status` `sieve_list_scripts` `sieve_get_script` `sieve_check_script` `list_local_rules` |
+| **Filter rules** *(write)* | `sieve_put_script` `sieve_activate_script` `sieve_delete_script` `add_local_rule` `remove_local_rule` |
 | **Opt-in** | `get_verification_code` (needs `settings.verification.enabled = true`) |
 
 **Prompts:** `triage_inbox` `summarize_thread` `compose_reply`
@@ -213,7 +215,7 @@ If your client or model struggles with a long tool list, send fewer tools with
 
 | `toolset` | Tools (normal / read-only) | What's in it |
 |---|---|---|
-| `"full"` (default) | 51 / 26 | Everything above |
+| `"full"` (default) | 61 / 31 | Everything above, including filter rules |
 | `"core"` | 24 / 10 | Minimal, plus `get_emails`, `get_email_status`, mark, move, delete, `bulk_action`, labels, drafts, `forward_email`, `download_attachment`, `export_email` |
 | `"minimal"` | 8 / 6 | `list_accounts` `list_mailboxes` `list_emails` `search_emails` `get_email` `get_thread` `send_email` `reply_email` |
 
@@ -339,6 +341,36 @@ As a client config:
 The container cannot reach your OS keychain, so use a password in the config
 file or the environment variables above. For HTTP mode, see
 [docker-compose.yml](docker-compose.yml).
+
+### Filter rules
+
+Two kinds, so every provider gets rules:
+
+- **Server rules (Sieve).** Saved on your mail server, so they run even when
+  your computer is off. Needs a provider with ManageSieve: self-hosted Dovecot
+  or Cyrus, Mailbox.org, Migadu, Purelymail, IONOS and others. Gmail, Outlook,
+  iCloud, Yahoo, Fastmail and Proton do not offer it. `sieve_status` tells you.
+- **Local rules.** Work with every provider, but only run while IMAP Wizard is
+  running with the watcher on. Stored in `local-rules.json` in the data folder.
+
+Safety:
+
+- `sieve_put_script` shows a preview and a diff first; it saves only with
+  `apply: true`. Replacing or deleting a script saves a backup first, and the
+  active script cannot be deleted.
+- **Forwarding is off unless you allow it.** A rule may forward or redirect
+  only to addresses or domains you list yourself in `config.toml`. No tool can
+  change that list, and no tool argument can get around it. Other ways of
+  sending mail out (`notify`, `report`, `pipe`, `execute`) are blocked the same
+  way.
+
+```toml
+[sieve]
+allowed_redirects = ["me@work.example", "example.org"]   # you edit this, never the AI
+
+[accounts.sieve]        # optional; defaults to the IMAP host, port 4190, STARTTLS
+enabled = true
+```
 
 ### Local body cache (opt-in)
 
@@ -541,7 +573,7 @@ request bodies. See the [CHANGELOG](CHANGELOG.md).
 pnpm install
 pnpm check             # Biome lint and format
 pnpm typecheck
-pnpm test              # unit tests (1008 across 92 files)
+pnpm test              # unit tests (1205 across 102 files)
 pnpm test:integration  # against a throwaway GreenMail server (needs Docker)
 pnpm smoke             # every tool against a real configured account
 ```
