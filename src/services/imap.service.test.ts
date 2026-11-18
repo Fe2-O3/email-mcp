@@ -644,6 +644,45 @@ describe('ImapService', () => {
       await expect(service.deleteMailbox('test', 'a')).rejects.toThrow(/cannot delete/);
     });
 
+    describe('protected mailboxes', () => {
+      const listing = [
+        { path: 'INBOX', delimiter: '/', flags: new Set<string>() },
+        { path: 'Sent Items', delimiter: '/', specialUse: '\\Sent', flags: new Set<string>() },
+        { path: 'Old', delimiter: '/', specialUse: '\\Trash', flags: new Set<string>() },
+        { path: 'Projects/Archive', delimiter: '/', flags: new Set<string>() },
+        { path: 'Receipts', delimiter: '/', flags: new Set<string>() },
+      ];
+
+      beforeEach(() => {
+        client.list = vi.fn().mockResolvedValue(listing);
+      });
+
+      it.each(['INBOX', 'inbox', 'Sent Items', 'Old', 'Drafts', 'Spam', '[Gmail]/Trash'])(
+        'refuses to delete or rename %s',
+        async (name) => {
+          await expect(service.deleteMailbox('test', name)).rejects.toThrow(/cannot be deleted/);
+          await expect(service.renameMailbox('test', name, 'Other')).rejects.toThrow(
+            /cannot be renamed/,
+          );
+          expect(client.mailboxDelete).not.toHaveBeenCalled();
+          expect(client.mailboxRename).not.toHaveBeenCalled();
+        },
+      );
+
+      it('names the special-use role in the message', async () => {
+        await expect(service.deleteMailbox('test', 'Old')).rejects.toThrow(
+          /special-use folder \(\\Trash\)/,
+        );
+      });
+
+      it('still deletes and renames ordinary folders, including a nested one named Archive', async () => {
+        await service.deleteMailbox('test', 'Receipts');
+        await service.renameMailbox('test', 'Projects/Archive', 'Projects/Done');
+        expect(client.mailboxDelete).toHaveBeenCalledWith('Receipts');
+        expect(client.mailboxRename).toHaveBeenCalledWith('Projects/Archive', 'Projects/Done');
+      });
+    });
+
     it('leaves an error that carries no server response untouched', async () => {
       client.mailboxCreate = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
 

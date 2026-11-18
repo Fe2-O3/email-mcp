@@ -28,6 +28,8 @@ The adapted files are:
   src/safety/local-paths.ts                  protected local write locations (idea
                                              and rules; code is rewritten)
   src/safety/local-paths.test.ts             tests for the above
+  src/services/protected-mailboxes.ts        folders delete/rename refuse (plus a
+                                             common-name fallback added here)
   src/tools/toolsets.ts                      toolset grouping idea (tool lists
                                              and filter are original)
   src/tools/export.tool.ts                   export_email tool (idea and shape;

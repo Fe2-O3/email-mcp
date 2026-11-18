@@ -38,6 +38,7 @@ import type { ReconnectEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
 import type { LabelStrategy } from './label-strategy.js';
 import { detectLabelStrategy } from './label-strategy.js';
+import assertMailboxRemovable from './protected-mailboxes.js';
 
 /**
  * IMAP APPEND requires CRLF line endings (RFC 3501 §4.3). MailComposer emits
@@ -1799,6 +1800,7 @@ export default class ImapService {
 
   async renameMailbox(accountName: string, folderPath: string, newPath: string): Promise<void> {
     const client = await this.connections.getImapClient(accountName);
+    await assertMailboxRemovable(client, folderPath, 'rename');
     await imapCommand(`Renaming mailbox "${folderPath}" to "${newPath}"`, () =>
       client.mailboxRename(folderPath, newPath),
     );
@@ -1806,6 +1808,7 @@ export default class ImapService {
 
   async deleteMailbox(accountName: string, folderPath: string): Promise<void> {
     const client = await this.connections.getImapClient(accountName);
+    await assertMailboxRemovable(client, folderPath, 'delete');
     await imapCommand(`Deleting mailbox "${folderPath}"`, () => client.mailboxDelete(folderPath));
   }
 
