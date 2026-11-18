@@ -2234,9 +2234,9 @@
               "type": "string"
             },
             "status": {
-              "default": "pending",
-              "description": "Filter by status (default: pending)",
-              "enum": ["pending", "sent", "failed", "all"],
+              "default": "active",
+              "description": "Filter by status (default: active = pending, sending, failed and unknown)",
+              "enum": ["active", "pending", "sent", "failed", "unknown", "all"],
               "type": "string"
             }
           },

@@ -470,8 +470,17 @@ export interface ScheduledEmail {
   sendAt: string;
   createdAt: string;
   sendingAt?: string;
-  status: 'pending' | 'sending' | 'sent' | 'failed';
+  /**
+   * `unknown` means the send may or may not have gone out (a crash or a lost
+   * reply). It is never retried: the owner checks Sent, then cancels the job.
+   */
+  status: 'pending' | 'sending' | 'sent' | 'failed' | 'unknown';
+  /** Refusals by the mail server so far (not counted: no connection, rate limit). */
   attempts: number;
+  /** Not before this time, after a temporary problem such as no connection. */
+  retryAfter?: string;
+  /** Temporary problems in a row, used to back off. */
+  retries?: number;
   lastError?: string;
   draftMessageId?: string;
   draftMailbox?: string;

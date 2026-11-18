@@ -88,13 +88,14 @@ export default function registerSchedulerTools(
     'list_scheduled',
     {
       title: 'List scheduled',
-      description: 'List scheduled emails. Shows pending, sent, or all scheduled emails.',
+      description:
+        'List scheduled emails. By default shows everything that still needs attention: pending, sending, failed, and unknown (the result of the send is not known: check the Sent folder first, then cancel it).',
       inputSchema: z.object({
         account: z.string().optional().describe('Filter by account name (all accounts if omitted)'),
         status: z
-          .enum(['pending', 'sent', 'failed', 'all'])
-          .default('pending')
-          .describe('Filter by status (default: pending)'),
+          .enum(['active', 'pending', 'sent', 'failed', 'unknown', 'all'])
+          .default('active')
+          .describe('Filter by status (default: active = pending, sending, failed and unknown)'),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -114,6 +115,9 @@ export default function registerSchedulerTools(
         attempts: e.attempts,
         overdue: e.status === 'pending' && new Date(e.sendAt).getTime() < Date.now(),
         last_error: e.lastError,
+        ...(e.status === 'unknown'
+          ? { note: 'Unknown result: it may have been sent. Check Sent first. Not retried.' }
+          : {}),
       }));
 
       return {
@@ -136,7 +140,7 @@ export default function registerSchedulerTools(
     {
       title: 'Cancel scheduled',
       description:
-        'Cancel a scheduled email. Removes it from the queue and deletes the associated draft.',
+        'Cancel a scheduled email (also clears a failed or unknown one). Removes it from the queue and deletes the associated draft. A job that is being sent right now cannot be cancelled.',
       inputSchema: z.object({
         schedule_id: z.string().uuid().describe('Schedule ID to cancel'),
       }),

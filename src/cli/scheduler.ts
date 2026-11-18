@@ -17,6 +17,7 @@ import { xdg } from '../config/xdg.js';
 import ConnectionManager from '../connections/manager.js';
 import RateLimiter from '../safety/rate-limiter.js';
 import ImapService from '../services/imap.service.js';
+import OAuthService from '../services/oauth.service.js';
 import SchedulerService from '../services/scheduler.service.js';
 import SmtpService from '../services/smtp.service.js';
 
@@ -42,11 +43,11 @@ function getExecutablePath(): string {
 
 async function createSchedulerService(): Promise<SchedulerService> {
   const config = await loadConfig();
-  const connections = new ConnectionManager(config.accounts);
+  const connections = new ConnectionManager(config.accounts, new OAuthService());
   const rateLimiter = new RateLimiter(config.settings.rateLimit);
   const imapService = new ImapService(connections);
   const smtpService = new SmtpService(connections, rateLimiter, imapService);
-  return new SchedulerService(smtpService, imapService);
+  return new SchedulerService(smtpService, imapService, config.settings.readOnly);
 }
 
 // ---------------------------------------------------------------------------
@@ -57,14 +58,30 @@ async function runCheck(): Promise<void> {
   const scheduler = await createSchedulerService();
   const result = await scheduler.checkAndSend();
 
+  if (result.skipped) {
+    console.log(`⏸️  ${result.skipped}`);
+    return;
+  }
   if (result.sent > 0) {
     console.log(`✅ Sent ${result.sent} scheduled email(s)`);
   }
+  if (result.unknown > 0) {
+    console.log(`❓ Unknown result: ${result.unknown}. Check the Sent folder first; not retried.`);
+  }
+  if (result.deferred > 0) {
+    console.log(`⏳ Waiting to retry: ${result.deferred}`);
+  }
   if (result.failed > 0) {
     console.log(`❌ Failed: ${result.failed}`);
-    for (const err of result.errors) console.log(`   ${err}`); // eslint-disable-line no-restricted-syntax
   }
-  if (result.sent === 0 && result.failed === 0) {
+  for (const err of result.errors) console.log(`   ${err}`); // eslint-disable-line no-restricted-syntax
+  if (
+    result.sent === 0 &&
+    result.failed === 0 &&
+    result.unknown === 0 &&
+    result.deferred === 0 &&
+    result.errors.length === 0
+  ) {
     console.log('No overdue scheduled emails.');
   }
 }
@@ -81,6 +98,7 @@ async function runList(): Promise<void> {
   const pending = emails.filter((e) => e.status === 'pending');
   const sent = emails.filter((e) => e.status === 'sent');
   const failed = emails.filter((e) => e.status === 'failed');
+  const unknown = emails.filter((e) => e.status === 'unknown');
 
   if (pending.length > 0) {
     console.log(`\n📬 Pending (${pending.length}):`);
@@ -97,6 +115,15 @@ async function runList(): Promise<void> {
     sent.forEach((e) => {
       console.log(
         `  ${e.id.slice(0, 8)} | ${e.account} → ${e.to.join(', ')} | "${e.subject}" | sent ${e.sentAt}`,
+      );
+    });
+  }
+
+  if (unknown.length > 0) {
+    console.log(`\n❓ Unknown result, check Sent first (${unknown.length}):`);
+    unknown.forEach((e) => {
+      console.log(
+        `  ${e.id.slice(0, 8)} | ${e.account} → ${e.to.join(', ')} | "${e.subject}" | ${e.lastError}`,
       );
     });
   }

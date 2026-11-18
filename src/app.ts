@@ -73,7 +73,7 @@ export async function buildServices(): Promise<AppServices> {
   const calendarService = new CalendarService();
   const localCalendarService = new LocalCalendarService();
   const remindersService = new RemindersService();
-  const schedulerService = new SchedulerService(smtpService, imapService);
+  const schedulerService = new SchedulerService(smtpService, imapService, config.settings.readOnly);
   const watcherService = new WatcherService(config.settings.watcher, config.accounts, oauthService);
   const hooksService = new HooksService(config.settings.hooks, imapService);
   // Local rules run inside the hooks pipeline, so only the process holding the
@@ -264,24 +264,52 @@ export function startBackgroundServices(
           : 'IMAP Wizard background services started; another process runs the watcher and hooks',
       );
 
-      // Check for overdue scheduled emails on startup.
-      try {
-        const result = await schedulerService.checkAndSend();
-        if (result.sent > 0) {
-          await mcpLog('info', 'scheduler', `Sent ${result.sent} overdue email(s) on startup`);
+      // Check for overdue scheduled emails on startup, then every 60 seconds.
+      // A failed job or a broken state folder is logged, never swallowed.
+      let tickFailing = false;
+      const schedulerTick = async (startup: boolean): Promise<void> => {
+        try {
+          const result = await schedulerService.checkAndSend();
+          tickFailing = false;
+          if (result.sent > 0) {
+            await mcpLog(
+              'info',
+              'scheduler',
+              `Sent ${result.sent} scheduled email(s)${startup ? ' on startup' : ''}`,
+            );
+          }
+          if (result.unknown > 0) {
+            await mcpLog(
+              'warning',
+              'scheduler',
+              `${result.unknown} scheduled email(s) have an unknown result: check the Sent folder, then cancel them with cancel_scheduled`,
+            );
+          }
+          if (result.failed > 0) {
+            await mcpLog(
+              'warning',
+              'scheduler',
+              `${result.failed} scheduled email(s) failed for good: ${result.errors.join('; ')}`,
+            );
+          }
+        } catch (err) {
+          // Log once per streak, not every minute.
+          if (!tickFailing) {
+            tickFailing = true;
+            await mcpLog(
+              'warning',
+              'scheduler',
+              `The scheduled-email check failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
         }
-      } catch {
-        // Non-fatal: a scheduler check failure shouldn't prevent startup.
-      }
+      };
+      await schedulerTick(true);
 
       // Periodic scheduler check every 60 seconds.
       if (stopped) return;
-      schedulerInterval = setInterval(async () => {
-        try {
-          await schedulerService.checkAndSend();
-        } catch {
-          // Silent — don't spam logs.
-        }
+      schedulerInterval = setInterval(() => {
+        void schedulerTick(false);
       }, 60_000);
 
       // Reconcile the local mirror: once at startup, then on an interval.
