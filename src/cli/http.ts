@@ -122,6 +122,76 @@ function tokenMatches(header: string | undefined, token: string): boolean {
   return timingSafeEqual(provided, expected);
 }
 
+/**
+ * Read a whole request body, refusing more than the cap. Returns the bytes, or
+ * undefined after answering 413 and dropping the connection.
+ */
+async function readBody(req: IncomingMessage, res: ServerResponse): Promise<Buffer | undefined> {
+  const chunks: Buffer[] = [];
+  let received = 0;
+  try {
+    for await (const chunk of req) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+      received += buf.length;
+      if (received > MAX_REQUEST_BODY_BYTES) {
+        if (!res.headersSent) {
+          res.writeHead(413, { 'content-type': 'application/json', connection: 'close' });
+          // Drop the connection once the answer is flushed, so the client can
+          // read the 413 before the rest of its body is cut off.
+          res.end(JSON.stringify({ error: 'payload_too_large' }), () => req.destroy());
+        } else {
+          req.destroy();
+        }
+        return undefined;
+      }
+      chunks.push(buf);
+    }
+  } catch {
+    // The client went away mid-body: nothing to answer.
+    return undefined;
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Serve one MCP request with its own server and transport. A stateless
+ * transport refuses a second request, and its table of in-flight request ids
+ * must never be shared between callers, so nothing but the services is reused.
+ */
+async function handleMcpRequest(
+  services: Awaited<ReturnType<typeof buildServices>>,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let parsed: unknown;
+  if (req.method === 'POST') {
+    const body = await readBody(req, res);
+    if (body === undefined) return;
+    try {
+      parsed = JSON.parse(body.toString('utf-8'));
+    } catch {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32700, message: 'Parse error: Invalid JSON' },
+          id: null,
+        }),
+      );
+      return;
+    }
+  }
+
+  const server = buildServer(services);
+  const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  res.on('close', () => {
+    void transport.close().catch(() => undefined);
+    void server.close().catch(() => undefined);
+  });
+  await server.connect(transport);
+  await transport.handleRequest(req, res, parsed);
+}
+
 export default async function runHttp(argv: string[]): Promise<void> {
   const opts = parseOptions(argv);
 
@@ -166,13 +236,12 @@ export default async function runHttp(argv: string[]): Promise<void> {
   }
 
   const services = await buildServices();
-  const server = buildServer(services);
 
-  // Stateless Streamable HTTP (no session IDs) — matches the 2026-07-28 model.
-  const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  await server.connect(transport);
-
-  const background = startBackgroundServices(services, server.server);
+  // Stateless Streamable HTTP (no session IDs): every request gets its own
+  // thin server and transport (see handleMcpRequest), and the services behind
+  // them stay shared. There is no persistent connection to push notifications
+  // to, so the background services get none.
+  const background = startBackgroundServices(services, null);
 
   // DNS-rebinding protection. Default to loopback names plus the bind host; a
   // reverse-proxy deployment sets EMAIL_MCP_HTTP_ALLOWED_HOSTS to its public
@@ -218,36 +287,16 @@ export default async function runHttp(argv: string[]): Promise<void> {
         return;
       }
 
-      // Refuse oversized bodies before the transport reads a byte. The
-      // transport buffers request bodies without its own cap, so this is the
-      // only bound on what one connection can make the process hold.
-      // Chunked requests have no content-length, so also count as we stream.
-      let received = 0;
-      const onData = (chunk: Buffer): void => {
-        received += chunk.length;
-        if (received > MAX_REQUEST_BODY_BYTES) {
-          if (!res.headersSent) {
-            res.writeHead(413, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ error: 'payload_too_large' }));
-          }
-          req.destroy();
-        }
-      };
-      req.on('data', onData);
-
+      // Refuse oversized bodies before anything is read. Chunked requests have
+      // no content-length, so the body reader below also counts as it streams.
       const contentLength = Number(req.headers['content-length'] ?? 0);
       if (contentLength > MAX_REQUEST_BODY_BYTES) {
-        req.off('data', onData);
         res.writeHead(413, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'payload_too_large' }));
         return;
       }
 
-      try {
-        await transport.handleRequest(req, res);
-      } finally {
-        req.off('data', onData);
-      }
+      await handleMcpRequest(services, req, res);
     })().catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[imap-wizard] http request error: ${message}\n`);
@@ -258,21 +307,37 @@ export default async function runHttp(argv: string[]): Promise<void> {
     });
   });
 
+  let shuttingDown = false;
   const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Same safety valve as stdio: if teardown hangs, leave anyway.
+    const forceExit = setTimeout(() => {
+      process.stderr.write('[imap-wizard] http shutdown timed out, forcing exit\n');
+      // eslint-disable-next-line n/no-process-exit
+      process.exit(1);
+    }, 5000);
+    forceExit.unref();
+    let code = 0;
     try {
-      await background.stop();
-      await new Promise<void>((resolve) => {
+      const closed = new Promise<void>((resolve) => {
         httpServer.close(() => resolve());
       });
+      // Idle keep-alive connections would otherwise hold close() open.
+      httpServer.closeIdleConnections();
+      await background.stop();
+      await closed;
       await services.connections.closeAll();
-      await server.close();
     } catch (err) {
       // A signal handler may not discard its promise: an escaped rejection
       // here would kill the process mid-shutdown instead of finishing it.
+      code = 1;
       process.stderr.write(
         `[imap-wizard] http shutdown error: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
+    // eslint-disable-next-line n/no-process-exit
+    process.exit(code);
   };
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
