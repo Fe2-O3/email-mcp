@@ -13,7 +13,7 @@ import nodemailer from 'nodemailer';
 import { mcpLog } from '../logging.js';
 
 import eventBus from '../services/event-bus.js';
-import type OAuthService from '../services/oauth.service.js';
+import OAuthService from '../services/oauth.service.js';
 import type { AccountConfig } from '../types/index.js';
 import { createImapClient, imapClientOptions } from '../utils/imap-client.js';
 import { redactedError, registerKnownSecrets, sentCredentials } from './credential-redaction.js';
@@ -70,6 +70,9 @@ export default class ConnectionManager implements IConnectionManager {
   private imapClientCreatedAt = new Map<string, number>();
 
   private smtpTransports = new Map<string, Transporter>();
+
+  /** The OAuth2 access token each pooled SMTP transport logs in with. */
+  private smtpTokens = new Map<string, string>();
 
   private accounts = new Map<string, AccountConfig>();
 
@@ -249,7 +252,11 @@ export default class ConnectionManager implements IConnectionManager {
 
     const verify = options?.verify ?? false;
     const existing = this.smtpTransports.get(accountName);
-    if (existing) {
+    if (existing && this.smtpTokenStale(accountName)) {
+      // Built with an OAuth2 token that is expiring or was replaced: the next
+      // login on a fresh pooled socket would send it and be refused.
+      this.invalidateSmtpTransport(accountName);
+    } else if (existing) {
       if (!verify) {
         return existing;
       }
@@ -294,6 +301,7 @@ export default class ConnectionManager implements IConnectionManager {
         `Connected to ${account.smtp.host}:${account.smtp.port} for "${accountName}"`,
       );
       this.smtpTransports.set(accountName, transport);
+      if ('accessToken' in auth) this.smtpTokens.set(accountName, auth.accessToken);
       return transport;
     })();
 
@@ -314,11 +322,20 @@ export default class ConnectionManager implements IConnectionManager {
     const existing = this.smtpTransports.get(accountName);
     if (!existing) return;
     this.smtpTransports.delete(accountName);
+    this.smtpTokens.delete(accountName);
     try {
       existing.close();
     } catch {
       /* ignore */
     }
+  }
+
+  /** Whether the pooled transport's OAuth2 token is near expiry or no longer the current one. */
+  private smtpTokenStale(accountName: string): boolean {
+    const oauth2 = this.accounts.get(accountName)?.oauth2;
+    const token = this.smtpTokens.get(accountName);
+    if (!oauth2 || token === undefined || !this.oauthService) return false;
+    return OAuthService.isTokenExpired(oauth2) || oauth2.accessToken !== token;
   }
 
   async verifySmtpTransport(accountName: string): Promise<void> {
@@ -458,6 +475,7 @@ export default class ConnectionManager implements IConnectionManager {
     Array.from(this.smtpTransports.entries()).forEach(([name, transport]) => {
       transport.close();
       this.smtpTransports.delete(name);
+      this.smtpTokens.delete(name);
     });
 
     await Promise.allSettled(closeOps);

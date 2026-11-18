@@ -5,7 +5,7 @@
  * Uses native fetch (Node 22+) — no external HTTP dependencies.
  */
 
-import { redactSentCredentials } from '../connections/credential-redaction.js';
+import { redactSentCredentials, registerKnownSecret } from '../connections/credential-redaction.js';
 import type { OAuth2Config } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -38,25 +38,50 @@ const PROVIDER_ENDPOINTS: Record<string, ProviderEndpoints> = {
 /** 5-minute safety buffer before token expiry */
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
+/** What a token without a usable `expires_in` is assumed to last (RFC 6749 leaves it optional). */
+const DEFAULT_EXPIRES_IN_S = 3600;
+
+/** A provider that has not answered by now is not going to; callers are waiting on it. */
+export const TOKEN_REQUEST_TIMEOUT_MS = 30_000;
+
 export default class OAuthService {
+  /**
+   * One refresh in flight per account. The IMAP pool, the watcher, SMTP and Sieve all ask for a
+   * token, and after expiry they ask at once; a provider that rotates refresh tokens would
+   * invalidate the token the other requests sent.
+   */
+  private refreshing = new WeakMap<OAuth2Config, Promise<string>>();
+
   /**
    * Get a valid access token, refreshing if expired.
    */
-  // eslint-disable-next-line class-methods-use-this
   async getAccessToken(oauth2: OAuth2Config): Promise<string> {
     if (!OAuthService.isTokenExpired(oauth2) && oauth2.accessToken) {
       return oauth2.accessToken;
     }
 
-    const result = await OAuthService.refreshAccessToken(oauth2);
+    const pending = this.refreshing.get(oauth2);
+    if (pending) return pending;
 
-    // Cache on the config object (in-memory only)
-    Object.assign(oauth2, {
-      accessToken: result.accessToken,
-      tokenExpiry: Date.now() + result.expiresIn * 1000,
-    });
-
-    return result.accessToken;
+    const refresh = (async () => {
+      const result = await OAuthService.refreshAccessToken(oauth2);
+      // Error text from the servers these go to is scrubbed with every known secret.
+      registerKnownSecret(result.accessToken);
+      if (result.refreshToken) registerKnownSecret(result.refreshToken);
+      // Cache on the config object (in-memory only)
+      Object.assign(oauth2, {
+        accessToken: result.accessToken,
+        tokenExpiry: Date.now() + result.expiresIn * 1000,
+        ...(result.refreshToken ? { refreshToken: result.refreshToken } : {}),
+      });
+      return result.accessToken;
+    })();
+    this.refreshing.set(oauth2, refresh);
+    try {
+      return await refresh;
+    } finally {
+      this.refreshing.delete(oauth2);
+    }
   }
 
   /**
@@ -72,7 +97,7 @@ export default class OAuthService {
    */
   static async refreshAccessToken(
     oauth2: OAuth2Config,
-  ): Promise<{ accessToken: string; expiresIn: number }> {
+  ): Promise<{ accessToken: string; expiresIn: number; refreshToken?: string }> {
     const endpoints = OAuthService.getProviderEndpoints(oauth2);
 
     const body = new URLSearchParams({
@@ -86,6 +111,7 @@ export default class OAuthService {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -98,14 +124,29 @@ export default class OAuthService {
       throw new Error(`OAuth2 token refresh failed (${response.status}): ${safe}`);
     }
 
-    const data = (await response.json()) as {
-      access_token: string;
-      expires_in: number;
-    };
+    const data = (await response.json()) as Record<string, unknown> | null;
+    return OAuthService.readTokenAnswer(data, 'refresh');
+  }
 
+  /**
+   * The parts of a token endpoint answer this app uses, checked. An answer without an access token
+   * is refused: kept, it would make every login fail with nothing useful in the error.
+   */
+  private static readTokenAnswer(
+    data: Record<string, unknown> | null,
+    what: 'refresh' | 'code exchange',
+  ): { accessToken: string; expiresIn: number; refreshToken?: string } {
+    const accessToken = data?.access_token;
+    if (typeof accessToken !== 'string' || accessToken.length === 0) {
+      throw new Error(`OAuth2 token ${what} failed: the provider's answer has no access token`);
+    }
+    const expiresIn = Number(data?.expires_in);
+    const refreshToken = data?.refresh_token;
     return {
-      accessToken: data.access_token,
-      expiresIn: data.expires_in,
+      accessToken,
+      expiresIn: Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : DEFAULT_EXPIRES_IN_S,
+      refreshToken:
+        typeof refreshToken === 'string' && refreshToken.length > 0 ? refreshToken : undefined,
     };
   }
 
@@ -169,6 +210,7 @@ export default class OAuthService {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -177,16 +219,8 @@ export default class OAuthService {
       throw new Error(`OAuth2 code exchange failed (${response.status}): ${safe}`);
     }
 
-    const data = (await response.json()) as {
-      access_token: string;
-      refresh_token: string;
-      expires_in: number;
-    };
-
-    return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresIn: data.expires_in,
-    };
+    const data = (await response.json()) as Record<string, unknown> | null;
+    const answer = OAuthService.readTokenAnswer(data, 'code exchange');
+    return { ...answer, refreshToken: answer.refreshToken ?? '' };
   }
 }

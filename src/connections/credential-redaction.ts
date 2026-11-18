@@ -264,8 +264,27 @@ export function registerKnownSecrets(account: AccountConfig): void {
   });
 }
 
+/** Refreshed OAuth2 tokens kept for redaction; old ones still show up in late error text. */
+const MAX_ISSUED_TOKENS = 64;
+const issuedTokens = new Set<string>();
+
+/**
+ * Remembers one secret issued after start-up, such as a refreshed OAuth2 access token or a rotated
+ * refresh token, so server text is scrubbed of it too. The newest {@link MAX_ISSUED_TOKENS} are
+ * kept, so a server running for months does not grow this without bound.
+ */
+export function registerKnownSecret(secret: string): void {
+  if (secret.length < SECRET_SHAPE_MIN_CHARS || knownSecrets.has(secret)) return;
+  issuedTokens.delete(secret);
+  issuedTokens.add(secret);
+  if (issuedTokens.size > MAX_ISSUED_TOKENS) {
+    const oldest = issuedTokens.values().next().value;
+    if (oldest !== undefined) issuedTokens.delete(oldest);
+  }
+}
+
 /** Cuts every remembered secret (and the forms it takes on the wire) out of server-supplied text. */
 export function redactKnownSecrets(text: string): string {
-  if (knownSecrets.size === 0) return text;
-  return redactSentCredentials(text, { user: '', secrets: [...knownSecrets] });
+  if (knownSecrets.size === 0 && issuedTokens.size === 0) return text;
+  return redactSentCredentials(text, { user: '', secrets: [...knownSecrets, ...issuedTokens] });
 }
