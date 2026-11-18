@@ -153,6 +153,14 @@ CREATE TABLE IF NOT EXISTS message_body (
 
 CREATE INDEX IF NOT EXISTS idx_message_body_lru ON message_body (accessed_at);
 
+-- Which server and login each account name pointed at when its mail was
+-- mirrored. A name that now points elsewhere has its rows dropped, since the
+-- new server can reuse the same UIDVALIDITY and UIDs for different mail.
+CREATE TABLE IF NOT EXISTS account_identity (
+  account     TEXT PRIMARY KEY,
+  fingerprint TEXT NOT NULL
+);
+
 -- A message leaving the mirror (expunge, retention prune, epoch reset) takes
 -- its body with it.
 CREATE TRIGGER IF NOT EXISTS message_body_gc AFTER DELETE ON message BEGIN

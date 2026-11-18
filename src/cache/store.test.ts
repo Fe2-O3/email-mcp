@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import CacheStore from './store.js';
+import CacheStore, { forgetCachedAccount } from './store.js';
 
 function makeMessage(overrides: Record<string, unknown> = {}) {
   return {
@@ -454,7 +454,8 @@ describe('schema migration', () => {
     expect(inspect(file, 'PRAGMA user_version')).toEqual([{ user_version: 2 }]);
   });
 
-  it('rebuilds, dropping message_body too, when the file is from a newer build', () => {
+  // An older build that wiped a newer build's tables made the two fight over the file.
+  it('leaves a file from a newer build untouched and refuses to open it', () => {
     const file = path.join(dir, 'cache.db');
     const first = new CacheStore(file);
     first.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
@@ -463,10 +464,24 @@ describe('schema migration', () => {
     db.exec('PRAGMA user_version = 99');
     db.close();
 
+    expect(() => new CacheStore(file)).toThrow(/newer version of IMAP Wizard/);
+    expect(inspect(file, 'PRAGMA user_version')).toEqual([{ user_version: 99 }]);
+    expect(inspect(file, 'SELECT uid FROM message_body')).toEqual([{ uid: 1 }]);
+  });
+
+  // A broken file used to keep the mirror off on every start, forever.
+  it('sets a file that is not a database aside and starts a fresh one', () => {
+    const file = path.join(dir, 'cache.db');
+    fs.writeFileSync(file, 'x'.repeat(4096));
+
     const store = new CacheStore(file);
-    expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+    store.putBodyBundle('work', 'INBOX', 1, '100', bundle(), 1);
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeDefined();
     store.close();
-    expect(inspect(file, 'PRAGMA user_version')).toEqual([{ user_version: 2 }]);
+
+    const aside = fs.readdirSync(dir).filter((name) => name.startsWith('cache.db.corrupt-'));
+    expect(aside).toHaveLength(1);
+    expect(fs.readFileSync(path.join(dir, aside[0]), 'utf8')).toBe('x'.repeat(4096));
   });
 
   it('rebuilds instead of failing when a migration step throws', () => {
@@ -515,5 +530,105 @@ describe('schema migration', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe('CacheStore account identity', () => {
+  let store: CacheStore;
+
+  function seed(): void {
+    store.putMessages([
+      {
+        account: 'work',
+        mailbox: 'INBOX',
+        uid: 1,
+        uidValidity: '100',
+        envelope: {},
+        flags: [],
+        internalDate: 1,
+        hasAttachments: false,
+      },
+    ]);
+    store.putBodyBundle(
+      'work',
+      'INBOX',
+      1,
+      '100',
+      { envelope: {}, bodyStructure: {}, headersRaw: 'h' },
+      1,
+    );
+  }
+
+  beforeEach(() => {
+    store = new CacheStore(':memory:');
+  });
+
+  afterEach(() => {
+    store.close();
+  });
+
+  it('keeps the mirror while the account still points at the same server and login', () => {
+    expect(store.bindAccountIdentity('work', 'server-a')).toBe(false);
+    seed();
+    expect(store.bindAccountIdentity('work', 'server-a')).toBe(false);
+    expect(store.countMessages('work', 'INBOX')).toBe(1);
+  });
+
+  // Same name, same UIDVALIDITY and UID on a new server: the old body would be served.
+  it('drops the mirror of an account name that now points at another server or login', () => {
+    store.bindAccountIdentity('work', 'server-a');
+    seed();
+
+    expect(store.bindAccountIdentity('work', 'server-b')).toBe(true);
+    expect(store.countMessages('work', 'INBOX')).toBe(0);
+    expect(store.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+    expect(store.bindAccountIdentity('work', 'server-b')).toBe(false);
+  });
+
+  it('forgets the identity when an account is cleared', () => {
+    store.bindAccountIdentity('work', 'server-a');
+    store.clear('work');
+    expect(store.bindAccountIdentity('work', 'server-b')).toBe(false);
+  });
+});
+
+describe('forgetCachedAccount', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'imap-wizard-forget-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("drops a deleted account's mail and keeps the others'", () => {
+    const file = path.join(dir, 'cache.db');
+    const store = new CacheStore(file);
+    for (const account of ['work', 'home']) {
+      store.putBodyBundle(
+        account,
+        'INBOX',
+        1,
+        '100',
+        { envelope: {}, bodyStructure: {}, headersRaw: 'h' },
+        1,
+      );
+    }
+    store.close();
+
+    expect(forgetCachedAccount(file, 'work')).toBe(true);
+
+    const after = new CacheStore(file);
+    expect(after.getBody('work', 'INBOX', 1, '100')).toBeUndefined();
+    expect(after.getBody('home', 'INBOX', 1, '100')).toBeDefined();
+    after.close();
+  });
+
+  it('does not create a cache file that is not there', () => {
+    const file = path.join(dir, 'cache.db');
+    expect(forgetCachedAccount(file, 'work')).toBe(false);
+    expect(fs.existsSync(file)).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import CacheStore from './cache/store.js';
 import SyncEngine from './cache/sync-engine.js';
 import { loadConfig, readAllowedRedirects } from './config/loader.js';
 import { CACHE_DB } from './config/xdg.js';
+import accountFingerprint from './connections/account-identity.js';
 import ConnectionManager from './connections/manager.js';
 import { mcpLog } from './logging.js';
 import registerAllPrompts from './prompts/register.js';
@@ -116,7 +117,23 @@ export async function buildServices(): Promise<AppServices> {
         bodyCache ? { cache: bodyCache, bodyMessages, bodyMaxMb } : undefined,
       );
       if (bodyCache) imapService.attachBodyCache(bodyCache, { offlineReads });
+      // An account name now pointing at another server or login keeps none of
+      // the old server's mail: its UIDs could match different messages there.
+      for (const account of config.accounts) {
+        if (cacheStore.bindAccountIdentity(account.name, accountFingerprint(account))) {
+          await mcpLog(
+            'info',
+            'cache',
+            `Cleared the local mirror of "${account.name}": its server or login changed`,
+          );
+        }
+      }
     } catch (err) {
+      try {
+        cacheStore?.close();
+      } catch {
+        // Closing is tidy-up only.
+      }
       cacheStore = undefined;
       syncEngine = undefined;
       await mcpLog(

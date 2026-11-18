@@ -219,8 +219,36 @@ function toFtsQuery(query: string): string {
 // Store
 // ---------------------------------------------------------------------------
 
+/** SQLite result codes for a file that is not, or no longer, a readable database. */
+const SQLITE_CORRUPT = 11;
+const SQLITE_NOTADB = 26;
+
 export default class CacheStore {
-  private db: DatabaseSync;
+  private db!: DatabaseSync;
+
+  /** Opens the file and applies the schema; a failure closes it again. */
+  private openDb(dbPath: string): void {
+    // `timeout` sets busy_timeout, so concurrent readers wait rather than
+    // failing immediately with SQLITE_BUSY.
+    this.db = new DatabaseSync(dbPath, { timeout: 5000 });
+    try {
+      // WAL lets readers proceed during a write — important because sync runs in
+      // the background while tool calls read. NORMAL trades an fsync per commit
+      // for a small crash window, which is the right call for regenerable data.
+      this.db.exec('PRAGMA journal_mode = WAL');
+      this.db.exec('PRAGMA synchronous = NORMAL');
+      this.db.exec('PRAGMA foreign_keys = ON');
+      this.migrate();
+    } catch (err) {
+      this.db.close();
+      throw err;
+    }
+  }
+
+  private static isNotADatabase(err: unknown): boolean {
+    const { errcode } = (err ?? {}) as { errcode?: unknown };
+    return errcode === SQLITE_NOTADB || errcode === SQLITE_CORRUPT;
+  }
 
   /**
    * @param dbPath filesystem path, or ':memory:' for tests.
@@ -242,18 +270,17 @@ export default class CacheStore {
       fs.closeSync(fs.openSync(dbPath, 'a', 0o600));
     }
 
-    // `timeout` sets busy_timeout, so concurrent readers wait rather than
-    // failing immediately with SQLITE_BUSY.
-    this.db = new DatabaseSync(dbPath, { timeout: 5000 });
-
-    // WAL lets readers proceed during a write — important because sync runs in
-    // the background while tool calls read. NORMAL trades an fsync per commit
-    // for a small crash window, which is the right call for regenerable data.
-    this.db.exec('PRAGMA journal_mode = WAL');
-    this.db.exec('PRAGMA synchronous = NORMAL');
-    this.db.exec('PRAGMA foreign_keys = ON');
-
-    this.migrate();
+    try {
+      this.openDb(dbPath);
+    } catch (err) {
+      if (dbPath === ':memory:' || !CacheStore.isNotADatabase(err)) throw err;
+      // The mirror is regenerable: keep the broken file for a look, start a fresh one.
+      const aside = `${dbPath}.corrupt-${Date.now()}`;
+      fs.renameSync(dbPath, aside);
+      for (const side of [`${dbPath}-wal`, `${dbPath}-shm`]) fs.rmSync(side, { force: true });
+      fs.closeSync(fs.openSync(dbPath, 'a', 0o600));
+      this.openDb(dbPath);
+    }
 
     if (dbPath !== ':memory:') {
       for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
@@ -267,9 +294,11 @@ export default class CacheStore {
   }
 
   /**
-   * Apply the schema, rebuilding from scratch if the file was written by a
-   * newer build. The mirror is regenerable, so discarding it is always safe
-   * and is preferable to failing at startup.
+   * Apply the schema. A file written by a newer build is left alone and this
+   * process runs without the mirror: rebuilding it would wipe the tables of a
+   * newer version running beside this one, which would then rebuild them on
+   * its next open, and the two would take turns. A failed upgrade step
+   * rebuilds, since the mirror is regenerable.
    */
   private migrate(): void {
     const { user_version: version } = this.db.prepare('PRAGMA user_version').get() as {
@@ -277,8 +306,9 @@ export default class CacheStore {
     };
 
     if (version > SCHEMA_VERSION) {
-      this.rebuild();
-      return;
+      throw new Error(
+        `the cache was written by a newer version of IMAP Wizard (schema ${version}, this one reads ${SCHEMA_VERSION}). The local mirror stays off in this process; update it, or close the newer one and delete the cache file.`,
+      );
     }
 
     // Creates anything missing, including tables added since the file was
@@ -311,6 +341,7 @@ export default class CacheStore {
     this.db.exec('DROP TABLE IF EXISTS message_body');
     this.db.exec('DROP TABLE IF EXISTS message');
     this.db.exec('DROP TABLE IF EXISTS mailbox_state');
+    this.db.exec('DROP TABLE IF EXISTS account_identity');
     this.db.exec(SCHEMA_SQL);
     this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
@@ -925,12 +956,39 @@ export default class CacheStore {
         this.db.prepare('DELETE FROM message WHERE account = ?').run(account);
         this.db.prepare('DELETE FROM message_body WHERE account = ?').run(account);
         this.db.prepare('DELETE FROM mailbox_state WHERE account = ?').run(account);
+        this.db.prepare('DELETE FROM account_identity WHERE account = ?').run(account);
       } else {
         this.db.exec('DELETE FROM message');
         this.db.exec('DELETE FROM message_body');
         this.db.exec('DELETE FROM mailbox_state');
+        this.db.exec('DELETE FROM account_identity');
       }
     });
+  }
+
+  /**
+   * Record which server and login an account name points at, and drop its
+   * mirrored mail when that changed: the new server can reuse the same
+   * UIDVALIDITY and UIDs for different messages. A name seen for the first
+   * time is recorded as it is.
+   *
+   * @returns true when rows were dropped.
+   */
+  bindAccountIdentity(account: string, fingerprint: string): boolean {
+    const row = this.queryOne<{ fingerprint: string }>(
+      'SELECT fingerprint FROM account_identity WHERE account = ?',
+      account,
+    );
+    if (row?.fingerprint === fingerprint) return false;
+    const changed = row !== undefined;
+    if (changed) this.clear(account);
+    this.db
+      .prepare(`
+        INSERT INTO account_identity (account, fingerprint) VALUES (?, ?)
+        ON CONFLICT (account) DO UPDATE SET fingerprint = excluded.fingerprint
+      `)
+      .run(account, fingerprint);
+    return changed;
   }
 
   /** On-disk size in bytes, for `cache status`. */
@@ -940,5 +998,26 @@ export default class CacheStore {
         'SELECT page_count * page_size AS size FROM pragma_page_count(), pragma_page_size()',
       )?.size ?? 0
     );
+  }
+}
+
+/**
+ * Drop one account's mirrored mail from the cache file, for `account delete`.
+ * A missing or unusable cache is left alone: there is nothing to forget, and a
+ * cache problem must not fail the delete. Opening never creates the file.
+ *
+ * @returns true when the file was opened and cleared.
+ */
+export function forgetCachedAccount(dbPath: string, account: string): boolean {
+  if (!fs.existsSync(dbPath)) return false;
+  let store: CacheStore | undefined;
+  try {
+    store = new CacheStore(dbPath);
+    store.clear(account);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    store?.close();
   }
 }

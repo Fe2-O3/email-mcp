@@ -21,6 +21,7 @@ import {
   text,
 } from '@clack/prompts';
 
+import { forgetCachedAccount } from '../cache/store.js';
 import {
   appendAccountToConfig,
   CONFIG_FILE,
@@ -30,6 +31,7 @@ import {
 } from '../config/loader.js';
 import type { RawAccountConfig, RawAppConfig } from '../config/schema.js';
 import { AccountConfigSchema, AppConfigFileSchema } from '../config/schema.js';
+import { CACHE_DB } from '../config/xdg.js';
 import ConnectionManager from '../connections/manager.js';
 import {
   isKeychainSentinel,
@@ -983,6 +985,11 @@ async function deleteAccount(nameArg?: string): Promise<void> {
 
   AppConfigFileSchema.parse(updatedConfig);
   await saveConfig(updatedConfig);
+  // Its mirrored mail would otherwise stay on disk, and would be served again
+  // to a new account given the same name.
+  if (forgetCachedAccount(CACHE_DB, target.name)) {
+    log.info(`Removed the cached mail of "${target.name}".`);
+  }
   log.success(`Account "${target.name}" deleted. Config saved to ${CONFIG_FILE}`);
   outro('Done!');
 }
