@@ -62,7 +62,7 @@ export default function registerAllTools(
   // Read tools — always registered
   registerAccountsTools(server, connections);
   registerMailboxesTools(server, imapService);
-  registerEmailsTools(server, imapService);
+  registerEmailsTools(server, imapService, readOnly);
   registerAttachmentTools(server, imapService);
   registerExportTools(server, imapService);
   registerContactsTools(server, imapService);

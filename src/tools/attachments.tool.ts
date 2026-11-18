@@ -35,7 +35,13 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
               'When provided, returns path + size + sha256 instead of base64 content.',
           ),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false },
+      // Writes a local file when savePath is set, never mail. Still registered in read_only mode.
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ account, id, mailbox, filename, savePath }) => {
       try {

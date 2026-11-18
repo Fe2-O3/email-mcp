@@ -104,7 +104,11 @@ function formatEmailStatus(email: Pick<Email, 'seen' | 'flagged' | 'answered' | 
 
 // ---------------------------------------------------------------------------
 
-export default function registerEmailsTools(server: McpServer, imapService: ImapService): void {
+export default function registerEmailsTools(
+  server: McpServer,
+  imapService: ImapService,
+  readOnly = false,
+): void {
   // ---------------------------------------------------------------------------
   // list_emails
   // ---------------------------------------------------------------------------
@@ -249,7 +253,9 @@ export default function registerEmailsTools(server: McpServer, imapService: Imap
             'Explicitly mark the email as read after fetching (default: false — reading is non-destructive by default)',
           ),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false },
+      // markRead=true sets \Seen, so on a writable server this is not a pure read.
+      // read_only refuses markRead, and the hint says read-only there.
+      annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: true },
     },
     async ({ account, emailId, mailbox, format, maxLength, markRead }) => {
       try {
