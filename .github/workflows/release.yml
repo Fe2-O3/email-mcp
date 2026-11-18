@@ -1,0 +1,163 @@
+name: release
+
+# Runs when a version tag (v1.2.3) is pushed, e.g. by `cog bump`.
+# npm and the MCP Registry both accept this workflow's GitHub OIDC identity,
+# so no tokens or passkeys are needed. One-time setup on npmjs.com:
+# package `imap-wizard` > Settings > Trusted Publisher > GitHub Actions,
+# repository Fe2-O3/imap-wizard, workflow `release.yml`.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.3.3)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  verify:
+    name: verify tag and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Tag matches package.json and server.json
+        run: |
+          v="${TAG#v}"
+          test "$(jq -r .version package.json)" = "$v"
+          test "$(jq -r .version server.json)" = "$v"
+          test "$(jq -r '.packages[0].version' server.json)" = "$v"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+
+  npm:
+    name: publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Publish (skipped if this version is already on npm)
+        run: |
+          v="${TAG#v}"
+          if npm view "imap-wizard@$v" version >/dev/null 2>&1; then
+            echo "imap-wizard@$v is already published"
+          else
+            npm publish --provenance --access public
+          fi
+
+  registry:
+    name: publish to MCP Registry
+    needs: npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # registry login via GitHub OIDC
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+      - name: Wait for npm to serve the new version
+        run: |
+          v="${TAG#v}"
+          for _ in $(seq 1 30); do
+            npm view "imap-wizard@$v" version >/dev/null 2>&1 && exit 0
+            sleep 10
+          done
+          echo "imap-wizard@$v never appeared on npm" >&2
+          exit 1
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.9/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+      - run: ./mcp-publisher validate
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish
+
+  docker:
+    name: publish Docker image
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/fe2-o3/imap-wizard:${{ env.TAG }}
+            ghcr.io/fe2-o3/imap-wizard:latest
+          labels: |
+            org.opencontainers.image.version=${{ env.TAG }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+  github-release:
+    name: GitHub release
+    needs: [npm, registry, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+      - name: Notes from CHANGELOG
+        run: |
+          v="${TAG#v}"
+          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+          { echo; echo "Install: \`npx -y imap-wizard\`, or \`docker pull ghcr.io/fe2-o3/imap-wizard:$TAG\`"; } >> notes.md
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file notes.md --latest
+          fi
