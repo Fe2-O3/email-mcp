@@ -77,7 +77,7 @@ describe('saved attachments stay inside the destination directory', () => {
     it(`contains a hostile filename: ${name}`, async () => {
       const service = buildService(name);
 
-      const saved = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
+      const { saved } = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
       expect(saved).toHaveLength(1);
 
       const resolvedFile = path.resolve(saved[0].localPath);
@@ -88,7 +88,7 @@ describe('saved attachments stay inside the destination directory', () => {
 
   it('keeps a normal filename usable', async () => {
     const service = buildService('invoice.pdf');
-    const saved = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
+    const { saved } = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
 
     expect(saved[0].filename).toBe('invoice.pdf');
     expect(path.resolve(saved[0].localPath)).toBe(path.resolve(destDir, 'invoice.pdf'));

@@ -13,6 +13,7 @@ import type { Server } from '@modelcontextprotocol/server';
 import { mcpLog } from '../logging.js';
 import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type { EmailMeta, HookRule, HooksConfig } from '../types/index.js';
+import attachmentFolderName from '../utils/attachment-folder.js';
 import { matchesPattern } from '../utils/glob-match.js';
 import type { NewEmailEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
@@ -627,7 +628,7 @@ export default class HooksService {
       // Attachments are saved only once the user has accepted the dialog (or
       // at once when the operator turned the dialog off), never before.
       const buildNotes = (
-        saved: Awaited<ReturnType<typeof this.imapService.saveEmailAttachments>>,
+        saved: Awaited<ReturnType<typeof this.imapService.saveEmailAttachments>>['saved'],
       ) =>
         buildCalendarNotes({
           emailFrom: full.from.name
@@ -664,14 +665,21 @@ export default class HooksService {
             if (full.attachments.length === 0) return {};
             const destDir = path.join(
               CALENDAR_ATTACHMENTS_DIR,
-              `${email.account}-${email.meta.id}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
+              attachmentFolderName(email.account, email.mailbox, email.meta.id),
             );
-            const saved = await this.imapService.saveEmailAttachments(
+            const { saved, failed } = await this.imapService.saveEmailAttachments(
               email.account,
               email.meta.id,
               email.mailbox,
               destDir,
             );
+            if (failed.length > 0) {
+              await mcpLog(
+                'warning',
+                'hooks',
+                `Calendar: ${failed.length} attachment(s) of email ${email.meta.id} were not saved: ${failed.map((f) => `${f.filename} (${f.error})`).join('; ')}`,
+              );
+            }
             return { notes: buildNotes(saved), savedAttachments: saved };
           },
           dialIn: conference?.dialIn,

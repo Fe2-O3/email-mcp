@@ -22,6 +22,7 @@ import type CalendarService from '../services/calendar.service.js';
 import type ImapService from '../services/imap.service.js';
 import type LocalCalendarService from '../services/local-calendar.service.js';
 import type RemindersService from '../services/reminders.service.js';
+import attachmentFolderName from '../utils/attachment-folder.js';
 import { buildCalendarNotes } from '../utils/calendar-notes.js';
 import { extractConferenceDetails } from '../utils/conference-details.js';
 import { extractMeetingUrl } from '../utils/meeting-url.js';
@@ -214,6 +215,7 @@ export default function registerCalendarTools(
           mimeType: string;
           size: number;
         }[] = [];
+        let notSaved: { filename: string; error: string }[] = [];
         const willSave = saveAttachments && email.attachments.length > 0;
 
         // 5. Build rich notes (again with the saved files once they exist)
@@ -266,14 +268,16 @@ export default function registerCalendarTools(
               if (!willSave) return {};
               const destDir = join(
                 CALENDAR_ATTACHMENTS_DIR,
-                `${account}-${emailId}`.replace(/[^a-zA-Z0-9-_]/g, '_'),
+                attachmentFolderName(account, mailbox, emailId),
               );
-              savedAttachments = await imapService.saveEmailAttachments(
+              const outcome = await imapService.saveEmailAttachments(
                 account,
                 emailId,
                 mailbox,
                 destDir,
               );
+              savedAttachments = outcome.saved;
+              notSaved = outcome.failed;
               return { notes: buildNotes(savedAttachments), savedAttachments };
             },
             dialIn: conference?.dialIn,
@@ -307,6 +311,7 @@ export default function registerCalendarTools(
             dialIn: conference?.dialIn,
             meetingId: conference?.meetingId,
             attachmentsSaved: savedAttachments.length,
+            attachmentsNotSaved: notSaved,
             attachments: savedAttachments.map((a) => ({
               filename: a.filename,
               size: a.size,

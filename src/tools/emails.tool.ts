@@ -9,7 +9,7 @@ import type ImapService from '../services/imap.service.js';
 import type { Email, EmailMeta } from '../types/index.js';
 import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
-import offlineNotice from '../utils/offline-notice.js';
+import offlineNotice, { incompleteBodyNotice } from '../utils/offline-notice.js';
 import toEmailDetail from './email-detail.js';
 import {
   emailBatchOutputSchema,
@@ -277,7 +277,9 @@ export default function registerEmailsTools(
         }
         const email = await imapService.getEmail(account, emailId, mailbox);
 
-        const notice = offlineNotice(email);
+        const notice = [offlineNotice(email), incompleteBodyNotice(email)]
+          .filter(Boolean)
+          .join('\n');
         const parts: string[] = [
           `📧 ${email.subject}`,
           `Status: ${formatEmailStatus(email)}`,
@@ -422,6 +424,7 @@ export default function registerEmailsTools(
           results.push(
             [
               offlineNotice(email) ?? '',
+              incompleteBodyNotice(email) ?? '',
               delimitUntrusted(
                 [
                   `━━━ [${emailId}] ${email.subject}`,

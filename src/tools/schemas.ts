@@ -140,6 +140,8 @@ export const emailDetailSchema = z.object({
   attachments: z.array(attachmentMetaSchema),
   /** Omitted for older messages when get_thread is asked for newestFirst. */
   body: z.string().optional(),
+  /** True when a body part could not be downloaded: the body may be missing or cut short. */
+  bodyIncomplete: z.boolean().optional(),
   /** Present only when served from the local cache because the server was unreachable. */
   offline: z.object({ cachedAt: z.string() }).optional(),
 });

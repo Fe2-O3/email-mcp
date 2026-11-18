@@ -26,6 +26,7 @@ export default function toEmailDetail(email: Email, id: string, body?: string) {
       size: a.size,
     })),
     ...(body === undefined ? {} : { body }),
+    ...(email.bodyIncomplete ? { bodyIncomplete: true } : {}),
     ...(email.offline ? { offline: email.offline } : {}),
   };
 }

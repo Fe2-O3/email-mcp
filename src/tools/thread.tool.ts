@@ -12,6 +12,7 @@ import { delimitUntrusted, UNTRUSTED_STRUCTURED } from '../safety/untrusted-cont
 import type ImapService from '../services/imap.service.js';
 import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
+import { incompleteBodyNotice } from '../utils/offline-notice.js';
 import toEmailDetail from './email-detail.js';
 import { threadOutputSchema } from './schemas.js';
 
@@ -167,6 +168,8 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
             details.push(toEmailDetail(email, email.id, body));
           }
 
+          const incomplete = incompleteBodyNotice(email);
+          if (incomplete) parts.push(incomplete);
           parts.push(delimitUntrusted(messageLines.join('\n')));
           parts.push('');
         });

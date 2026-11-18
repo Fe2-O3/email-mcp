@@ -297,7 +297,7 @@ describe('file modes', () => {
     };
     const service = new ImapService({ getImapClient: async () => client } as never);
     const dest = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'att-modes-')), 'fresh');
-    const saved = await service.saveEmailAttachments('test', '9', 'INBOX', dest);
+    const { saved } = await service.saveEmailAttachments('test', '9', 'INBOX', dest);
     expect(saved).toHaveLength(1);
     expect(await mode(dest)).toBe(0o700);
     expect(await mode(saved[0]?.localPath ?? '')).toBe(0o600);

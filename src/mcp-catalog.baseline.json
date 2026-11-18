@@ -713,6 +713,12 @@
               "description": "Mailbox containing the email",
               "type": "string"
             },
+            "occurrence": {
+              "description": "Which attachment, counting from 1, when several share this filename (get_email lists them in order)",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
             "savePath": {
               "description": "Absolute path to save the file to (e.g. ~/Downloads/report.pdf). Parent directories are created automatically. When provided, returns path + size + sha256 instead of base64 content.",
               "type": "string"
@@ -991,6 +997,9 @@
             },
             "body": {
               "type": "string"
+            },
+            "bodyIncomplete": {
+              "type": "boolean"
             },
             "bulk": {
               "additionalProperties": false,
@@ -1337,6 +1346,9 @@
                   "body": {
                     "type": "string"
                   },
+                  "bodyIncomplete": {
+                    "type": "boolean"
+                  },
                   "bulk": {
                     "additionalProperties": false,
                     "properties": {
@@ -1587,6 +1599,9 @@
                   },
                   "body": {
                     "type": "string"
+                  },
+                  "bodyIncomplete": {
+                    "type": "boolean"
                   },
                   "bulk": {
                     "additionalProperties": false,
@@ -3472,6 +3487,12 @@
               "description": "Mailbox containing the email",
               "type": "string"
             },
+            "occurrence": {
+              "description": "Which attachment, counting from 1, when several share this filename (get_email lists them in order)",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
             "savePath": {
               "description": "Absolute path to save the file to (e.g. ~/Downloads/report.pdf). Parent directories are created automatically. When provided, returns path + size + sha256 instead of base64 content.",
               "type": "string"
@@ -3655,6 +3676,9 @@
             },
             "body": {
               "type": "string"
+            },
+            "bodyIncomplete": {
+              "type": "boolean"
             },
             "bulk": {
               "additionalProperties": false,
@@ -4001,6 +4025,9 @@
                   "body": {
                     "type": "string"
                   },
+                  "bodyIncomplete": {
+                    "type": "boolean"
+                  },
                   "bulk": {
                     "additionalProperties": false,
                     "properties": {
@@ -4251,6 +4278,9 @@
                   },
                   "body": {
                     "type": "string"
+                  },
+                  "bodyIncomplete": {
+                    "type": "boolean"
                   },
                   "bulk": {
                     "additionalProperties": false,
@@ -5591,6 +5621,12 @@
               "description": "Mailbox containing the email",
               "type": "string"
             },
+            "occurrence": {
+              "description": "Which attachment, counting from 1, when several share this filename (get_email lists them in order)",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
             "savePath": {
               "description": "Absolute path to save the file to (e.g. ~/Downloads/report.pdf). Parent directories are created automatically. When provided, returns path + size + sha256 instead of base64 content.",
               "type": "string"
@@ -5795,6 +5831,9 @@
             },
             "body": {
               "type": "string"
+            },
+            "bodyIncomplete": {
+              "type": "boolean"
             },
             "bulk": {
               "additionalProperties": false,
@@ -6091,6 +6130,9 @@
                   "body": {
                     "type": "string"
                   },
+                  "bodyIncomplete": {
+                    "type": "boolean"
+                  },
                   "bulk": {
                     "additionalProperties": false,
                     "properties": {
@@ -6333,6 +6375,9 @@
                   },
                   "body": {
                     "type": "string"
+                  },
+                  "bodyIncomplete": {
+                    "type": "boolean"
                   },
                   "bulk": {
                     "additionalProperties": false,
@@ -7795,6 +7840,9 @@
             "body": {
               "type": "string"
             },
+            "bodyIncomplete": {
+              "type": "boolean"
+            },
             "bulk": {
               "additionalProperties": false,
               "properties": {
@@ -8011,6 +8059,9 @@
                   },
                   "body": {
                     "type": "string"
+                  },
+                  "bodyIncomplete": {
+                    "type": "boolean"
                   },
                   "bulk": {
                     "additionalProperties": false,

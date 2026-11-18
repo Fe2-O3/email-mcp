@@ -273,6 +273,8 @@ export interface Email extends EmailMeta {
   references?: string[];
   attachments: AttachmentMeta[];
   headers: Record<string, string>;
+  /** True when a body part could not be downloaded, so bodyText / bodyHtml may be missing. */
+  bodyIncomplete?: boolean;
   /** Set only when served from the local cache because the server was unreachable. */
   offline?: { cachedAt: string };
 }

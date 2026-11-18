@@ -42,6 +42,7 @@ import {
 import { BULK_HEADER_FIELDS, classifyBulk, parseHeaderBlock } from '../utils/bulk-headers.js';
 import { imapCommand, isConnectivityError } from '../utils/imap-error.js';
 import { sanitizeInline } from '../utils/sanitize-text.js';
+import { refusedFileName, safeFileName } from '../utils/save-file.js';
 import { assertUid, assertUidPresent, parseUid, presentUids } from '../utils/uid.js';
 import type { ReconnectEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
@@ -83,15 +84,8 @@ function parseAddresses(addrs: { name?: string; address?: string }[] | undefined
 }
 
 function hasAttachments(bodyStructure: unknown): boolean {
-  if (!bodyStructure || typeof bodyStructure !== 'object') return false;
-  const bs = bodyStructure as Record<string, unknown>;
-  if (bs.disposition === 'attachment') return true;
-  if (Array.isArray(bs.childNodes)) {
-    return bs.childNodes.some((child: unknown) => hasAttachments(child));
-  }
-  return false;
+  return attachmentParts(bodyStructure).length > 0;
 }
-
 /**
  * Calendar parts are surfaced through the calendar tools, not as attachments.
  *
@@ -105,96 +99,100 @@ function isCalendarPart(mimeType: string, filename: string): boolean {
   return media === 'text/calendar' || filename.toLowerCase().endsWith('.ics');
 }
 
-function extractAttachments(bodyStructure: unknown): AttachmentMeta[] {
-  const attachments: AttachmentMeta[] = [];
-  if (!bodyStructure || typeof bodyStructure !== 'object') return attachments;
-
-  const bs = bodyStructure as Record<string, unknown>;
-  if (bs.disposition === 'attachment') {
-    const params = (bs.dispositionParameters ?? bs.parameters ?? {}) as Record<string, string>;
-    attachments.push({
-      filename: params.filename ?? params.name ?? 'unnamed',
-      // `bs.type` is already a complete Content-Type; there is no subtype
-      // field to append.
-      mimeType: typeof bs.type === 'string' ? bs.type.toLowerCase() : 'application/octet-stream',
-      size: (bs.size as number) ?? 0,
-    });
-  }
-
-  if (Array.isArray(bs.childNodes)) {
-    (bs.childNodes as unknown[]).forEach((child) => {
-      attachments.push(...extractAttachments(child));
-    });
-  }
-
-  return attachments;
-}
-
-/** Find the MIME part number for an attachment by filename. */
-function findMimePartByFilename(
-  bodyStructure: unknown,
-  targetFilename: string,
-  partPath = '',
-): string | undefined {
-  if (!bodyStructure || typeof bodyStructure !== 'object') return undefined;
-
-  const bs = bodyStructure as Record<string, unknown>;
-  const currentPart = bs.part as string | undefined;
-  const effectivePath = currentPart ?? partPath;
-
-  if (bs.disposition === 'attachment') {
-    const params = (bs.dispositionParameters ?? bs.parameters ?? {}) as Record<string, string>;
-    const filename = params.filename ?? params.name ?? 'unnamed';
-    if (filename === targetFilename) return effectivePath;
-  }
-
-  if (Array.isArray(bs.childNodes)) {
-    // eslint-disable-next-line no-plusplus
-    for (let i = 0; i < bs.childNodes.length; i++) {
-      const childPart = effectivePath ? `${effectivePath}.${i + 1}` : String(i + 1);
-      const found = findMimePartByFilename(bs.childNodes[i], targetFilename, childPart);
-      if (found) return found;
-    }
-  }
-
-  return undefined;
-}
-
 interface AttachmentPart {
   filename: string;
   mimeType: string;
   size: number;
-  partPath?: string;
+  /** IMAP part number, e.g. "2" or "1.2". A single-part message is part "1". */
+  partPath: string;
 }
 
-/** Collect every attachment part together with its MIME part path, in one walk. */
-function extractAttachmentParts(bodyStructure: unknown, partPath = ''): AttachmentPart[] {
-  const parts: AttachmentPart[] = [];
-  if (!bodyStructure || typeof bodyStructure !== 'object') return parts;
+type StructureNode = Record<string, unknown>;
 
-  const bs = bodyStructure as Record<string, unknown>;
-  const currentPart = bs.part as string | undefined;
-  const effectivePath = currentPart ?? partPath;
+/** The file name a part carries: Content-Disposition `filename`, else the Content-Type `name`. */
+function partFilename(node: StructureNode): string | undefined {
+  const disposition = (node.dispositionParameters ?? {}) as Record<string, string>;
+  const parameters = (node.parameters ?? {}) as Record<string, string>;
+  const name = disposition.filename ?? parameters.filename ?? disposition.name ?? parameters.name;
+  return typeof name === 'string' && name !== '' ? name : undefined;
+}
 
-  if (bs.disposition === 'attachment') {
-    const params = (bs.dispositionParameters ?? bs.parameters ?? {}) as Record<string, string>;
-    parts.push({
-      filename: params.filename ?? params.name ?? 'unnamed',
-      mimeType: typeof bs.type === 'string' ? bs.type.toLowerCase() : 'application/octet-stream',
-      size: (bs.size as number) ?? 0,
-      partPath: effectivePath,
+/** Every node of a body structure with its IMAP part number, in document order. */
+function structureNodes(
+  bodyStructure: unknown,
+  partPath = '',
+): { node: StructureNode; path: string }[] {
+  if (!bodyStructure || typeof bodyStructure !== 'object') return [];
+  const node = bodyStructure as StructureNode;
+  const path = (node.part as string | undefined) ?? partPath;
+  const found = [{ node, path }];
+  if (Array.isArray(node.childNodes)) {
+    node.childNodes.forEach((child, i) => {
+      found.push(...structureNodes(child, path ? `${path}.${i + 1}` : String(i + 1)));
     });
   }
+  return found;
+}
 
-  if (Array.isArray(bs.childNodes)) {
-    // eslint-disable-next-line no-plusplus
-    for (let i = 0; i < bs.childNodes.length; i++) {
-      const childPart = effectivePath ? `${effectivePath}.${i + 1}` : String(i + 1);
-      parts.push(...extractAttachmentParts(bs.childNodes[i], childPart));
-    }
-  }
+const isMultipartNode = (node: StructureNode): boolean =>
+  typeof node.type === 'string' && node.type.toLowerCase().startsWith('multipart/');
 
-  return parts;
+const isTextNode = (node: StructureNode): boolean =>
+  typeof node.type === 'string' && node.type.toLowerCase().startsWith('text/');
+
+/**
+ * Which parts of a message are attachments. One definition, used everywhere (listing, download,
+ * forward, save, and the choice of the body part), so they cannot disagree:
+ *
+ *   - a part marked Content-Disposition: attachment, or
+ *   - a part that is not multipart and carries a file name, whatever its disposition. That is a
+ *     PDF marked "inline" (Apple Mail) or an old client's part with only a `name`.
+ *
+ * Not attachments: an inline image with a Content-ID (it is part of the message body), a
+ * calendar part that is not marked as an attachment (the calendar tools handle it), and the
+ * message's own text body, even when that part happens to carry a file name.
+ */
+function attachmentParts(bodyStructure: unknown): AttachmentPart[] {
+  const nodes = structureNodes(bodyStructure);
+  const named = (n: StructureNode): boolean => partFilename(n) !== undefined;
+  // With no unnamed text part, the first named one is the body, not an attachment.
+  const hasUnnamedBody = nodes.some(
+    ({ node }) => !isMultipartNode(node) && isTextNode(node) && !named(node),
+  );
+  const bodyNode = hasUnnamedBody
+    ? undefined
+    : nodes.find(
+        ({ node }) =>
+          !isMultipartNode(node) && isTextNode(node) && node.disposition !== 'attachment',
+      )?.node;
+
+  const isAttachment = (node: StructureNode): boolean => {
+    if (node.disposition === 'attachment') return true;
+    if (isMultipartNode(node) || !named(node) || node === bodyNode) return false;
+    const type = typeof node.type === 'string' ? node.type.toLowerCase() : '';
+    if (type.startsWith('image/') && node.disposition === 'inline' && node.id) return false;
+    return !isCalendarPart(type, partFilename(node) ?? '');
+  };
+
+  const single = nodes.length === 1;
+  return nodes
+    .filter(({ node }) => isAttachment(node))
+    .map(({ node, path }) => ({
+      filename: partFilename(node) ?? 'unnamed',
+      // `node.type` is already a complete Content-Type; there is no subtype field to append.
+      mimeType:
+        typeof node.type === 'string' ? node.type.toLowerCase() : 'application/octet-stream',
+      size: (node.size as number) ?? 0,
+      partPath: path || (single ? '1' : ''),
+    }));
+}
+
+function extractAttachments(bodyStructure: unknown): AttachmentMeta[] {
+  return attachmentParts(bodyStructure).map(({ filename, mimeType, size }) => ({
+    filename,
+    mimeType,
+    size,
+  }));
 }
 
 /** What a message's date reads as when its Date header is not a real date. */
@@ -327,7 +325,17 @@ function splitMimeType(type: unknown): { type: string; subtype: string } {
  * `bs.part` when the server supplies one, otherwise from the 1-based child
  * index chain.
  */
-function collectTextParts(bodyStructure: unknown, partPath = ''): TextPart[] {
+function collectTextParts(bodyStructure: unknown): TextPart[] {
+  // A text part that counts as an attachment (named, or marked so) is never body content.
+  const attachments = new Set(attachmentParts(bodyStructure).map((p) => p.partPath));
+  return textPartsIn(bodyStructure, '', attachments);
+}
+
+function textPartsIn(
+  bodyStructure: unknown,
+  partPath: string,
+  attachments: ReadonlySet<string>,
+): TextPart[] {
   if (!bodyStructure || typeof bodyStructure !== 'object') return [];
 
   const bs = bodyStructure as Record<string, unknown>;
@@ -337,20 +345,21 @@ function collectTextParts(bodyStructure: unknown, partPath = ''): TextPart[] {
   if (Array.isArray(bs.childNodes)) {
     bs.childNodes.forEach((child, i) => {
       const childPath = effectivePath ? `${effectivePath}.${i + 1}` : String(i + 1);
-      found.push(...collectTextParts(child, childPath));
+      found.push(...textPartsIn(child, childPath, attachments));
     });
     return found;
   }
 
   // Leaf node. Attachments are never body content, even when text/*.
   const { type, subtype } = splitMimeType(bs.type);
-  if (type === 'text' && bs.disposition !== 'attachment') {
+  // A single-part message has no `part` field at all — the body is
+  // addressable as part "1", which is what the vast majority of real mail
+  // looks like. Without this the caller falls back to raw `source`, which
+  // is still transfer-encoded.
+  const path = effectivePath || '1';
+  if (type === 'text' && bs.disposition !== 'attachment' && !attachments.has(path)) {
     found.push({
-      // A single-part message has no `part` field at all — the body is
-      // addressable as part "1", which is what the vast majority of real mail
-      // looks like. Without this the caller falls back to raw `source`, which
-      // is still transfer-encoded.
-      path: effectivePath || '1',
+      path,
       subtype,
       size: typeof bs.size === 'number' ? bs.size : 0,
     });
@@ -447,8 +456,12 @@ export async function fetchBodyBundle(
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       return Buffer.concat(chunks).toString('utf-8');
-    } catch {
-      // Part may not exist on this server — better an empty body than a throw.
+    } catch (err) {
+      // A dropped connection is not "no body": fail the read (it may be served from the cache)
+      // instead of showing an empty message as if it were complete.
+      if (isConnectivityError(err)) throw err;
+      // A part the server does not have: an empty body beats a throw, and the Email says it
+      // is incomplete (see bodyIncomplete).
       return undefined;
     }
   };
@@ -520,6 +533,7 @@ export function assembleEmail(bundle: BodyBundle, flags: Iterable<string>, uid: 
     replyTo: replyToParsed,
     bodyText: bundle.bodyText,
     bodyHtml: bundle.bodyHtml,
+    ...(bundle.complete ? {} : { bodyIncomplete: true }),
     messageId: (envelope.messageId as string) ?? '',
     inReplyTo: (envelope.inReplyTo as string) ?? undefined,
     references: headers.references?.split(/\s+/).filter(Boolean),
@@ -564,6 +578,18 @@ export interface BodyCachePort {
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
+
+/** What `saveEmailAttachments` did: the files written, and the ones that were not, with why. */
+export interface SaveAttachmentsResult {
+  saved: {
+    filename: string;
+    localPath: string;
+    fileUrl: string;
+    mimeType: string;
+    size: number;
+  }[];
+  failed: { filename: string; error: string }[];
+}
 
 export default class ImapService {
   private labelStrategies = new Map<string, { strategy: LabelStrategy; ts: number }>();
@@ -2453,6 +2479,8 @@ export default class ImapService {
     mailbox: string,
     filename: string,
     maxSizeBytes = 5 * 1024 * 1024,
+    /** Which one, 1-based, when several attachments share the name. */
+    occurrence?: number,
   ): Promise<{
     filename: string;
     mimeType: string;
@@ -2475,15 +2503,30 @@ export default class ImapService {
         throw new Error(`Email ${emailId} not found in ${mailbox}`);
       }
 
-      const attachments = extractAttachments(msg.bodyStructure);
-      const attachment = attachments.find((a) => a.filename === filename);
-      if (!attachment) {
+      const attachments = attachmentParts(msg.bodyStructure);
+      const matches = attachments.filter((a) => a.filename === filename);
+      if (matches.length === 0) {
         const available = attachments
           .map((a) => `${a.filename} (${Math.round(a.size / 1024)}KB)`)
           .join(', ');
         throw new Error(
           `Attachment "${filename}" not found. ` +
             (available ? `Available attachments: ${available}` : 'This email has no attachments.'),
+        );
+      }
+      // Two attachments can share a name. Taking "the first" would hand back the wrong file
+      // without a word, so the caller has to say which one.
+      if (matches.length > 1 && occurrence === undefined) {
+        throw new Error(
+          `${matches.length} attachments are named "${filename}" (sizes: ` +
+            `${matches.map((m) => `${Math.round(m.size / 1024)}KB`).join(', ')}). ` +
+            `Ask again with occurrence set to a number from 1 to ${matches.length}.`,
+        );
+      }
+      const attachment = matches[(occurrence ?? 1) - 1];
+      if (!attachment) {
+        throw new Error(
+          `There is no occurrence ${occurrence} of "${filename}": the email has ${matches.length}.`,
         );
       }
 
@@ -2496,8 +2539,8 @@ export default class ImapService {
         );
       }
 
-      // Find the MIME part number
-      const partNumber = findMimePartByFilename(msg.bodyStructure, filename);
+      // Each attachment is downloaded by its own part number, never by name.
+      const partNumber = attachment.partPath;
       if (!partNumber) {
         throw new Error(`Could not locate MIME part for "${filename}"`);
       }
@@ -2517,6 +2560,13 @@ export default class ImapService {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       const content = Buffer.concat(chunks);
+      // The size above is what the server said; the bytes that arrived are what counts.
+      if (content.length > maxSizeBytes) {
+        throw new Error(
+          `Attachment "${filename}" is ${Math.round(content.length / 1024 / 1024)}MB, which exceeds the ` +
+            `${Math.round(maxSizeBytes / 1024 / 1024)}MB limit.`,
+        );
+      }
 
       return {
         filename: attachment.filename,
@@ -2561,7 +2611,7 @@ export default class ImapService {
         throw new Error(`Email ${emailId} not found in ${mailbox}`);
       }
 
-      const parts = extractAttachmentParts(msg.bodyStructure);
+      const parts = attachmentParts(msg.bodyStructure);
       if (parts.length === 0) return [];
 
       const totalEncodedBytes = parts.reduce((sum, part) => sum + Math.ceil(part.size / 3) * 4, 0);
@@ -2680,9 +2730,14 @@ export default class ImapService {
 
   /**
    * Download and save all non-ICS attachments from an email to a local directory.
-   * Returns metadata including the saved file paths and file:// URLs.
+   * Returns what was saved (paths and file:// URLs) and what was not, with the reason.
+   * One attachment failing does not undo or hide the others.
    *
-   * Attachments larger than maxSizeBytes (default 25 MB) are skipped.
+   * Each attachment is downloaded by its own MIME part number, so two with the same name keep
+   * their own bytes. A file is created with the exclusive flag and the next free name is used
+   * when one is taken (case-insensitively on a Mac disk), so nothing is ever overwritten.
+   * Names that start with a dot, or that run when opened, are refused like savePath does.
+   * Attachments larger than maxSizeBytes (default 25 MB) are skipped and reported.
    */
   async saveEmailAttachments(
     accountName: string,
@@ -2690,161 +2745,134 @@ export default class ImapService {
     mailbox: string,
     destDir: string,
     maxSizeBytes = 25 * 1024 * 1024,
-  ): Promise<
-    {
-      filename: string;
-      localPath: string;
-      fileUrl: string;
-      mimeType: string;
-      size: number;
-    }[]
-  > {
+  ): Promise<SaveAttachmentsResult> {
     const uid = parseUid(emailId);
     const client = await this.connections.getImapClient(accountName);
 
+    const result: SaveAttachmentsResult = { saved: [], failed: [] };
     const lock = await ImapService.lockMailbox(client, mailbox);
-    let attachmentMetas: AttachmentMeta[] = [];
+    let candidates: AttachmentPart[] = [];
     try {
       const msg = await client.fetchOne(
         String(uid),
         { uid: true, bodyStructure: true },
         { uid: true },
       );
-      if (!msg) return [];
-      attachmentMetas = extractAttachments(msg.bodyStructure).filter(
-        (a) => a.size <= maxSizeBytes && !isCalendarPart(a.mimeType, a.filename),
+      if (!msg) return result;
+      // Calendar invitations belong to the calendar tools.
+      const all = attachmentParts(msg.bodyStructure).filter(
+        (a) => !isCalendarPart(a.mimeType, a.filename),
       );
+      candidates = all.filter((a) => a.size <= maxSizeBytes);
+      all
+        .filter((a) => a.size > maxSizeBytes)
+        .forEach((a) => {
+          result.failed.push({
+            filename: a.filename,
+            error: `larger than the ${Math.round(maxSizeBytes / 1024 / 1024)}MB limit, so it was skipped`,
+          });
+        });
     } finally {
       lock.release();
     }
 
-    if (attachmentMetas.length === 0) return [];
+    if (candidates.length === 0) return result;
 
     // destDir comes from this app (the calendar attachments folder), but it is judged like any
     // other write: nothing may land in a protected place or leave the folder through a symlink.
     const guard = { allowRoots: [CALENDAR_ATTACHMENTS_DIR] };
     await assertSafeWritePath(path.join(destDir, 'probe'), guard);
-    const { mkdir, chmod } = await import('node:fs/promises');
+    const { mkdir, chmod, writeFile } = await import('node:fs/promises');
     // Attachments are mail content: owner-only folder and files.
     await mkdir(destDir, { recursive: true, mode: 0o700 });
     await chmod(destDir, 0o700);
+    const resolvedDir = path.resolve(destDir);
 
-    // Use the attachment parts directly, not by filename, to avoid
-    // cross-copying when two attachments share a basename.
-    const attachmentParts = (() => {
-      const parts: Array<{ filename: string; mimeType: string; size: number; partPath: string }> =
-        [];
-      const _walk = (node: unknown, partPath = ''): void => {
-        if (!node || typeof node !== 'object') return;
-        const bs = node as Record<string, unknown>;
-        const cur = (bs.part as string | undefined) ?? partPath;
-        if (bs.disposition === 'attachment') {
-          const params = (bs.dispositionParameters ?? bs.parameters ?? {}) as Record<
-            string,
-            string
-          >;
-          const fn = params.filename ?? params.name ?? 'unnamed';
-          const meta = attachmentMetas.find((m) => m.filename === fn);
-          if (meta)
-            parts.push({ filename: fn, mimeType: meta.mimeType, size: meta.size, partPath: cur });
-        }
-        if (Array.isArray(bs.childNodes)) {
-          (bs.childNodes as unknown[]).forEach((child, i) => {
-            const cp = cur ? `${cur}.${i + 1}` : String(i + 1);
-            _walk(child, cp);
-          });
-        }
-      };
-      // Re-fetch structure to get part paths — reuse the earlier fetch
-      return parts;
-    })();
-
-    // Pair each attachment meta to its part by occurrence order for that filename
-    const occurrenceCursor = new Map<string, number>();
-    const metaToPart = new Map<number, (typeof attachmentParts)[0]>();
-    attachmentMetas.forEach((meta, idx) => {
-      const occ = occurrenceCursor.get(meta.filename) ?? 0;
-      occurrenceCursor.set(meta.filename, occ + 1);
-      const candidates = attachmentParts.filter((p) => p.filename === meta.filename);
-      if (candidates[occ]) metaToPart.set(idx, candidates[occ]);
-    });
-
-    const seenNames = new Map<string, number>();
-    const results = await Promise.allSettled(
-      attachmentMetas.map(async (meta, idx) => {
-        const part = metaToPart.get(idx);
-        const partPath = part?.partPath;
-        let downloaded: { contentBase64: string; size: number };
-        if (partPath) {
-          const client = await this.connections.getImapClient(accountName);
-          const lock = await ImapService.lockMailbox(client, mailbox);
-          try {
-            const dl = await client.download(String(uid), partPath, {
-              uid: true,
-            });
-            if (!dl.content) {
-              throw new Error(`Failed to download mail part "${partPath}"`);
-            }
-            const chunks: Buffer[] = [];
-            for await (const c of dl.content)
-              chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c as never));
-            const buf = Buffer.concat(chunks);
-            downloaded = { contentBase64: buf.toString('base64'), size: buf.length };
-          } finally {
-            lock.release();
-          }
-        } else {
-          downloaded = await this.downloadAttachment(
-            accountName,
-            emailId,
-            mailbox,
-            meta.filename,
-            maxSizeBytes,
-          );
-        }
-        const resolvedDir = path.resolve(destDir);
-        let sanitizedBase =
-          path
-            .basename(meta.filename)
-            .replace(/[/\\?%*:|"<>]/g, '_')
-            .replace(/^\.+$/, '_') || 'unnamed';
-        // Dedup same-basename files: invoice.pdf, invoice-1.pdf, etc.
-        const count = seenNames.get(sanitizedBase) ?? 0;
-        seenNames.set(sanitizedBase, count + 1);
-        if (count > 0) {
-          const ext = path.extname(sanitizedBase);
-          const base = path.basename(sanitizedBase, ext);
-          sanitizedBase = `${base}-${count}${ext}`;
-        }
-        const localPath = path.resolve(resolvedDir, sanitizedBase);
-        if (!localPath.startsWith(resolvedDir + path.sep)) {
-          throw new Error(`Refusing to write outside the destination directory`);
-        }
-        await assertSafeWritePath(localPath, { ...guard, within: destDir });
-        const { writeFile } = await import('node:fs/promises');
-        await writeFile(localPath, Buffer.from(downloaded.contentBase64, 'base64'), {
-          mode: 0o600,
-        });
-        return {
-          filename: meta.filename,
+    // One at a time: the names below are chosen in order, so they never depend on which
+    // download finishes first.
+    for (const part of candidates) {
+      try {
+        const base = safeFileName(part.filename, 'unnamed').replace(/[/\\?%*:|"<>]/g, '_');
+        const refused = refusedFileName(base);
+        if (refused) throw new Error(refused);
+        // eslint-disable-next-line no-await-in-loop
+        const content = await this.downloadPartBytes(accountName, uid, mailbox, part.partPath);
+        // eslint-disable-next-line no-await-in-loop
+        const localPath = await ImapService.writeUnique(
+          resolvedDir,
+          base,
+          content,
+          guard,
+          writeFile,
+        );
+        result.saved.push({
+          filename: part.filename,
           localPath,
           fileUrl: `file://${localPath}`,
-          mimeType: meta.mimeType,
-          size: downloaded.size,
-        };
-      }),
-    );
-
-    type FulfilledValue = (typeof results)[0] extends PromiseFulfilledResult<infer T> ? T : never;
-    const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
-    if (rejected.length > 0) {
-      // Surface failures — caller decides; don't silently drop attachments
-      const msgs = rejected.map((r) => String((r.reason as Error)?.message ?? r.reason)).join('; ');
-      throw new Error(`Failed to save ${rejected.length} attachment(s): ${msgs}`);
+          mimeType: part.mimeType,
+          size: content.length,
+        });
+      } catch (err) {
+        result.failed.push({
+          filename: part.filename,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
-    return results
-      .filter((r) => r.status === 'fulfilled')
-      .map((r) => (r as PromiseFulfilledResult<FulfilledValue>).value);
+    return result;
+  }
+
+  /** One MIME part's decoded bytes. */
+  private async downloadPartBytes(
+    accountName: string,
+    uid: number,
+    mailbox: string,
+    partPath: string,
+  ): Promise<Buffer> {
+    const client = await this.connections.getImapClient(accountName);
+    const lock = await ImapService.lockMailbox(client, mailbox);
+    try {
+      const dl = await client.download(String(uid), partPath, { uid: true });
+      if (!dl?.content) throw new Error(`Failed to download mail part "${partPath}"`);
+      const chunks: Buffer[] = [];
+      // eslint-disable-next-line no-restricted-syntax
+      for await (const c of dl.content) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+      return Buffer.concat(chunks);
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
+   * Writes `content` as `name` in `dir`, or as `name-1`, `name-2` ... when that is taken. The
+   * file is created exclusively, so an existing file (even one that differs only in case on a
+   * case-insensitive disk) is never replaced.
+   */
+  private static async writeUnique(
+    dir: string,
+    name: string,
+    content: Buffer,
+    guard: { allowRoots: string[] },
+    writeFile: typeof import('node:fs/promises').writeFile,
+  ): Promise<string> {
+    const ext = path.extname(name);
+    const stem = path.basename(name, ext);
+    for (let n = 0; n < 1000; n += 1) {
+      const candidate = path.resolve(dir, n === 0 ? name : `${stem}-${n}${ext}`);
+      if (!candidate.startsWith(dir + path.sep)) {
+        throw new Error('Refusing to write outside the destination directory');
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await assertSafeWritePath(candidate, { ...guard, within: dir });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await writeFile(candidate, content, { mode: 0o600, flag: 'wx' });
+        return candidate;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      }
+    }
+    throw new Error(`Could not find a free file name for "${name}"`);
   }
 
   /**

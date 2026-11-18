@@ -11,6 +11,9 @@ import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 import { safeFileName, saveNewFile } from '../utils/save-file.js';
 
+const MAX_INLINE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_SAVED_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
 export default function registerAttachmentTools(server: McpServer, imapService: ImapService): void {
   server.registerTool(
     'download_attachment',
@@ -19,13 +22,22 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
       description:
         'Download an email attachment by filename. First use get_email to see available attachments and their filenames. ' +
         'By default returns base64-encoded content for files up to 5MB. ' +
-        'For larger files, use savePath to write directly to disk (returns path + size + sha256). ' +
+        'For larger files (up to 50MB), use savePath to write directly to disk (returns path + size + sha256). ' +
+        'If two attachments share a name, say which one with occurrence (1 for the first, 2 for the second). ' +
         'Warning: downloading many large attachments without savePath will flood the model context.',
       inputSchema: z.object({
         account: z.string().describe('Account name from list_accounts'),
         id: z.string().describe('Email ID (UID) from list_emails or get_email'),
         mailbox: z.string().default('INBOX').describe('Mailbox containing the email'),
         filename: z.string().describe('Exact attachment filename (from get_email metadata)'),
+        occurrence: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            'Which attachment, counting from 1, when several share this filename (get_email lists them in order)',
+          ),
         savePath: z
           .string()
           .optional()
@@ -43,9 +55,17 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
         openWorldHint: false,
       },
     },
-    async ({ account, id, mailbox, filename, savePath }) => {
+    async ({ account, id, mailbox, filename, occurrence, savePath }) => {
       try {
-        const result = await imapService.downloadAttachment(account, id, mailbox, filename);
+        // The 5MB cap protects the model's context. A file written to disk never enters it.
+        const result = await imapService.downloadAttachment(
+          account,
+          id,
+          mailbox,
+          filename,
+          savePath ? MAX_SAVED_ATTACHMENT_BYTES : MAX_INLINE_ATTACHMENT_BYTES,
+          occurrence,
+        );
 
         // If savePath is provided, write to disk and return metadata only
         if (savePath) {

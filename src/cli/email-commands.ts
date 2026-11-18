@@ -34,9 +34,10 @@ const USAGE: Record<string, string> = {
   read: 'imap-wizard read <id> [--account NAME] [--mailbox INBOX] [--mark-read] [--json]',
   search: 'imap-wizard search <query> [--account NAME] [--mailbox INBOX] [--limit 20] [--json]',
   mailboxes: 'imap-wizard mailboxes [--account NAME] [--json]',
-  flag: 'imap-wizard flag <id> [--off] [--account NAME] [--mailbox INBOX]',
-  delete: 'imap-wizard delete <id> [--yes] [--account NAME] [--mailbox INBOX]',
-  attach: 'imap-wizard attach <id> <filename> [dest-dir] [--account NAME] [--mailbox INBOX]',
+  flag: 'imap-wizard flag <id> [--off] [--account NAME] [--mailbox INBOX] [--occurrence N]',
+  delete: 'imap-wizard delete <id> [--yes] [--account NAME] [--mailbox INBOX] [--occurrence N]',
+  attach:
+    'imap-wizard attach <id> <filename> [dest-dir] [--account NAME] [--mailbox INBOX] [--occurrence N]',
   reply: 'imap-wizard reply <id> --body TEXT [--all] [--html] [--attach FILE]... [--account NAME]',
   send: 'imap-wizard send --to a@b[,c@d] --subject S --body B [--cc ..] [--bcc ..] [--html] [--attach FILE]...',
 };
@@ -311,7 +312,12 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
     case 'attach': {
       const { values, positionals } = parseArgs({
         args: argv,
-        options: { account: { type: 'string' }, mailbox: { type: 'string', default: 'INBOX' } },
+        options: {
+          account: { type: 'string' },
+          mailbox: { type: 'string', default: 'INBOX' },
+          // Which one, from 1, when several attachments share the file name.
+          occurrence: { type: 'string' },
+        },
         allowPositionals: true,
       });
       const [id, filename, destination = '.'] = positionals;
@@ -324,6 +330,9 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
         values.mailbox,
         filename,
         50 * 1024 * 1024,
+        values.occurrence === undefined
+          ? undefined
+          : positiveInteger(values.occurrence, 'occurrence', 1000),
       );
       const base = path.resolve(destination);
       await mkdir(base, { recursive: true });

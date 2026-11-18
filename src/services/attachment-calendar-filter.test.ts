@@ -77,7 +77,7 @@ describe('calendar parts are filtered from attachments by media type, not substr
   for (const c of filtered) {
     it(`filters out ${c.name}`, async () => {
       const service = buildService({ type: c.type, filename: c.filename });
-      const saved = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
+      const { saved } = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
       expect(saved).toHaveLength(0);
     });
   }
@@ -102,7 +102,7 @@ describe('calendar parts are filtered from attachments by media type, not substr
   for (const c of kept) {
     it(`keeps ${c.name}`, async () => {
       const service = buildService({ type: c.type, filename: c.filename });
-      const saved = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
+      const { saved } = await service.saveEmailAttachments('test', '9', 'INBOX', destDir);
       expect(saved).toHaveLength(1);
     });
   }
