@@ -37,6 +37,7 @@ import type {
 } from '../services/event-bus.js';
 import eventBus from '../services/event-bus.js';
 import { BODY_EXTRACTOR_VERSION, fetchBodyBundle } from '../services/imap.service.js';
+import lockMailbox from '../services/mailbox-lock.js';
 import { isConnectivityError } from '../utils/imap-error.js';
 import type BodyCache from './body-cache.js';
 import type CacheStore from './store.js';
@@ -156,6 +157,33 @@ export interface SyncBackfill {
 }
 
 const DEFAULT_BACKFILL_BATCH = 25;
+/**
+ * Messages per fetch on a first sync, and per store write on any sync. Bounds memory to one
+ * chunk of envelopes, and how long a tool call waits for the mailbox lock behind the sync.
+ */
+export const SYNC_CHUNK = 500;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Sorted UIDs as an IMAP UID set: 1,2,3,7 becomes "1:3,7". */
+function toUidSet(uids: readonly number[]): string {
+  const parts: string[] = [];
+  let start = uids[0];
+  let prev = uids[0];
+  for (const uid of uids.slice(1)) {
+    if (uid === prev + 1) {
+      prev = uid;
+      continue;
+    }
+    parts.push(start === prev ? String(start) : `${start}:${prev}`);
+    start = uid;
+    prev = uid;
+  }
+  if (start !== undefined) parts.push(start === prev ? String(start) : `${start}:${prev}`);
+  return parts.join(',');
+}
+
+/** A lock that the sync can hand back between chunks and take again. */
+type HeldLock = { release: () => void };
 const MAX_EVICT_ROUNDS = 10;
 const EVICT_BATCH = 500;
 
@@ -320,36 +348,44 @@ export default class SyncEngine {
       epochReset: false,
     };
 
+    let lock: HeldLock | undefined;
     try {
       const tier = await this.detectTier(account);
-      const client = await this.connections.getImapClient(account);
-      const lock = await client.getMailboxLock(mailbox);
+      let client = await this.connections.getImapClient(account);
+      lock = await lockMailbox(client, mailbox, { background: true });
 
-      let reconciled = false;
-      try {
-        const info = (client as unknown as { mailbox?: MailboxInfo }).mailbox;
-        if (!info?.uidValidity) {
-          throw new Error(`Server did not report UIDVALIDITY for ${mailbox}`);
-        }
+      const info = (client as unknown as { mailbox?: MailboxInfo }).mailbox;
+      if (!info?.uidValidity) {
+        throw new Error(`Server did not report UIDVALIDITY for ${mailbox}`);
+      }
 
-        const uidValidity = info.uidValidity.toString();
-        const previous = this.store.getMailboxState(account, mailbox);
+      const uidValidity = info.uidValidity.toString();
+      // The watermarks this run ends with are the ones read now, at the start: mail that arrives
+      // while later chunks are fetched is above them and is picked up next time.
+      const watermarks = { uidNext: info.uidNext, highestModseq: info.highestModseq };
+      const previous = this.store.getMailboxState(account, mailbox);
 
-        // The epoch check has to come first: on a mismatch every stored UID
-        // now points at a different message, so nothing already cached can be
-        // trusted or reused.
-        if (previous && previous.uidValidity !== uidValidity) {
-          const purged = this.store.resetEpoch(account, mailbox, uidValidity);
-          result.epochReset = true;
-          result.removed += purged;
-          await mcpLog(
-            'info',
-            'cache',
-            `UIDVALIDITY changed for ${account}/${mailbox} (${previous.uidValidity} → ${uidValidity}); purged ${purged} message(s)`,
-          );
-        }
+      // The epoch check has to come first: on a mismatch every stored UID
+      // now points at a different message, so nothing already cached can be
+      // trusted or reused.
+      if (previous && previous.uidValidity !== uidValidity) {
+        const purged = this.store.resetEpoch(account, mailbox, uidValidity);
+        result.epochReset = true;
+        result.removed += purged;
+        await mcpLog(
+          'info',
+          'cache',
+          `UIDVALIDITY changed for ${account}/${mailbox} (${previous.uidValidity} → ${uidValidity}); purged ${purged} message(s)`,
+        );
+      }
 
-        const baseline = result.epochReset ? undefined : previous;
+      const baseline = result.epochReset ? undefined : previous;
+      const incremental =
+        tier === 'condstore' || tier === 'qresync'
+          ? baseline?.highestModseq !== undefined
+          : baseline?.uidNext !== undefined;
+
+      if (incremental) {
         result.stored = await this.fetchChanges(
           client,
           account,
@@ -358,43 +394,102 @@ export default class SyncEngine {
           tier,
           baseline,
         );
-
-        result.removed += await this.reconcileDeletions(
-          client,
-          account,
-          mailbox,
-          uidValidity,
-          info.exists,
-        );
-
-        this.store.putMailboxState({
-          account,
-          mailbox,
-          uidValidity,
-          uidNext: info.uidNext,
-          highestModseq: info.highestModseq?.toString(),
-          syncTier: tier,
-          totalMessages: info.exists,
-          lastSyncedAt: Date.now(),
-        });
-
-        result.pruned = this.enforceRetention(account, mailbox, uidValidity);
-
-        result.ok = true;
-        reconciled = true;
-      } finally {
-        lock.release();
+      } else {
+        // A first sync can cover a whole mailbox. It lists the UIDs, then fetches and stores them a
+        // chunk at a time and hands the lock back between chunks, so a cut-off run keeps what it
+        // stored and a tool call never waits behind the whole mailbox.
+        const uids = await this.listFirstSyncUids(client, account, mailbox, uidValidity, baseline);
+        for (let at = 0; at < uids.length; at += SYNC_CHUNK) {
+          if (at > 0) {
+            lock.release();
+            lock = undefined;
+            if (this.abort.signal.aborted) throw new Error('Sync stopped');
+            client = await this.connections.getImapClient(account);
+            lock = await lockMailbox(client, mailbox, { background: true });
+            const now = (client as unknown as { mailbox?: MailboxInfo | false }).mailbox;
+            if (!now || now.uidValidity?.toString() !== uidValidity) {
+              throw new Error(
+                `UIDVALIDITY of ${mailbox} changed during the sync; it starts over next time`,
+              );
+            }
+          }
+          result.stored += await this.fetchRange(
+            client,
+            account,
+            mailbox,
+            uidValidity,
+            toUidSet(uids.slice(at, at + SYNC_CHUNK)),
+            { uid: true },
+          );
+        }
       }
+
+      // Read after the fetches: the SEARCH below must be compared with the count
+      // the server reports now, not the one from the start of the run.
+      const current = (client as unknown as { mailbox?: MailboxInfo }).mailbox;
+      result.removed += await this.reconcileDeletions(
+        client,
+        account,
+        mailbox,
+        uidValidity,
+        current?.exists,
+      );
+
+      this.store.putMailboxState({
+        account,
+        mailbox,
+        uidValidity,
+        uidNext: watermarks.uidNext,
+        highestModseq: watermarks.highestModseq?.toString(),
+        syncTier: tier,
+        totalMessages: current?.exists,
+        lastSyncedAt: Date.now(),
+      });
+
+      result.pruned = this.enforceRetention(account, mailbox, uidValidity);
+
+      result.ok = true;
+      lock.release();
+      lock = undefined;
 
       // After the lock is released: backfill takes the lock once per message,
       // so a long backfill never holds the connection against a tool call.
-      if (reconciled) await this.backfillBodies(account, mailbox, this.abort.signal);
+      await this.backfillBodies(account, mailbox, this.abort.signal);
     } catch (err) {
       result.error = err instanceof Error ? err.message : String(err);
       await mcpLog('warning', 'cache', `Sync failed for ${account}/${mailbox}: ${result.error}`);
+    } finally {
+      lock?.release();
     }
 
     return result;
+  }
+
+  /**
+   * The UIDs a first sync fetches: everything, or only mail inside window_days, which the server
+   * filters instead of this process. UIDs a cut-off first sync already stored are left out, so the
+   * next run carries on where it stopped.
+   */
+  private async listFirstSyncUids(
+    client: ImapFlow,
+    account: string,
+    mailbox: string,
+    uidValidity: string,
+    previous: { lastSyncedAt?: number } | undefined,
+  ): Promise<number[]> {
+    const windowDays = this.retention.windowDays ?? 0;
+    const query =
+      windowDays > 0 ? { since: new Date(Date.now() - windowDays * DAY_MS) } : { all: true };
+    const found = (await client.search(query, { uid: true })) as number[] | false;
+    if (!Array.isArray(found)) {
+      throw new Error(`SEARCH failed for ${mailbox}`);
+    }
+    const uids = [...new Set(found)].sort((a, b) => a - b);
+    // A finished sync refreshes every message it lists (flags change); only an unfinished first
+    // sync may skip what it already has.
+    if (previous?.lastSyncedAt !== undefined) return uids;
+    const stored = new Set(this.store.listAllUids(account, mailbox, uidValidity));
+    return stored.size === 0 ? uids : uids.filter((uid) => !stored.has(uid));
   }
 
   /**
@@ -469,14 +564,6 @@ export default class SyncEngine {
     tier: SyncTier,
     previous: { uidNext?: number; highestModseq?: string } | undefined,
   ): Promise<number> {
-    const query = {
-      uid: true,
-      envelope: true,
-      flags: true,
-      bodyStructure: true,
-      internalDate: true,
-    };
-
     let range = '1:*';
     const options: { uid: boolean; changedSince?: bigint } = { uid: true };
 
@@ -492,18 +579,50 @@ export default class SyncEngine {
       range = `${previous.uidNext}:*`;
     }
 
-    const messages: CachedMessageInput[] = [];
+    return this.fetchRange(client, account, mailbox, uidValidity, range, options);
+  }
+
+  /**
+   * Fetch one UID range and store it, a chunk at a time, so memory holds at most one chunk of
+   * envelopes however many messages the range covers.
+   *
+   * @returns how many messages were written.
+   */
+  private async fetchRange(
+    client: ImapFlow,
+    account: string,
+    mailbox: string,
+    uidValidity: string,
+    range: string,
+    options: { uid: boolean; changedSince?: bigint },
+  ): Promise<number> {
+    const query = {
+      uid: true,
+      envelope: true,
+      flags: true,
+      bodyStructure: true,
+      internalDate: true,
+    };
+
+    let stored = 0;
+    let batch: CachedMessageInput[] = [];
     for await (const msg of client.fetch(range, query, options)) {
       const fetched = msg as unknown as FetchedMessage;
       if (typeof fetched.uid !== 'number') continue;
-      messages.push(toCachedMessage(account, mailbox, uidValidity, fetched));
+      batch.push(toCachedMessage(account, mailbox, uidValidity, fetched));
+      if (batch.length >= SYNC_CHUNK) {
+        this.store.putMessages(batch);
+        stored += batch.length;
+        batch = [];
+      }
     }
 
     // An empty mailbox is a legitimate answer; so is "nothing changed".
-    if (messages.length === 0) return 0;
-
-    this.store.putMessages(messages);
-    return messages.length;
+    if (batch.length > 0) {
+      this.store.putMessages(batch);
+      stored += batch.length;
+    }
+    return stored;
   }
 
   /**
@@ -568,7 +687,7 @@ export default class SyncEngine {
     let client: ImapFlow;
     try {
       client = await this.connections.getImapClient(account);
-      lock = await client.getMailboxLock(mailbox);
+      lock = await lockMailbox(client, mailbox, { background: true });
     } catch {
       // Not a fault of this message, so do not mark it; try again next cycle.
       return 'unreachable';

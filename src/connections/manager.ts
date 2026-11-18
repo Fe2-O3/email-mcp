@@ -104,6 +104,22 @@ export default class ConnectionManager implements IConnectionManager {
     return [...this.accounts.keys()];
   }
 
+  /**
+   * Whether nothing runs on, waits for or holds this client: no command, no
+   * mailbox lock, no open download. imapflow keeps this check internal, so it
+   * is read defensively; when it cannot be read the client counts as busy and
+   * simply lives past its rotation age.
+   */
+  private static freeToClose(client: ImapFlow): boolean {
+    const probe = (client as unknown as { freeToClose?: () => unknown }).freeToClose;
+    if (typeof probe !== 'function') return false;
+    try {
+      return probe.call(client) === true;
+    } catch {
+      return false;
+    }
+  }
+
   private imapPending = new Map<string, Promise<ImapFlow>>();
   private smtpPending = new Map<string, Promise<Transporter>>();
 
@@ -122,8 +138,11 @@ export default class ConnectionManager implements IConnectionManager {
         if (Date.now() - createdAt < ConnectionManager.CONNECTION_MAX_AGE_MS) {
           return existing;
         }
-        // Rotation: open too long, buffers accumulate — fall through to the
-        // shared cleanup below and recreate.
+        // Rotation: open too long, buffers accumulate. Only when nothing is
+        // using it: closing a client mid-download or mid-move would fail that
+        // call, and a write cut off mid-command may or may not have happened.
+        // The next call after it goes quiet rotates it.
+        if (!ConnectionManager.freeToClose(existing)) return existing;
       }
       // Connection is stale (too old) or unusable — close and recreate below.
       this.imapClients.delete(accountName);

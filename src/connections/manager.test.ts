@@ -20,6 +20,7 @@ type MockListener = (...args: unknown[]) => void;
 
 interface MockClient {
   usable: boolean;
+  freeToClose: ReturnType<typeof vi.fn>;
   connect: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   logout: ReturnType<typeof vi.fn>;
@@ -44,6 +45,9 @@ vi.mock('imapflow', () => {
     list = vi.fn().mockResolvedValue([{ path: 'INBOX' }]);
 
     status = vi.fn().mockResolvedValue({ messages: 1, unseen: 0 });
+
+    /** imapflow's own "nothing running, queued or locked" check. */
+    freeToClose = vi.fn(() => true);
 
     private listeners = new Map<string, MockListener[]>();
 
@@ -179,5 +183,46 @@ describe('ConnectionManager IMAP lifecycle', () => {
 
     expect(probe.listenerCount('error')).toBeGreaterThan(0);
     expect(() => probe.emit('error', new Error('mid-probe failure'))).not.toThrow();
+  });
+
+  describe('rotation of an old connection', () => {
+    const HALF_HOUR_MS = 30 * 60 * 1000;
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // A download or bulk move still running on the old client would be cut off.
+    it('keeps handing out an old connection while a call is still using it', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const manager = new ConnectionManager([account]);
+      const first = await manager.getImapClient('test');
+      vi.setSystemTime(Date.now() + HALF_HOUR_MS + 1000);
+      imapInstances[0].freeToClose.mockReturnValue(false);
+
+      const second = await manager.getImapClient('test');
+
+      expect(second).toBe(first);
+      expect(imapInstances[0].close).not.toHaveBeenCalled();
+    });
+
+    // The busy check is imapflow's own: an upgrade that dropped it would quietly stop rotation.
+    it('relies on a busy check the installed imapflow has', async () => {
+      const actual = await vi.importActual<typeof import('imapflow')>('imapflow');
+      const proto = actual.ImapFlow.prototype as unknown as { freeToClose?: unknown };
+      expect(typeof proto.freeToClose).toBe('function');
+    });
+
+    it('replaces an old connection once nothing is using it', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const manager = new ConnectionManager([account]);
+      const first = await manager.getImapClient('test');
+      vi.setSystemTime(Date.now() + HALF_HOUR_MS + 1000);
+
+      const second = await manager.getImapClient('test');
+
+      expect(second).not.toBe(first);
+      expect(imapInstances[0].close).toHaveBeenCalled();
+    });
   });
 });

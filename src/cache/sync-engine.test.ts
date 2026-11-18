@@ -450,6 +450,7 @@ describe('SyncEngine', () => {
 
     it('releases the mailbox lock even when the fetch throws', async () => {
       engine = build();
+      client.search.mockResolvedValue([1]);
       client.fetch.mockImplementation(() => {
         throw new Error('mid-stream failure');
       });
@@ -458,6 +459,177 @@ describe('SyncEngine', () => {
 
       expect(client._release).toHaveBeenCalled();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// First sync of a big mailbox
+// ---------------------------------------------------------------------------
+
+/** Whether `uid` is in an IMAP UID set such as "1:500,700,900:*". */
+function inUidSet(set: string, uid: number, maxUid: number): boolean {
+  return set.split(',').some((part) => {
+    const [from, to = from] = part.split(':');
+    const lo = from === '*' ? maxUid : Number(from);
+    const hi = to === '*' ? maxUid : Number(to);
+    return uid >= Math.min(lo, hi) && uid <= Math.max(lo, hi);
+  });
+}
+
+describe('SyncEngine first sync of a big mailbox', () => {
+  const COUNT = 1_200;
+  let store: CacheStore;
+  let client: ReturnType<typeof createMockClient>;
+  let engine: SyncEngine;
+  let events: string[];
+
+  function build(retention: { windowDays?: number } = {}): SyncEngine {
+    client = createMockClient();
+    const uids = Array.from({ length: COUNT }, (_, i) => i + 1);
+    client.mailbox.exists = COUNT;
+    client.mailbox.uidNext = COUNT + 1;
+    client.search.mockImplementation(async () => uids);
+    client.getMailboxLock.mockImplementation(async () => {
+      events.push('lock');
+      return {
+        release: () => {
+          events.push('release');
+        },
+      };
+    });
+    client.fetch.mockImplementation((range: string) => {
+      events.push(`fetch ${range}`);
+      return (async function* gen() {
+        for (const uid of uids) {
+          if (inUidSet(range, uid, COUNT)) {
+            yield {
+              uid,
+              envelope: { subject: `Subject ${uid}`, date: new Date() },
+              flags: new Set<string>(),
+              bodyStructure: { type: 'text/plain', size: 10 },
+              internalDate: new Date(),
+            };
+          }
+        }
+      })();
+    });
+    return new SyncEngine(createConnections(client), store, retention);
+  }
+
+  function fetchedUids(): number[] {
+    return (client.fetch.mock.calls as [string][]).flatMap(([range]) =>
+      Array.from({ length: COUNT }, (_, i) => i + 1).filter((uid) => inUidSet(range, uid, COUNT)),
+    );
+  }
+
+  beforeEach(() => {
+    store = new CacheStore(':memory:');
+    events = [];
+  });
+
+  afterEach(() => {
+    engine?.stop();
+    store.close();
+    eventBus.removeAllListeners();
+  });
+
+  // One fetch of 1:* held every envelope in memory and the lock for the whole run.
+  it('fetches in bounded chunks and stores each chunk as it goes', async () => {
+    engine = build();
+    const put = vi.spyOn(store, 'putMessages');
+
+    const result = await engine.syncMailbox('work', 'INBOX');
+
+    expect(result.ok).toBe(true);
+    expect(store.countMessages('work', 'INBOX')).toBe(COUNT);
+    expect(client.fetch.mock.calls.length).toBeGreaterThan(1);
+    for (const [range] of client.fetch.mock.calls as [string][]) {
+      expect(range).not.toContain('*');
+    }
+    expect(put.mock.calls.length).toBeGreaterThan(1);
+    expect(Math.max(...put.mock.calls.map(([batch]) => batch.length))).toBeLessThanOrEqual(500);
+  });
+
+  // A tool call waiting for the mailbox gets in between two chunks.
+  it('releases the mailbox lock between chunks', async () => {
+    engine = build();
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    const fetches = events
+      .map((event, index) => (event.startsWith('fetch') ? index : -1))
+      .filter((index) => index >= 0);
+    for (let i = 1; i < fetches.length; i += 1) {
+      const between = events.slice(fetches[i - 1], fetches[i]);
+      expect(between).toEqual(expect.arrayContaining(['release', 'lock']));
+    }
+  });
+
+  it('keeps the chunks it finished when a first sync is cut off, and does not fetch them again', async () => {
+    engine = build();
+    const realFetch = client.fetch.getMockImplementation();
+    let calls = 0;
+    client.fetch.mockImplementation((range: string, ...rest: unknown[]) => {
+      calls += 1;
+      if (calls === 2) throw Object.assign(new Error('connection closed'), { code: 'ECONNRESET' });
+      return realFetch?.(range, ...rest);
+    });
+
+    const cut = await engine.syncMailbox('work', 'INBOX');
+    const kept = store.countMessages('work', 'INBOX');
+
+    expect(cut.ok).toBe(false);
+    expect(kept).toBeGreaterThan(0);
+
+    client.fetch.mockClear();
+    client.fetch.mockImplementation(realFetch as never);
+    const resumed = await engine.syncMailbox('work', 'INBOX');
+
+    expect(resumed.ok).toBe(true);
+    expect(store.countMessages('work', 'INBOX')).toBe(COUNT);
+    expect(fetchedUids()).toHaveLength(COUNT - kept);
+  });
+
+  it('asks the server only for mail inside window_days', async () => {
+    engine = build({ windowDays: 30 });
+
+    await engine.syncMailbox('work', 'INBOX');
+
+    const [query] = client.search.mock.calls[0] as [{ since?: Date }];
+    expect(query.since).toBeInstanceOf(Date);
+    expect(Date.now() - (query.since as Date).getTime()).toBeGreaterThan(29 * 86_400_000);
+  });
+
+  it('stops between chunks once the engine is stopped', async () => {
+    engine = build();
+    const realFetch = client.fetch.getMockImplementation();
+    client.fetch.mockImplementation((range: string, ...rest: unknown[]) => {
+      engine.stop();
+      return realFetch?.(range, ...rest);
+    });
+
+    const result = await engine.syncMailbox('work', 'INBOX');
+
+    expect(result.ok).toBe(false);
+    expect(client.fetch).toHaveBeenCalledTimes(1);
+    expect(events.filter((e) => e === 'lock')).toHaveLength(
+      events.filter((e) => e === 'release').length,
+    );
+  });
+
+  it('gives up the run when the mailbox UIDVALIDITY changes between chunks', async () => {
+    engine = build();
+    const realFetch = client.fetch.getMockImplementation();
+    client.fetch.mockImplementation((range: string, ...rest: unknown[]) => {
+      client.mailbox.uidValidity = 200n;
+      return realFetch?.(range, ...rest);
+    });
+
+    const result = await engine.syncMailbox('work', 'INBOX');
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/UIDVALIDITY/);
+    expect(client.fetch).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -91,3 +91,12 @@ export function isConnectivityError(err: unknown): boolean {
       (NODE_CONNECTIVITY_CODES.has(e.code) || IMAPFLOW_CONNECTIVITY_CODES.has(e.code)),
   );
 }
+
+/**
+ * For a write cut off by a dropped connection: the server may have done it before the link went,
+ * so the caller should look before trying again. Empty for any other failure.
+ */
+export function uncertainWriteNote(err: unknown): string {
+  if (!isConnectivityError(err)) return '';
+  return ' The connection dropped during the command, so the server may or may not have done it. Check the folder before trying again.';
+}

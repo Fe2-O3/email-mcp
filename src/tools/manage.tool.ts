@@ -8,6 +8,7 @@ import audit from '../safety/audit.js';
 import { sanitizeMailboxName } from '../safety/validation.js';
 
 import type ImapService from '../services/imap.service.js';
+import { uncertainWriteNote } from '../utils/imap-error.js';
 import { dryRunFailure, dryRunParam, dryRunResult } from './schema-helpers.js';
 
 export default function registerManageTools(server: McpServer, imapService: ImapService): void {
@@ -75,7 +76,7 @@ export default function registerManageTools(server: McpServer, imapService: Imap
           content: [
             {
               type: 'text' as const,
-              text: `Failed to move email: ${errMsg}`,
+              text: `Failed to move email: ${errMsg}${uncertainWriteNote(err)}`,
             },
           ],
         };
@@ -132,7 +133,7 @@ export default function registerManageTools(server: McpServer, imapService: Imap
           content: [
             {
               type: 'text' as const,
-              text: `Failed to delete email: ${errMsg}`,
+              text: `Failed to delete email: ${errMsg}${uncertainWriteNote(err)}`,
             },
           ],
         };
@@ -180,7 +181,7 @@ export default function registerManageTools(server: McpServer, imapService: Imap
           content: [
             {
               type: 'text' as const,
-              text: `Failed to mark email: ${errMsg}`,
+              text: `Failed to mark email: ${errMsg}${uncertainWriteNote(err)}`,
             },
           ],
         };

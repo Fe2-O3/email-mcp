@@ -71,4 +71,113 @@ describe('lockMailbox', () => {
     await vi.advanceTimersByTimeAsync(MAILBOX_LOCK_TIMEOUT_MS);
     expect(((await result) as Error).message).toMatch(/stayed busy/);
   });
+
+  /** One lock at a time, queued, honouring acquireTimeout, like imapflow. */
+  function queueClient() {
+    let held = false;
+    const waiting: Array<() => void> = [];
+    const client = {
+      close: vi.fn(),
+      getMailboxLock: vi.fn(
+        (_path: string, opts: { acquireTimeout?: number }) =>
+          new Promise((resolve, reject) => {
+            const grant = () => {
+              held = true;
+              resolve({
+                release: () => {
+                  held = false;
+                  waiting.shift()?.();
+                },
+              });
+            };
+            if (!held) {
+              grant();
+              return;
+            }
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const entry = () => {
+              clearTimeout(timer);
+              grant();
+            };
+            waiting.push(entry);
+            timer = setTimeout(() => {
+              waiting.splice(waiting.indexOf(entry), 1);
+              reject(
+                Object.assign(new Error('Timed out waiting for mailbox lock'), {
+                  code: 'LockTimeout',
+                }),
+              );
+            }, opts.acquireTimeout);
+          }),
+      ),
+    };
+    return client;
+  }
+
+  // The background mirror sync holding the lock is not a stuck command: closing
+  // the connection would kill the sync and every other call waiting on it.
+  it('fails a call waiting behind the mirror sync without dropping the connection', async () => {
+    const client = queueClient();
+    const sync = await lockMailbox(client as unknown as ImapFlow, 'INBOX', { background: true });
+    const waiting = lockMailbox(client as unknown as ImapFlow, 'INBOX').catch((e: Error) => e);
+
+    await vi.advanceTimersByTimeAsync(MAILBOX_LOCK_TIMEOUT_MS);
+    const err = (await waiting) as Error;
+
+    expect(err.message).toMatch(/background mirror sync/);
+    expect(err.message).toMatch(/try again/i);
+    expect(client.close).not.toHaveBeenCalled();
+    sync.release();
+  });
+
+  it('still drops the connection when the mirror sync has held the lock far too long', async () => {
+    const client = queueClient();
+    const sync = await lockMailbox(client as unknown as ImapFlow, 'INBOX', { background: true });
+    await vi.advanceTimersByTimeAsync(MAILBOX_LOCK_TIMEOUT_MS + 1000);
+    const waiting = lockMailbox(client as unknown as ImapFlow, 'INBOX').catch((e: Error) => e);
+
+    await vi.advanceTimersByTimeAsync(MAILBOX_LOCK_TIMEOUT_MS);
+    await waiting;
+
+    expect(client.close).toHaveBeenCalledTimes(1);
+    sync.release();
+  });
+
+  it('never drops the connection when the background sync is the one waiting', async () => {
+    const client = stuckClient();
+    const result = lockMailbox(client as unknown as ImapFlow, 'INBOX', {
+      background: true,
+    }).catch((e: Error) => e);
+
+    await vi.advanceTimersByTimeAsync(MAILBOX_LOCK_TIMEOUT_MS);
+
+    expect(((await result) as Error).message).toMatch(/stayed busy/);
+    expect(client.close).not.toHaveBeenCalled();
+  });
+
+  // imapflow stops its acquire timer once the lock leaves the queue, before the
+  // SELECT that opens the mailbox. A SELECT the server never answers is not bounded by it.
+  it('bounds a mailbox open that stalls after the lock left the queue', async () => {
+    let grantLate: (lock: { release: () => void }) => void = () => {};
+    const late = { release: vi.fn() };
+    const client = {
+      close: vi.fn(),
+      getMailboxLock: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            grantLate = resolve;
+          }),
+      ),
+    };
+    const result = lockMailbox(client as unknown as ImapFlow, 'INBOX').catch((e: Error) => e);
+
+    await vi.advanceTimersByTimeAsync(MAILBOX_LOCK_TIMEOUT_MS);
+
+    expect(((await result) as Error).message).toMatch(/stayed busy/);
+    expect(client.close).toHaveBeenCalledTimes(1);
+    // A lock granted after the caller gave up is handed back, or the queue stays stuck.
+    grantLate(late);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(late.release).toHaveBeenCalledTimes(1);
+  });
 });

@@ -8,6 +8,7 @@ import audit from '../safety/audit.js';
 
 import type ImapService from '../services/imap.service.js';
 import type { BulkResult } from '../types/index.js';
+import { uncertainWriteNote } from '../utils/imap-error.js';
 import { dryRunFailure, dryRunParam, dryRunResult } from './schema-helpers.js';
 
 export default function registerBulkTools(server: McpServer, imapService: ImapService): void {
@@ -105,7 +106,7 @@ export default function registerBulkTools(server: McpServer, imapService: ImapSe
           content: [
             {
               type: 'text' as const,
-              text: `Bulk action failed: ${errMsg}`,
+              text: `Bulk action failed: ${errMsg}${uncertainWriteNote(err)}`,
             },
           ],
         };
