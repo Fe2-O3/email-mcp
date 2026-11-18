@@ -80,6 +80,16 @@ describe('toolset registration', () => {
     },
   );
 
+  it('hides the calendar and reminder write tools in read_only mode', async () => {
+    const writable = await toolNames(false, 'full');
+    const readOnly = await toolNames(true, 'full');
+    ['add_to_calendar', 'create_reminder'].forEach((name) => {
+      expect(writable).toContain(name);
+      expect(readOnly).not.toContain(name);
+    });
+    expect(readOnly).toContain('list_events');
+  });
+
   it('keeps only the read tools of minimal mode when read-only', async () => {
     expect(await toolNames(true, 'minimal')).toEqual([
       'get_email',
