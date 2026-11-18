@@ -77,7 +77,7 @@ export function registerSieveReadTools(
           `${summary}\n${JSON.stringify(
             {
               ...status,
-              allowedRedirects: manager.allowedRedirects(),
+              allowedRedirects: await manager.allowedRedirects(),
               allowedRedirectsNote:
                 'Forwarding is allowed only to these addresses or domains. Only a person editing config.toml ([sieve] allowed_redirects) can change them.',
             },

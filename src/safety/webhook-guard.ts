@@ -21,6 +21,19 @@ export type Lookup = (hostname: string) => Promise<{ address: string; family: nu
 const DEFAULT_LOOKUP: Lookup = async (hostname) =>
   dnsPromises.lookup(hostname, { all: true, verbatim: true });
 
+/**
+ * A webhook URL for display: scheme and host only. Slack, Discord and ntfy put
+ * the secret in the path, and a model that reads it could pass it on.
+ */
+export function describeWebhookUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host} (path hidden)`;
+  } catch {
+    return '(set, hidden)';
+  }
+}
+
 /** True when the address is inside a range that must never receive webhooks. */
 export function isForbiddenAddress(address: string): boolean {
   const family = net.isIP(address);

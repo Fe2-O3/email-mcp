@@ -218,3 +218,21 @@ describe('reply recipients', () => {
     expect(plan.notes.join('\n')).toMatch(/Warning: .*different domain/);
   });
 });
+
+describe('forward loop marker', () => {
+  it('every forward carries the marker header, so rules elsewhere can refuse it', async () => {
+    const { svc, sendMail, imap } = makeService();
+    imap.getEmail.mockResolvedValue({
+      messageId: '<o@x>',
+      subject: 'S',
+      from: { address: 'a@x.invalid' },
+      to: [{ address: 'me@example.invalid' }],
+      bodyText: 'hello',
+      date: 'x',
+    } as never);
+    await svc.forwardEmail('w', { emailId: '5', to: ['z@example.invalid'] });
+    expect(sendMail.mock.calls[0][0].headers).toEqual({
+      'X-IMAP-Wizard-Forwarded': 'me@example.invalid',
+    });
+  });
+});

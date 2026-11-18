@@ -73,8 +73,13 @@ export interface DeleteReport {
 
 export interface SieveManagerDeps {
   sieve: SieveService;
-  /** The human-edited allowlist from config.toml. Read only. */
+  /** The human-edited allowlist from config.toml, as loaded at start-up. Read only. */
   allowlist: readonly string[];
+  /**
+   * Reads the allowlist fresh from config.toml. When given it is used on every
+   * scan, so removing an address takes effect in a running process.
+   */
+  readAllowlist?: () => Promise<readonly string[]>;
   /** Folder paths of the account, or null when they cannot be listed. */
   listFolders: (account: string) => Promise<string[] | null>;
   now?: () => Date;
@@ -107,9 +112,19 @@ export default class SieveManager {
     this.allowlist = Object.freeze([...deps.allowlist]);
   }
 
-  /** The forwarding allowlist as loaded from config.toml (a copy). */
-  allowedRedirects(): string[] {
-    return [...this.allowlist];
+  /** The forwarding allowlist as it stands in config.toml now (a copy). */
+  async allowedRedirects(): Promise<string[]> {
+    return [...(await this.currentAllowlist())];
+  }
+
+  /** Fresh from config.toml when a reader is wired in; an unreadable file allows nothing. */
+  private async currentAllowlist(): Promise<readonly string[]> {
+    if (!this.deps.readAllowlist) return this.allowlist;
+    try {
+      return await this.deps.readAllowlist();
+    } catch {
+      return [];
+    }
   }
 
   async status(account: AccountConfig): Promise<SieveStatus> {
@@ -281,7 +296,8 @@ export default class SieveManager {
 
   private async scan(s: SieveSession, name: string, content: string): Promise<SieveScan> {
     let names: Set<string> | undefined;
-    return scanWithIncludes(name, content, this.allowlist, async (included) => {
+    const allowlist = await this.currentAllowlist();
+    return scanWithIncludes(name, content, allowlist, async (included) => {
       if (included === name) return content;
       names ??= new Set((await s.listScripts()).map((x) => x.name));
       // A script that is not listed does not exist. A listed one that cannot be

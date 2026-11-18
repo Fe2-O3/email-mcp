@@ -25,6 +25,13 @@ export const REPLY_PREFIX = /^\s*(re|aw|sv)\s*:/i;
 /** Forward markers: Fwd, Fw, WG (German). */
 export const FORWARD_PREFIX = /^\s*(fwd?|wg)\s*:/i;
 
+/**
+ * Added to every forward. A local rule refuses to forward a message that
+ * already carries it, so a ring of accounts that forward to each other stops
+ * after one hop.
+ */
+export const FORWARD_MARKER_HEADER = 'X-IMAP-Wizard-Forwarded';
+
 export interface SendEmailOptions {
   to: string[];
   subject: string;
@@ -441,6 +448,7 @@ export default class SmtpService {
       cc: options.cc?.join(', '),
       subject,
       messageId: `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`,
+      headers: { [FORWARD_MARKER_HEADER]: account.email },
       ...(options.html ? { html: fullBody } : { text: fullBody }),
       ...(attachments.length > 0 ? { attachments } : {}),
       disableFileAccess: true,

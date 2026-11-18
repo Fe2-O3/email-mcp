@@ -24,9 +24,10 @@ import audit from '../safety/audit.js';
 import { isAllowedRedirect, parsePlainAddress } from '../safety/redirect-allowlist.js';
 import { validateLabelName } from '../safety/validation.js';
 import type { AccountConfig, EmailMeta } from '../types/index.js';
-import { matchesPattern } from '../utils/glob-match.js';
+import { isCatchAllPattern, matchesPattern } from '../utils/glob-match.js';
 import type ImapService from './imap.service.js';
 import type SmtpService from './smtp.service.js';
+import { FORWARD_MARKER_HEADER } from './smtp.service.js';
 
 export const LocalRuleMatchSchema = z.object({
   from: z.string().min(1).optional(),
@@ -69,6 +70,70 @@ const LocalRulesFileSchema = z.object({
 export type LocalRule = z.infer<typeof LocalRuleSchema>;
 export type LocalRuleInput = Omit<LocalRule, 'id' | 'createdAt'>;
 
+/** Limits on what a tool may store. Stored files are not checked against them, so older rules still load. */
+export const MAX_RULE_NAME = 100;
+export const MAX_RULE_PATTERN = 200;
+export const MAX_RULES = 200;
+
+/** The conditions a rule has, as text patterns. */
+function conditionPatterns(match: LocalRule['match']): string[] {
+  return [match.from, match.to, match.subject, match.header?.value].filter(
+    (p): p is string => typeof p === 'string',
+  );
+}
+
+/**
+ * True when every condition of the rule matches any message, so the rule acts
+ * on all new mail. One specific condition is enough to make it a real filter.
+ */
+export function isCatchAllRule(match: LocalRule['match']): boolean {
+  const patterns = conditionPatterns(match);
+  return patterns.length > 0 && patterns.every((p) => isCatchAllPattern(p));
+}
+
+/** Store a forward target as one plain `local@domain` address (not "<a@b>" or padded). */
+export function normalizeLocalRule(rule: LocalRuleInput): LocalRuleInput {
+  const target = rule.actions.forwardTo;
+  const parsed = target === undefined ? null : parsePlainAddress(target);
+  return {
+    ...rule,
+    name: rule.name.trim(),
+    actions: parsed
+      ? { ...rule.actions, forwardTo: `${parsed.local}@${parsed.domain}` }
+      : rule.actions,
+  };
+}
+
+const SPECIAL_FOLDER_NAME =
+  /^(trash|bin|deleted( items| messages)?|junk( e-?mail)?|spam|drafts?|sent( items| mail| messages)?|archives?|all mail)$/i;
+
+function sameFolder(a: string, b: string): boolean {
+  if (/^inbox$/i.test(a.trim()) && /^inbox$/i.test(b.trim())) return true;
+  return a.trim() === b.trim();
+}
+
+/**
+ * Why a rule must not move mail into `dest`, or undefined. Trash, Junk, Drafts,
+ * Sent, Archive and other special-use folders hide mail from the owner; a
+ * watched folder makes the moved copy count as new mail and run the rules
+ * again, which loops. `mailboxes` is the account's folder list, when known.
+ */
+export function moveTargetProblem(
+  dest: string,
+  mailboxes: readonly { path: string; specialUse?: string }[] | null,
+  watched: readonly string[],
+): string | undefined {
+  const leaf = dest.split(/[/.]/).pop() ?? dest;
+  const listed = mailboxes?.find((m) => m.path === dest);
+  if (listed?.specialUse || SPECIAL_FOLDER_NAME.test(leaf.trim())) {
+    return `A local rule may not move mail into ${JSON.stringify(dest)}: it is a special folder (Trash, Junk, Drafts, Sent, Archive...), so mail would disappear from view. Use labels or flags instead.`;
+  }
+  if (watched.some((w) => sameFolder(w, dest))) {
+    return `A local rule may not move mail into ${JSON.stringify(dest)}: that folder is watched, so the moved message would count as new mail and run the rules again.`;
+  }
+  return undefined;
+}
+
 /** Reasons a rule cannot be added, or an empty list. Checked again before a forward fires. */
 export function validateLocalRule(
   rule: LocalRuleInput,
@@ -79,6 +144,20 @@ export function validateLocalRule(
   const { match, actions } = rule;
   if (!match.from && !match.to && !match.subject && !match.header) {
     problems.push('Give at least one match condition (from, to, subject or header).');
+  } else if (isCatchAllRule(match)) {
+    problems.push(
+      'This rule would match every message (a condition made only of * matches anything). ' +
+        'Name a real sender, recipient, subject or header value.',
+    );
+  }
+  if (rule.name.length > MAX_RULE_NAME) {
+    problems.push(`The rule name is longer than ${MAX_RULE_NAME} characters.`);
+  }
+  if (conditionPatterns(match).some((p) => p.length > MAX_RULE_PATTERN)) {
+    problems.push(`A match pattern is longer than ${MAX_RULE_PATTERN} characters.`);
+  }
+  if (existing.length >= MAX_RULES) {
+    problems.push(`There are already ${MAX_RULES} local rules. Remove one first.`);
   }
   const hasAction =
     Boolean(actions.moveTo) ||
@@ -120,6 +199,9 @@ export function validateLocalRule(
 // ---------------------------------------------------------------------------
 
 export class LocalRulesStore {
+  /** Edits in this process run one at a time, in the order they were asked for. */
+  private queue: Promise<unknown> = Promise.resolve();
+
   constructor(readonly filePath: string = LOCAL_RULES_FILE) {
     if (path.basename(filePath).toLowerCase() === 'config.toml') {
       throw new Error('Local rules are never stored in config.toml');
@@ -135,7 +217,15 @@ export class LocalRulesStore {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw err;
     }
-    const parsed = LocalRulesFileSchema.safeParse(JSON.parse(raw));
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new Error(
+        `The local rules file ${this.filePath} is damaged (it is not valid JSON). Fix or remove it.`,
+      );
+    }
+    const parsed = LocalRulesFileSchema.safeParse(json);
     if (!parsed.success) {
       throw new Error(
         `The local rules file ${this.filePath} is not valid (${parsed.error.issues[0]?.message ?? 'unknown problem'}). Fix or remove it.`,
@@ -157,27 +247,101 @@ export class LocalRulesStore {
     await fs.rename(tmp, this.filePath);
   }
 
-  async add(input: LocalRuleInput, now: Date = new Date()): Promise<LocalRule> {
-    const rules = await this.load();
-    const rule: LocalRule = LocalRuleSchema.parse({
-      ...input,
-      id: randomUUID().slice(0, 8),
-      createdAt: now.toISOString(),
+  /**
+   * Run one edit alone: after the edits already queued in this process, and
+   * while holding a lock file so another IMAP Wizard process cannot read the
+   * list at the same time. Without it two simultaneous edits each read the old
+   * list and the last write dropped the other's rule.
+   */
+  private edit<T>(run: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(async () => {
+      const release = await this.acquireFileLock();
+      try {
+        return await run();
+      } finally {
+        await release();
+      }
     });
-    await this.save([...rules, rule]);
-    return rule;
+    this.queue = result.catch(() => undefined);
+    return result;
+  }
+
+  private async acquireFileLock(): Promise<() => Promise<void>> {
+    await fs.mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
+    const lockPath = `${this.filePath}.lock`;
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    for (;;) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- retry until the other editor is done
+        const handle = await fs.open(lockPath, 'wx', 0o600);
+        // eslint-disable-next-line no-await-in-loop
+        await handle.close();
+        return async () => {
+          await fs.rm(lockPath, { force: true });
+        };
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      }
+      // A lock left by a crashed editor is not waited on forever.
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const { mtimeMs } = await fs.stat(lockPath);
+        if (Date.now() - mtimeMs > LOCK_STALE_MS) {
+          // eslint-disable-next-line no-await-in-loop
+          await fs.rm(lockPath, { force: true });
+          continue; // eslint-disable-line no-continue
+        }
+      } catch {
+        continue; // eslint-disable-line no-continue -- it vanished: try to take it
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `The local rules file ${this.filePath} is being edited by another process. Try again in a moment.`,
+        );
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, 25);
+      });
+    }
+  }
+
+  add(input: LocalRuleInput, now: Date = new Date()): Promise<LocalRule> {
+    return this.edit(async () => {
+      const rules = await this.load();
+      // Checked here, under the lock, so two adds with one name cannot both win.
+      const lower = input.name.trim().toLowerCase();
+      if (rules.some((r) => r.name.trim().toLowerCase() === lower)) {
+        throw new Error(`A local rule named ${JSON.stringify(input.name)} already exists.`);
+      }
+      if (rules.length >= MAX_RULES) {
+        throw new Error(`There are already ${MAX_RULES} local rules. Remove one first.`);
+      }
+      const rule: LocalRule = LocalRuleSchema.parse({
+        ...input,
+        id: randomUUID().slice(0, 8),
+        createdAt: now.toISOString(),
+      });
+      await this.save([...rules, rule]);
+      return rule;
+    });
   }
 
   /** Removes by id or name (case-insensitive); returns the removed rule, or null. */
-  async remove(idOrName: string): Promise<LocalRule | null> {
-    const rules = await this.load();
-    const key = idOrName.trim().toLowerCase();
-    const target = rules.find((r) => r.id === idOrName || r.name.trim().toLowerCase() === key);
-    if (!target) return null;
-    await this.save(rules.filter((r) => r !== target));
-    return target;
+  remove(idOrName: string): Promise<LocalRule | null> {
+    return this.edit(async () => {
+      const rules = await this.load();
+      const key = idOrName.trim().toLowerCase();
+      const target = rules.find((r) => r.id === idOrName || r.name.trim().toLowerCase() === key);
+      if (!target) return null;
+      await this.save(rules.filter((r) => r !== target));
+      return target;
+    });
   }
 }
+
+const LOCK_WAIT_MS = 5000;
+const LOCK_STALE_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Runner
@@ -217,7 +381,9 @@ export function ruleMatches(
   }
   if (match.subject && !matchesPattern(match.subject, email.meta.subject)) return false;
   if (match.header) {
-    const value = headers?.[match.header.name.toLowerCase()];
+    // Own keys only: a header named "constructor" must not read Object.prototype.
+    const key = match.header.name.toLowerCase();
+    const value = headers && Object.hasOwn(headers, key) ? headers[key] : undefined;
     if (value === undefined || !matchesPattern(match.header.value, value)) return false;
   }
   return Boolean(match.from ?? match.to ?? match.subject ?? match.header);
@@ -227,16 +393,34 @@ export interface LocalRulesDeps {
   store: LocalRulesStore;
   imapService: ImapService;
   smtpService: SmtpService;
-  /** The human-edited allowlist from config.toml. Read only. */
-  allowlist: readonly string[];
+  /**
+   * The human-edited allowlist, read fresh from config.toml each time a forward
+   * fires, so removing an address takes effect in a running process. An
+   * unreadable file must give an empty list.
+   */
+  readAllowlist?: () => Promise<readonly string[]>;
+  /** A fixed allowlist, used only when `readAllowlist` is not given (tests). */
+  allowlist?: readonly string[];
+  /** Folders the watcher watches. A move into one would run the rules on the moved copy. */
+  watchedFolders?: () => readonly string[];
   accounts: readonly AccountConfig[];
 }
 
 export default class LocalRulesService {
-  private readonly allowlist: readonly string[];
+  /** Catch-all rules already warned about, so the log has one line per rule. */
+  private readonly warnedCatchAll = new Set<string>();
 
-  constructor(private readonly deps: LocalRulesDeps) {
-    this.allowlist = Object.freeze([...deps.allowlist]);
+  constructor(private readonly deps: LocalRulesDeps) {}
+
+  private async currentAllowlist(): Promise<readonly string[]> {
+    if (this.deps.readAllowlist) {
+      try {
+        return await this.deps.readAllowlist();
+      } catch {
+        return [];
+      }
+    }
+    return this.deps.allowlist ?? [];
   }
 
   /**
@@ -258,6 +442,18 @@ export default class LocalRulesService {
       return batch;
     }
     if (rules.length === 0) return batch;
+
+    // Rules saved before catch-all rules were refused still run, but say so once.
+    for (const r of rules) {
+      if (isCatchAllRule(r.match) && !this.warnedCatchAll.has(r.id)) {
+        this.warnedCatchAll.add(r.id);
+        await mcpLog(
+          'warning',
+          'rules',
+          `Local rule "${r.name}" matches every message. New rules like it are refused; remove it with remove_local_rule if it is not wanted.`,
+        ).catch(() => undefined);
+      }
+    }
 
     const unmatched: RuleEmail[] = [];
     for (const email of batch) {
@@ -288,8 +484,14 @@ export default class LocalRulesService {
             email.meta.id,
             email.mailbox,
           );
-        } catch {
+        } catch (err) {
           headers = {};
+          // Not "no match", silently: say the header rules could not be checked.
+          await mcpLog(
+            'warning',
+            'rules',
+            `Could not read the headers of ${email.account}/${email.mailbox} #${email.meta.id} for a header rule: ${err instanceof Error ? err.message : String(err)}`,
+          ).catch(() => undefined);
         }
       }
       if (ruleMatches(rule, email, headers)) return rule;
@@ -322,25 +524,65 @@ export default class LocalRulesService {
     if (actions.markRead) {
       await attempt('mark read', () => imapService.setFlags(account, id, mailbox, 'read'));
     }
+    // A forward that did not go out leaves the message where it is: moving it
+    // away would hide mail that was never passed on.
+    let forwardFailed = false;
     if (actions.forwardTo) {
-      const target = actions.forwardTo;
+      const parsedTarget = parsePlainAddress(actions.forwardTo);
+      const target = parsedTarget
+        ? `${parsedTarget.local}@${parsedTarget.domain}`
+        : actions.forwardTo;
       const own = this.deps.accounts.find((a) => a.name === account)?.email.toLowerCase();
       const sender = email.meta.from.address.toLowerCase();
-      if (!isAllowedRedirect(target, this.allowlist)) {
+      if (!isAllowedRedirect(target, await this.currentAllowlist())) {
         failed.push(`forward to ${target}: not in sieve.allowed_redirects (config.toml)`);
-      } else if (sender === own || sender === target.toLowerCase()) {
+        forwardFailed = true;
+      } else if (sender === own || sender === target) {
         // A forward of our own mail, or of mail from the target, can loop.
         failed.push(`forward to ${target}: skipped, the message is from ${sender}`);
+        forwardFailed = true;
       } else {
-        await attempt(`forward to ${target}`, () =>
-          smtpService.forwardEmail(account, { emailId: id, mailbox, to: [target] }),
-        );
+        // Refuse mail that IMAP Wizard already forwarded: a ring of accounts
+        // forwarding to each other stops after one hop. Not knowing is a no.
+        let alreadyForwarded: boolean | undefined;
+        try {
+          const headers = await imapService.getHeaders(account, id, mailbox);
+          alreadyForwarded = Object.hasOwn(headers, FORWARD_MARKER_HEADER.toLowerCase());
+        } catch (err) {
+          failed.push(
+            `forward to ${target}: not sent, the headers could not be read (${err instanceof Error ? err.message : String(err)})`,
+          );
+          forwardFailed = true;
+        }
+        if (alreadyForwarded) {
+          failed.push(
+            `forward to ${target}: skipped, this message was already forwarded by IMAP Wizard`,
+          );
+          forwardFailed = true;
+        } else if (alreadyForwarded === false) {
+          await attempt(`forward to ${target}`, () =>
+            smtpService.forwardEmail(account, { emailId: id, mailbox, to: [target] }),
+          );
+          forwardFailed = !done.includes(`forward to ${target}`);
+        }
       }
     }
     // Moving changes the UID, so it goes last.
     if (actions.moveTo) {
       const dest = actions.moveTo;
-      await attempt(`move to ${dest}`, () => imapService.moveEmail(account, id, mailbox, dest));
+      const watched = this.deps.watchedFolders?.() ?? [];
+      if (forwardFailed) {
+        failed.push(`move to ${dest}: skipped, the forward did not go out`);
+      } else if (sameFolder(dest, mailbox)) {
+        // Already there: a move would only mint a new number and look like new mail.
+        done.push(`move to ${dest} (already there)`);
+      } else if (watched.some((w) => sameFolder(w, dest))) {
+        failed.push(
+          `move to ${dest}: skipped, that folder is watched and the rules would run again`,
+        );
+      } else {
+        await attempt(`move to ${dest}`, () => imapService.moveEmail(account, id, mailbox, dest));
+      }
     }
 
     await audit

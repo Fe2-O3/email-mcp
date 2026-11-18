@@ -109,6 +109,8 @@ export default class HooksService {
 
   private localRules: LocalRulesService | null = null;
 
+  private running = false;
+
   private static readonly MAX_SAMPLING_PER_MIN = 10;
 
   constructor(config: HooksConfig, imapService: ImapService) {
@@ -151,6 +153,7 @@ export default class HooksService {
    */
   start(lowLevelServer: Server | null): void {
     this.lowLevelServer = lowLevelServer;
+    this.running = true;
     this.notifier.start();
 
     if (this.config.onNewEmail === 'none' && !this.localRules) return;
@@ -177,7 +180,13 @@ export default class HooksService {
     ).catch(() => {});
   }
 
+  /** True while this process is the one running the watcher and hooks (it holds the lease). */
+  isRunning(): boolean {
+    return this.running;
+  }
+
   stop(): void {
+    this.running = false;
     if (this.batchTimer) {
       clearTimeout(this.batchTimer);
       this.batchTimer = null;

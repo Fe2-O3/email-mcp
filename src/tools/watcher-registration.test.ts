@@ -22,6 +22,7 @@ import { registerWatcherReadTools, registerWatcherWriteTools } from './watcher.t
 interface CapturedTool {
   name: string;
   annotations?: { readOnlyHint?: boolean };
+  inputSchema?: unknown;
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
@@ -29,16 +30,22 @@ function capture(serverCalls: CapturedTool[]) {
   return {
     registerTool: (
       name: string,
-      cfg: { annotations?: { readOnlyHint?: boolean } },
+      cfg: { annotations?: { readOnlyHint?: boolean }; inputSchema?: unknown },
       handler: CapturedTool['handler'],
     ): void => {
-      serverCalls.push({ name, annotations: cfg.annotations, handler });
+      serverCalls.push({
+        name,
+        annotations: cfg.annotations,
+        inputSchema: cfg.inputSchema,
+        handler,
+      });
     },
   };
 }
 
-function hooksStub(alerts: AlertsConfig, notifier?: unknown): HooksService {
+function hooksStub(alerts: AlertsConfig, notifier?: unknown, running = true): HooksService {
   return {
+    isRunning: () => running,
     getHooksConfig: () => ({
       onNewEmail: 'notify',
       preset: 'priority-focus',
@@ -117,38 +124,60 @@ describe('alerting tools respect the read-only gate', () => {
     );
   });
 
-  it('a webhook URL that fails safety validation is rejected at set time', async () => {
-    const { default: RealNotifierService } = await import('../services/notifier.service.js');
-    const notifier = new RealNotifierService(alertsConfig());
-    try {
-      const captured: CapturedTool[] = [];
-      const hooks = hooksStub(alertsConfig(), notifier);
-
-      registerWatcherWriteTools(capture(captured) as never, hooks);
-      const configure = captured.find((t) => t.name === 'configure_alerts');
-      if (!configure) throw new Error('configure_alerts not registered');
-
-      // Cloud-metadata literal: the old string-only filter had no range for
-      // link-local, so configuring this succeeded and only dispatch failed.
-      const result = await configure.handler({ webhook_url: 'http://169.254.169.254/latest/' });
-
-      expect(result).toMatchObject({ isError: true });
-      expect(notifier.getConfig().webhookUrl).toBe('');
-    } finally {
-      notifier.stop();
-    }
-  }, 15_000);
-
-  it('an empty webhook URL still disables the hook', async () => {
+  it('configure_alerts has no webhook fields: only a person can set the webhook in config.toml', async () => {
     const captured: CapturedTool[] = [];
     const hooks = hooksStub({ ...alertsConfig(), webhookUrl: 'https://hooks.example.invalid/x' });
-
     registerWatcherWriteTools(capture(captured) as never, hooks);
     const configure = captured.find((t) => t.name === 'configure_alerts');
     if (!configure) throw new Error('configure_alerts not registered');
 
-    const result = await configure.handler({ webhook_url: '' });
-    expect(result).not.toMatchObject({ isError: true });
+    const keys = Object.keys((configure.inputSchema as { shape: object }).shape);
+    expect(keys.sort()).toEqual(['desktop', 'sound', 'urgency_threshold']);
+
+    // Even if a client sends the old fields anyway, they change nothing.
+    const result = (await configure.handler({
+      webhook_url: 'https://attacker.example/hook',
+      webhook_events: ['urgent'],
+    })) as { content: { text: string }[] };
+    expect(result.content[0].text).toMatch(/No changes specified/);
+    expect(result.content[0].text).not.toContain('attacker.example');
+  });
+
+  it('read tools show the webhook host but not its secret path', async () => {
+    const captured: CapturedTool[] = [];
+    const secret = 'https://hooks.slack.example/services/T000/B000/SECRETTOKEN123';
+    const hooks = hooksStub({ ...alertsConfig(), webhookUrl: secret });
+    registerWatcherReadTools(capture(captured) as never, {} as WatcherService, hooks);
+    for (const name of ['get_hooks_config', 'check_notification_setup']) {
+      const tool = captured.find((t) => t.name === name);
+      if (!tool) throw new Error(`${name} not registered`);
+      // eslint-disable-next-line no-await-in-loop
+      const out = JSON.stringify(await tool.handler({}));
+      expect(out).toContain('hooks.slack.example');
+      expect(out).not.toContain('SECRETTOKEN123');
+    }
+  });
+
+  it('a configure_alerts call in a process that does not run the watcher says it has no effect', async () => {
+    const captured: CapturedTool[] = [];
+    registerWatcherWriteTools(
+      capture(captured) as never,
+      hooksStub(alertsConfig(), undefined, false),
+    );
+    const configure = captured.find((t) => t.name === 'configure_alerts');
+    if (!configure) throw new Error('configure_alerts not registered');
+    const result = (await configure.handler({ desktop: true })) as { content: { text: string }[] };
+    expect(result.content[0].text).toMatch(/another IMAP Wizard process runs the watcher/);
+  });
+
+  it('get_watcher_status in a follower says another process holds the watcher', async () => {
+    const captured: CapturedTool[] = [];
+    const watcher = { getStatus: () => [], isEnabled: () => true } as unknown as WatcherService;
+    registerWatcherReadTools(capture(captured) as never, watcher, hooksStub(alertsConfig()));
+    const status = captured.find((t) => t.name === 'get_watcher_status');
+    if (!status) throw new Error('get_watcher_status not registered');
+    const result = (await status.handler({})) as { content: { text: string }[] };
+    expect(result.content[0].text).toMatch(/another one holds it/);
   });
 });
 

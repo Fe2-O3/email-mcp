@@ -6,6 +6,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/server';
+import { readAllowedRedirects } from '../config/loader.js';
 import type ConnectionManager from '../connections/manager.js';
 import type CalendarService from '../services/calendar.service.js';
 import type HooksService from '../services/hooks.service.js';
@@ -73,11 +74,12 @@ export default function registerAllTools(
   const { readOnly, toolset } = config.settings;
   // Tools outside the configured toolset are skipped at registration.
   const server = restrictToToolset(fullServer, toolset);
-  // The forwarding allowlist is read from config here, once. No tool receives a
-  // way to change it, and nothing below writes config.toml.
+  // The forwarding allowlist is read from config.toml each time it is needed. No
+  // tool receives a way to change it, and nothing below writes config.toml.
   const sieveManager = new SieveManager({
     sieve: extras.sieveService ?? new SieveService(),
     allowlist: config.sieve?.allowedRedirects ?? [],
+    readAllowlist: readAllowedRedirects,
     listFolders: async (account) =>
       (await imapService.listMailboxes(account)).map((mailbox) => mailbox.path),
   });
@@ -125,6 +127,13 @@ export default function registerAllTools(
     registerSchedulerTools(server, schedulerService);
     registerWatcherWriteTools(server, hooksService);
     registerSieveWriteTools(server, connections, sieveManager);
-    registerLocalRulesWriteTools(server, localRulesStore, connections, imapService, config);
+    registerLocalRulesWriteTools(
+      server,
+      localRulesStore,
+      connections,
+      imapService,
+      config,
+      readAllowedRedirects,
+    );
   }
 }

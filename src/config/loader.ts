@@ -447,6 +447,25 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
 }
 
 /**
+ * The forwarding allowlist (`[sieve] allowed_redirects`), read fresh from the
+ * environment or config.toml. Only a person edits it, so a change must apply
+ * to a running process: a forward or a Sieve scan reads it here every time
+ * instead of trusting the copy loaded at start-up. Anything that cannot be
+ * read with certainty gives an empty list, which allows nothing.
+ */
+export async function readAllowedRedirects(configPath?: string): Promise<string[]> {
+  try {
+    const fromEnv = loadFromEnv();
+    const raw = fromEnv ?? (await loadFromFile(configPath));
+    const list = (raw as { sieve?: { allowed_redirects?: unknown } } | null)?.sieve
+      ?.allowed_redirects;
+    return Array.isArray(list) ? list.filter((a): a is string => typeof a === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Write a config file safely: to a temp file in the same folder, then rename,
  * so a crash mid-write can never leave a half-written or empty config. The
  * file being replaced is kept as `<file>.bak` (same folder, same 0600 mode),

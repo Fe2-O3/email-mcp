@@ -7,6 +7,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import audit from '../safety/audit.js';
+import { delimitUntrusted, SAVED_TEXT_NOTICE } from '../safety/untrusted-content.js';
 
 import type SchedulerService from '../services/scheduler.service.js';
 
@@ -124,7 +125,12 @@ export default function registerSchedulerTools(
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ scheduled_emails: summary, count: summary.length }, null, 2),
+            // Subjects and error text were written earlier, possibly from an email:
+            // they come back marked as data.
+            text: delimitUntrusted(
+              JSON.stringify({ scheduled_emails: summary, count: summary.length }, null, 2),
+              SAVED_TEXT_NOTICE,
+            ),
           },
         ],
       };

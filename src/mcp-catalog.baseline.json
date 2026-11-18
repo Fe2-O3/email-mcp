@@ -512,18 +512,6 @@
               "description": "Minimum urgency level to trigger desktop notifications",
               "enum": ["urgent", "high", "normal", "low"],
               "type": "string"
-            },
-            "webhook_events": {
-              "description": "Which urgency levels trigger webhook dispatch",
-              "items": {
-                "enum": ["urgent", "high", "normal", "low"],
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "webhook_url": {
-              "description": "Webhook URL for external notifications (empty string to disable)",
-              "type": "string"
             }
           },
           "type": "object"

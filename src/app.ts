@@ -11,7 +11,7 @@ import type { McpServer, Server } from '@modelcontextprotocol/server';
 import BodyCache from './cache/body-cache.js';
 import CacheStore from './cache/store.js';
 import SyncEngine from './cache/sync-engine.js';
-import { loadConfig } from './config/loader.js';
+import { loadConfig, readAllowedRedirects } from './config/loader.js';
 import { CACHE_DB } from './config/xdg.js';
 import ConnectionManager from './connections/manager.js';
 import { mcpLog } from './logging.js';
@@ -84,7 +84,8 @@ export async function buildServices(): Promise<AppServices> {
       store: localRulesStore,
       imapService,
       smtpService,
-      allowlist: config.sieve?.allowedRedirects ?? [],
+      readAllowlist: () => readAllowedRedirects(),
+      watchedFolders: () => config.settings.watcher.folders,
       accounts: config.accounts,
     }),
   );

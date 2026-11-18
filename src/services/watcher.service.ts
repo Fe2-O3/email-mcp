@@ -112,6 +112,11 @@ export default class WatcherService {
     this.idleStates.clear();
   }
 
+  /** Whether the config turns the watcher on (it may still run in another process). */
+  isEnabled(): boolean {
+    return this.config.enabled;
+  }
+
   getStatus(): WatcherStatus[] {
     return [...this.idleStates.values()].map((state) => ({
       account: state.account.name,

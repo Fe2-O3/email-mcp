@@ -10,7 +10,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import audit from '../safety/audit.js';
-import { assertWebhookTargetAllowed } from '../safety/webhook-guard.js';
+import { describeWebhookUrl } from '../safety/webhook-guard.js';
 import type HooksService from '../services/hooks.service.js';
 import NotifierService from '../services/notifier.service.js';
 import { listPresets as listAllPresets } from '../services/presets.js';
@@ -42,7 +42,11 @@ export function registerWatcherReadTools(
           content: [
             {
               type: 'text' as const,
-              text: 'Watcher is not active. Enable it in config: [settings.watcher] enabled = true',
+              text: watcherService.isEnabled()
+                ? 'The watcher is turned on in config, but this process is not running it. ' +
+                  'Only one IMAP Wizard process runs the watcher at a time; another one holds it and sends the alerts. ' +
+                  'Ask that process for the live status.'
+                : 'Watcher is not active. Enable it in config: [settings.watcher] enabled = true',
             },
           ],
         };
@@ -159,7 +163,7 @@ export function registerWatcherReadTools(
       sections.push(`   Sound:     ${alerts.sound ? '✅ enabled' : '❌ disabled'}`);
       sections.push(`   Threshold: ${alerts.urgencyThreshold}`);
       if (alerts.webhookUrl) {
-        sections.push(`   Webhook:   ${alerts.webhookUrl}`);
+        sections.push(`   Webhook:   ${describeWebhookUrl(alerts.webhookUrl)}`);
         sections.push(`   Events:    ${alerts.webhookEvents.join(', ')}`);
       } else {
         sections.push(`   Webhook:   not configured`);
@@ -218,7 +222,7 @@ export function registerWatcherReadTools(
         `   Sound:     ${alertsCfg.sound ? '✅ enabled' : '❌ disabled'}`,
         `   Threshold: ${alertsCfg.urgencyThreshold}`,
         alertsCfg.webhookUrl
-          ? `   Webhook:   ${alertsCfg.webhookUrl}`
+          ? `   Webhook:   ${describeWebhookUrl(alertsCfg.webhookUrl)}`
           : '   Webhook:   not configured',
       );
 
@@ -296,8 +300,9 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
     {
       title: 'Configure alerts',
       description:
-        'Update alert/notification settings for this session. Changes take effect immediately ' +
-        'but are never written to the config file; edit config.toml directly to persist them. ' +
+        'Update desktop and sound alert settings for this session. Changes take effect immediately ' +
+        'in this process only and are never written to the config file; edit config.toml directly to persist them. ' +
+        'The webhook (where alert details are posted) can only be set in config.toml by a person, not with this tool. ' +
         'Omit any field to leave it unchanged.',
       inputSchema: z.object({
         desktop: z.boolean().optional().describe('Enable/disable desktop notifications'),
@@ -306,24 +311,10 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
           .enum(['urgent', 'high', 'normal', 'low'])
           .optional()
           .describe('Minimum urgency level to trigger desktop notifications'),
-        webhook_url: z
-          .string()
-          .optional()
-          .describe('Webhook URL for external notifications (empty string to disable)'),
-        webhook_events: z
-          .array(z.enum(['urgent', 'high', 'normal', 'low']))
-          .optional()
-          .describe('Which urgency levels trigger webhook dispatch'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({
-      desktop,
-      sound,
-      urgency_threshold: urgencyThreshold,
-      webhook_url: webhookUrl,
-      webhook_events: webhookEvents,
-    }) => {
+    async ({ desktop, sound, urgency_threshold: urgencyThreshold }) => {
       try {
         const notifier = hooksService.getNotifier();
 
@@ -332,15 +323,8 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
         if (desktop !== undefined) partial.desktop = desktop;
         if (sound !== undefined) partial.sound = sound;
         if (urgencyThreshold !== undefined) partial.urgencyThreshold = urgencyThreshold;
-        if (webhookUrl !== undefined) {
-          if (webhookUrl !== '') {
-            // Reject an unroutable destination when it is set, not the first
-            // time an alert fires.
-            await assertWebhookTargetAllowed(webhookUrl);
-          }
-          partial.webhookUrl = webhookUrl;
-        }
-        if (webhookEvents !== undefined) partial.webhookEvents = webhookEvents;
+        // The webhook is deliberately not settable here: it sends mail details
+        // off the machine, so only a person editing config.toml can set it.
 
         if (Object.keys(partial).length === 0) {
           const current = notifier.getConfig();
@@ -353,8 +337,7 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
                   `  Desktop:   ${current.desktop ? '✅' : '❌'}\n` +
                   `  Sound:     ${current.sound ? '✅' : '❌'}\n` +
                   `  Threshold: ${current.urgencyThreshold}\n` +
-                  `  Webhook:   ${current.webhookUrl || '(none)'}\n` +
-                  `  Events:    ${current.webhookEvents.join(', ')}`,
+                  `  Webhook:   ${current.webhookUrl ? describeWebhookUrl(current.webhookUrl) : '(none)'} (config.toml only)`,
               },
             ],
           };
@@ -374,8 +357,6 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
             desktop: updated.desktop,
             sound: updated.sound,
             urgencyThreshold: updated.urgencyThreshold,
-            webhookUrl: updated.webhookUrl,
-            webhookEvents: updated.webhookEvents,
           },
           'ok',
         );
@@ -385,9 +366,13 @@ export function registerWatcherWriteTools(server: McpServer, hooksService: Hooks
           `   Desktop:   ${updated.desktop ? '✅ enabled' : '❌ disabled'}`,
           `   Sound:     ${updated.sound ? '✅ enabled' : '❌ disabled'}`,
           `   Threshold: ${updated.urgencyThreshold}`,
-          `   Webhook:   ${updated.webhookUrl || '(none)'}`,
-          `   Events:    ${updated.webhookEvents.join(', ')}`,
+          `   Webhook:   ${updated.webhookUrl ? describeWebhookUrl(updated.webhookUrl) : '(none)'} (config.toml only)`,
           '\nEdit config.toml to persist changes across restarts.',
+          ...(hooksService.isRunning()
+            ? []
+            : [
+                'Note: this process is not the one sending alerts (another IMAP Wizard process runs the watcher), so this change has no effect on them. Edit config.toml instead.',
+              ]),
         ];
 
         return {
