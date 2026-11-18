@@ -177,6 +177,24 @@ export default function registerCalendarTools(
           }
         }
 
+        // A mail whose Date header is unreadable reads "date unknown"; with no
+        // usable ICS start there is no event time to add. Refuse before any
+        // attachment is saved or any script is built.
+        if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  'Cannot add to calendar: this email has no usable date or time (its Date header ' +
+                  'is missing or unreadable, and it has no calendar invite with a start time). ' +
+                  'Nothing was added and no attachments were saved.',
+              },
+            ],
+            isError: true,
+          };
+        }
+
         // 3. Extract meeting URL and conference details
         const meetingUrl = extractMeetingUrl(combinedText);
         const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);

@@ -19,6 +19,7 @@ import type { AccountConfig, AppConfig, HookRule, OAuth2Config } from '../types/
 import resolvePasswordCommand from './password-command.js';
 import type { RawAccountConfig, RawAppConfig } from './schema.js';
 import { AppConfigFileSchema } from './schema.js';
+import { imapTlsConflictWarning } from './validate.js';
 import { CONFIG_FILE, xdg } from './xdg.js';
 
 // ---------------------------------------------------------------------------
@@ -230,7 +231,8 @@ async function normalizeAccount(raw: RawAccountConfig): Promise<AccountConfig> {
       host: raw.imap.host,
       port: raw.imap.port,
       tls: raw.imap.tls,
-      starttls: raw.imap.starttls,
+      // Implicit TLS and STARTTLS cannot both apply to one connection; tls wins.
+      starttls: raw.imap.starttls && !raw.imap.tls,
       verifySsl: raw.imap.verify_ssl,
     },
     smtp: {
@@ -281,6 +283,11 @@ function normalizeHookRule(raw: {
 }
 
 async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
+  for (const account of raw.accounts) {
+    if (account.imap.tls && account.imap.starttls) {
+      console.error(`Warning: ${imapTlsConflictWarning(account.name)}`);
+    }
+  }
   return {
     settings: {
       rateLimit: raw.settings.rate_limit,

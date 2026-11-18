@@ -49,7 +49,7 @@ export function imapClientOptions(
     tls: { rejectUnauthorized: account.imap.verifySsl },
     auth,
     logger: false,
-    ...(account.imap.starttls ? { doSTARTTLS: true as const } : {}),
+    ...(account.imap.starttls && !account.imap.tls ? { doSTARTTLS: true as const } : {}),
     ...extra,
   };
 }

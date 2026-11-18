@@ -114,6 +114,19 @@ export function findUnknownKeys(raw: unknown): UnknownKey[] {
   return out;
 }
 
+/**
+ * One IMAP connection cannot use implicit TLS and STARTTLS at once. The
+ * config still loads: implicit TLS wins and STARTTLS is ignored for that
+ * account. This is the one-line warning for it.
+ */
+export function imapTlsConflictWarning(accountName: string): string {
+  return (
+    `Account ${JSON.stringify(accountName)}: IMAP has both tls = true and starttls = true. ` +
+    'Using implicit TLS (tls wins) and ignoring starttls. Set tls = true (usually port 993) ' +
+    'or starttls = true with tls = false (usually port 143), not both.'
+  );
+}
+
 /** Cross-setting mistakes a per-field schema cannot see. */
 export function findConsistencyIssues(raw: RawAppConfig): ConsistencyIssue[] {
   const issues: ConsistencyIssue[] = [];
@@ -128,6 +141,12 @@ export function findConsistencyIssues(raw: RawAppConfig): ConsistencyIssue[] {
       });
     }
     seen.add(account.name);
+  }
+
+  for (const account of accounts) {
+    if (account.imap.tls && account.imap.starttls) {
+      issues.push({ severity: 'warning', message: imapTlsConflictWarning(account.name) });
+    }
   }
 
   if (!settings.watcher.enabled) {

@@ -7,9 +7,11 @@
  * restart, and stopping the hooks says how much waiting mail it dropped.
  */
 
-import { AccountConfigSchema } from '../config/schema.js';
+import { AccountConfigSchema, AppConfigFileSchema } from '../config/schema.js';
+import { findConsistencyIssues } from '../config/validate.js';
 import type { IConnectionManager } from '../connections/types.js';
 import type { HooksConfig } from '../types/index.js';
+import { imapClientOptions } from '../utils/imap-client.js';
 import HooksService from './hooks.service.js';
 import ImapService, { DATE_UNKNOWN, messageToEmailMeta, safeIsoDate } from './imap.service.js';
 import NotifierService from './notifier.service.js';
@@ -120,18 +122,83 @@ describe('a Date header that is not a date', () => {
 });
 
 describe('IMAP tls and starttls together', () => {
-  it('is refused with a message that says what to change', () => {
-    const result = AccountConfigSchema.safeParse({
-      name: 'work',
-      email: 'me@example.com',
-      password: 'x',
-      imap: { host: 'imap.example.com', tls: true, starttls: true },
-      smtp: { host: 'smtp.example.com' },
-    });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues.map((i) => i.message).join('\n')).toMatch(
-      /both tls = true and starttls = true/,
+  const both = {
+    name: 'work',
+    email: 'me@example.com',
+    password: 'x',
+    imap: { host: 'imap.example.com', tls: true, starttls: true },
+    smtp: { host: 'smtp.example.com' },
+  };
+
+  it('still loads; implicit TLS wins and one warning line is printed', async () => {
+    const { loadConfig } = await import('../config/loader.js');
+    const fsp = await import('node:fs/promises');
+    const os = await import('node:os');
+    const nodePath = await import('node:path');
+    const dir = await fsp.mkdtemp(nodePath.join(os.tmpdir(), 'tls-both-'));
+    const file = nodePath.join(dir, 'config.toml');
+    await fsp.writeFile(
+      file,
+      `[[accounts]]
+name = "work"
+email = "me@example.com"
+password = "x"
+[accounts.imap]
+host = "imap.example.com"
+tls = true
+starttls = true
+[accounts.smtp]
+host = "smtp.example.com"
+
+[[accounts]]
+name = "other"
+email = "o@example.com"
+password = "y"
+[accounts.imap]
+host = "imap.example.org"
+[accounts.smtp]
+host = "smtp.example.org"
+`,
     );
+    const saved = Object.keys(process.env).filter((k) => k.startsWith('MCP_EMAIL_'));
+    const backup = Object.fromEntries(saved.map((k) => [k, process.env[k]]));
+    for (const k of saved) delete process.env[k];
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const config = await loadConfig(file);
+      expect(config.accounts.map((a) => a.name)).toEqual(['work', 'other']);
+      expect(config.accounts[0]?.imap.tls).toBe(true);
+      expect(config.accounts[0]?.imap.starttls).toBe(false);
+      const lines = err.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('starttls'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('"work"');
+      expect(lines[0]).toMatch(/tls wins/);
+    } finally {
+      err.mockRestore();
+      Object.assign(process.env, backup);
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the schema accepts it and config validate reports a warning', () => {
+    const parsed = AccountConfigSchema.safeParse(both);
+    expect(parsed.success).toBe(true);
+    const raw = AppConfigFileSchema.parse({ accounts: [both] });
+    const issues = findConsistencyIssues(raw);
+    expect(
+      issues.some(
+        (i) => i.severity === 'warning' && /both tls = true and starttls = true/.test(i.message),
+      ),
+    ).toBe(true);
+  });
+
+  it('the IMAP options never ask for STARTTLS on an implicit-TLS connection', () => {
+    const opts = imapClientOptions(
+      { imap: { host: 'h', port: 993, tls: true, starttls: true, verifySsl: true } },
+      undefined,
+    );
+    expect(opts.secure).toBe(true);
+    expect('doSTARTTLS' in opts).toBe(false);
   });
 });
 

@@ -598,6 +598,17 @@ export default class HooksService {
         // ICS extraction is best-effort
       }
 
+      // "date unknown" mail with no usable invite start: skip, do not build a
+      // calendar script around an invalid date or save attachments for it.
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        await mcpLog(
+          'warning',
+          'hooks',
+          `Calendar auto-add skipped: email ${email.meta.id} in ${email.account} has no usable date or time`,
+        );
+        return;
+      }
+
       const meetingUrl = extractMeetingUrl(combined);
       const conference = extractConferenceDetails(bodyText !== '' ? bodyText : bodyHtml);
 
