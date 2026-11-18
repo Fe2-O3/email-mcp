@@ -120,6 +120,21 @@ describe('sieve_put_script', () => {
     );
   });
 
+  it('warns that a script the active one includes goes live, and backs it up', async () => {
+    const { call } = await setup({ main: 'include "helper";', helper: 'keep;' }, 'main');
+    const preview = await call('sieve_put_script', { name: 'helper', content: 'discard;' });
+    expect(preview.content[0]?.text).toMatch(
+      /the active script "main" includes "helper", so saving it changes live mail filtering/,
+    );
+    const saved = await call('sieve_put_script', {
+      name: 'helper',
+      content: 'discard;',
+      apply: true,
+    });
+    expect(saved.content[0]?.text).toMatch(/"main" includes it, so it is live now/);
+    expect(store.scripts.get(`imapwiz-backup-${STAMP}-helper`)).toBe('keep;');
+  });
+
   it('creates a new script without a backup and says it is not active', async () => {
     const { call } = await setup({}, null);
     const result = await call('sieve_put_script', { name: 'new', content: 'keep;', apply: true });

@@ -46,6 +46,8 @@ export interface PutReport extends CheckReport {
   exists: boolean;
   /** The script is the active one, so saving it changes live filtering. */
   live: boolean;
+  /** Set when the script is live because the active script includes it. */
+  liveVia?: string;
   diff: string[];
   backup?: string;
   /** Why the write was refused, when it was. */
@@ -158,6 +160,15 @@ export default class SieveManager {
         live: Boolean(existing?.active),
         diff: lineDiff(before, content),
       };
+      // A script the active one includes is live too, even though it is not active.
+      const active = scripts.find((x) => x.active);
+      if (existing && active && active.name !== name) {
+        const activeScan = await this.scan(s, active.name, await s.getScript(active.name));
+        if (activeScan.includes.some((inc) => !inc.global && inc.name === name)) {
+          report.live = true;
+          report.liveVia = active.name;
+        }
+      }
       if (report.blocked) {
         report.refused = report.scan.blocked
           ? 'The script forwards mail or runs actions that cannot be allowed (see BLOCKED lines).'

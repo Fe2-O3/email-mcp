@@ -214,9 +214,13 @@ export function registerSieveWriteTools(
         const header = report.exists
           ? `Replaces the existing script ${JSON.stringify(name)} on "${cfg.name}".`
           : `Creates the new script ${JSON.stringify(name)} on "${cfg.name}".`;
-        const live = report.live
-          ? `WARNING: ${JSON.stringify(name)} is the ACTIVE script. Saving it changes live mail filtering immediately.`
-          : 'The script is not active; saving it does not change filtering until sieve_activate_script.';
+        let live =
+          'The script is not active; saving it does not change filtering until sieve_activate_script.';
+        if (report.liveVia) {
+          live = `WARNING: the active script ${JSON.stringify(report.liveVia)} includes ${JSON.stringify(name)}, so saving it changes live mail filtering immediately.`;
+        } else if (report.live) {
+          live = `WARNING: ${JSON.stringify(name)} is the ACTIVE script. Saving it changes live mail filtering immediately.`;
+        }
         const body = [
           header,
           live,
@@ -252,9 +256,11 @@ export function registerSieveWriteTools(
         const saved = [
           `Saved ${JSON.stringify(name)}.`,
           report.backup ? `The previous version is kept as ${JSON.stringify(report.backup)}.` : '',
-          report.live
-            ? 'It is the active script, so it is live now.'
-            : 'It is not active. Use sieve_activate_script to turn it on.',
+          report.liveVia
+            ? `The active script ${JSON.stringify(report.liveVia)} includes it, so it is live now.`
+            : report.live
+              ? 'It is the active script, so it is live now.'
+              : 'It is not active. Use sieve_activate_script to turn it on.',
           report.serverWarnings ? `Server warnings: ${report.serverWarnings}` : '',
         ].filter(Boolean);
         return text([...saved, ...body.slice(2)].join('\n'));
