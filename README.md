@@ -2,7 +2,7 @@
 
 # IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 51 tools plus an opt-in verification tool, 912 tests green, 18 upstream bugs fixed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 51 tools plus an opt-in verification tool, 912 tests green, 20 upstream bugs fixed" width="100%">
 
 **Let your AI assistant read, search, send and sort your email over plain IMAP and SMTP.**
 

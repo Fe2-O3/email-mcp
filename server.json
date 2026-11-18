@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Fe2-O3/imap-wizard",
-  "description": "Local IMAP/SMTP email MCP server: 50 tools, read-only mode, non-destructive reads, multi-account.",
+  "description": "Local IMAP/SMTP email MCP server: 51 tools, read-only mode, non-destructive reads, multi-account.",
   "repository": {
     "url": "https://github.com/Fe2-O3/imap-wizard.git",
     "source": "github"
