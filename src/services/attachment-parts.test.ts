@@ -228,7 +228,11 @@ describe('saved names never collide and nothing is overwritten', () => {
     const { saved, failed } = await service.saveEmailAttachments('a', '9', 'INBOX', dir);
     expect(failed).toEqual([]);
     expect(saved).toHaveLength(4);
-    expect(new Set(saved.map((s) => s.localPath.toLowerCase())).size).toBe(4);
+    // On a case-blind disk (macOS) A.PDF must get its own name; on Linux it may keep its own
+    // case. Either way every file is separate and holds its own bytes.
+    expect(new Set(saved.map((s) => s.localPath)).size).toBe(4);
+    const folded = new Set(saved.map((s) => s.localPath.toLowerCase())).size;
+    expect(folded).toBeGreaterThanOrEqual(3);
     const contents = await Promise.all(saved.map((s) => fs.readFile(s.localPath, 'utf8')));
     expect(contents).toEqual(['one', 'two', 'three', 'four']);
   });
