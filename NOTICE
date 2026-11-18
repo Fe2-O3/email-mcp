@@ -30,6 +30,8 @@ The adapted files are:
   src/safety/local-paths.test.ts             tests for the above
   src/services/protected-mailboxes.ts        folders delete/rename refuse (plus a
                                              common-name fallback added here)
+  src/safety/untrusted-content.ts            untrusted-text markers (notice line and
+                                             single-pass escaping added here)
   src/tools/toolsets.ts                      toolset grouping idea (tool lists
                                              and filter are original)
   src/tools/export.tool.ts                   export_email tool (idea and shape;

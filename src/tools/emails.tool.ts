@@ -4,6 +4,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 import type { Email, EmailMeta } from '../types/index.js';
 import { formatBulk } from '../utils/bulk-headers.js';
@@ -184,7 +185,7 @@ export default function registerEmailsTools(
           `📬 [${params.mailbox}] ${result.total} emails ` +
           `(page ${result.page}/${Math.ceil(result.total / result.pageSize)})` +
           `${result.hasMore ? ' — more pages available' : ''}\n`;
-        const emails = result.items.map(formatEmailMeta).join('\n\n');
+        const emails = delimitUntrusted(result.items.map(formatEmailMeta).join('\n\n'));
 
         return {
           content: [{ type: 'text' as const, text: `${header}\n${emails}` }],
@@ -263,7 +264,6 @@ export default function registerEmailsTools(
 
         const notice = offlineNotice(email);
         const parts: string[] = [
-          ...(notice ? [notice, ''] : []),
           `📧 ${email.subject}`,
           `Status: ${formatEmailStatus(email)}`,
           `From:   ${email.from.name ? `${email.from.name} <${email.from.address}>` : email.from.address}`,
@@ -312,8 +312,14 @@ export default function registerEmailsTools(
           await imapService.setFlags(account, emailId, mailbox, 'read');
         }
 
+        // Our own offline notice stays outside the markers; everything from the message is inside.
         return {
-          content: [{ type: 'text' as const, text: parts.join('\n') }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `${notice ? `${notice}\n\n` : ''}${delimitUntrusted(parts.join('\n'))}`,
+            },
+          ],
         };
       } catch (err) {
         return {
@@ -395,15 +401,21 @@ export default function registerEmailsTools(
 
           results.push(
             [
-              `━━━ [${emailId}] ${email.subject}`,
               offlineNotice(email) ?? '',
-              `Status: ${formatEmailStatus(email)}`,
-              `From:   ${from}`,
-              `Date:   ${email.date}`,
-              bulkLine ? `Bulk:   ${bulkLine}` : '',
-              attachLine,
-              '',
-              body,
+              delimitUntrusted(
+                [
+                  `━━━ [${emailId}] ${email.subject}`,
+                  `Status: ${formatEmailStatus(email)}`,
+                  `From:   ${from}`,
+                  `Date:   ${email.date}`,
+                  bulkLine ? `Bulk:   ${bulkLine}` : '',
+                  attachLine,
+                  '',
+                  body,
+                ]
+                  .filter((l) => l !== '')
+                  .join('\n'),
+              ),
             ]
               .filter((l) => l !== '')
               .join('\n'),
@@ -575,7 +587,7 @@ export default function registerEmailsTools(
         const header =
           `🔍 [${params.mailbox}] ${result.total} result(s) for ${queryLabel} ` +
           `(page ${result.page}/${Math.ceil(result.total / result.pageSize)})\n`;
-        const emails = result.items.map(formatEmailMeta).join('\n\n');
+        const emails = delimitUntrusted(result.items.map(formatEmailMeta).join('\n\n'));
 
         return {
           content: [{ type: 'text' as const, text: `${header}\n${emails}` }],

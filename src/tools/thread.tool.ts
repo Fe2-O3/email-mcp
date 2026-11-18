@@ -8,6 +8,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
@@ -110,7 +111,9 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
         const parts: string[] = [
           `🧵 Thread: ${total} message${total === 1 ? '' : 's'}`,
           `Thread-ID: ${thread.threadId}`,
-          `Participants: ${thread.participants.map((p) => (p.name ? `${p.name} <${p.address}>` : p.address)).join(', ')}`,
+          delimitUntrusted(
+            `Participants: ${thread.participants.map((p) => (p.name ? `${p.name} <${p.address}>` : p.address)).join(', ')}`,
+          ),
           '',
         ];
 
@@ -127,27 +130,29 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
             : email.from.address;
 
           parts.push(`--- ${label} ---`);
-          parts.push(`From: ${from}`);
-          parts.push(`To: ${email.to.map((a) => a.address).join(', ')}`);
-          parts.push(`Date: ${email.date}`);
-          parts.push(`Subject: ${email.subject}`);
+          const messageLines: string[] = [];
+          messageLines.push(`From: ${from}`);
+          messageLines.push(`To: ${email.to.map((a) => a.address).join(', ')}`);
+          messageLines.push(`Date: ${email.date}`);
+          messageLines.push(`Subject: ${email.subject}`);
           const bulkLine = formatBulk(email.bulk);
           if (bulkLine) {
-            parts.push(`Bulk: ${bulkLine}`);
+            messageLines.push(`Bulk: ${bulkLine}`);
           }
 
           if (email.attachments.length > 0) {
-            parts.push(`📎 ${email.attachments.map((a) => a.filename).join(', ')}`);
+            messageLines.push(`📎 ${email.attachments.map((a) => a.filename).join(', ')}`);
           }
 
           // In newestFirst mode, only render body for the newest (first) message
           if (newestFirst && idx > 0) {
-            parts.push('(body omitted — use get_email to read this message)');
+            messageLines.push('(body omitted — use get_email to read this message)');
           } else {
-            parts.push('');
-            parts.push(applyBodyFormat(email.bodyText, email.bodyHtml, format, maxLength));
+            messageLines.push('');
+            messageLines.push(applyBodyFormat(email.bodyText, email.bodyHtml, format, maxLength));
           }
 
+          parts.push(delimitUntrusted(messageLines.join('\n')));
           parts.push('');
         });
 
