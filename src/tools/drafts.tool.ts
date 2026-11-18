@@ -9,6 +9,7 @@ import { MAX_EMAIL_BODY_LENGTH, validateInputLength } from '../safety/validation
 
 import type ImapService from '../services/imap.service.js';
 import type SmtpService from '../services/smtp.service.js';
+import { attachmentInput, toOutgoingAttachments } from './schema-helpers.js';
 
 export default function registerDraftTools(
   server: McpServer,
@@ -42,10 +43,14 @@ export default function registerDraftTools(
           .describe('CC recipients'),
         html: z.boolean().default(false).describe('Send as HTML (default: plain text)'),
         in_reply_to: z.string().optional().describe('Message-ID for threading (from get_email)'),
+        attachments: z
+          .array(attachmentInput)
+          .optional()
+          .describe('Files to attach: base64 parts or absolute local file paths'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
-    async ({ account, to, subject, body, cc, bcc, html, in_reply_to: inReplyTo }) => {
+    async ({ account, to, subject, body, cc, bcc, html, in_reply_to: inReplyTo, attachments }) => {
       try {
         validateInputLength(body, MAX_EMAIL_BODY_LENGTH, 'Body');
         const result = await imapService.saveDraft(account, {
@@ -56,6 +61,7 @@ export default function registerDraftTools(
           bcc,
           html,
           inReplyTo,
+          attachments: toOutgoingAttachments(attachments),
         });
 
         await audit.log('save_draft', account, { to, subject }, 'ok');

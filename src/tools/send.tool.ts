@@ -8,13 +8,7 @@ import audit from '../safety/audit.js';
 import { MAX_EMAIL_BODY_LENGTH, validateInputLength } from '../safety/validation.js';
 
 import type SmtpService from '../services/smtp.service.js';
-
-/** Inline attachment parts. Base64 content only — no filesystem paths. */
-const attachmentInput = z.object({
-  filename: z.string().optional().describe('Name shown to the recipient'),
-  contentType: z.string().optional().describe('MIME type, e.g. application/pdf'),
-  base64: z.string().min(1).describe('Attachment bytes as base64'),
-});
+import { attachmentInput, toOutgoingAttachments } from './schema-helpers.js';
 
 export default function registerSendTools(server: McpServer, smtpService: SmtpService): void {
   // ---------------------------------------------------------------------------
@@ -45,7 +39,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         attachments: z
           .array(attachmentInput)
           .optional()
-          .describe('Files to attach, as base64 parts'),
+          .describe('Files to attach: base64 parts or absolute local file paths'),
         message_id: z
           .string()
           .optional()
@@ -65,11 +59,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
         const result = await smtpService.sendEmail(params.account, {
           ...params,
-          attachments: params.attachments?.map((a) => ({
-            filename: a.filename,
-            contentType: a.contentType,
-            content: a.base64,
-          })),
+          attachments: toOutgoingAttachments(params.attachments),
           messageId: params.message_id,
           allowDuplicate: params.allow_duplicate,
         });
@@ -125,13 +115,20 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         body: z.string().max(MAX_EMAIL_BODY_LENGTH).describe('Reply body content'),
         replyAll: z.boolean().default(false).describe('Reply to all recipients'),
         html: z.boolean().default(false).describe('Send as HTML'),
+        attachments: z
+          .array(attachmentInput)
+          .optional()
+          .describe('Files to attach: base64 parts or absolute local file paths'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     async (params) => {
       try {
         validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
-        const result = await smtpService.replyToEmail(params.account, params);
+        const result = await smtpService.replyToEmail(params.account, {
+          ...params,
+          attachments: toOutgoingAttachments(params.attachments),
+        });
         await audit.log(
           'reply_email',
           params.account,
@@ -199,6 +196,12 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .default(true)
           .describe('Reattach the original email\u2019s attachments (default: true)'),
         html: z.boolean().default(false).describe('Send as HTML (default: plain text)'),
+        attachments: z
+          .array(attachmentInput)
+          .optional()
+          .describe(
+            'Extra files to attach besides the original\u2019s: base64 parts or absolute local file paths',
+          ),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -209,6 +212,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         }
         const result = await smtpService.forwardEmail(params.account, {
           ...params,
+          attachments: toOutgoingAttachments(params.attachments),
           includeAttachments: params.include_attachments,
         });
         await audit.log(

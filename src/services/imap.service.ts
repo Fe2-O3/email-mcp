@@ -7,6 +7,7 @@
 import path from 'node:path';
 
 import type { ImapFlow } from 'imapflow';
+import { DEFAULT_SEND_LIMIT_MB, resolveSendLimitMb } from '../config/send-limit.js';
 import { CALENDAR_ATTACHMENTS_DIR } from '../config/xdg.js';
 import type { IConnectionManager } from '../connections/types.js';
 import { assertSafeWritePath } from '../safety/local-paths.js';
@@ -39,6 +40,10 @@ import eventBus from './event-bus.js';
 import type { LabelStrategy } from './label-strategy.js';
 import { detectLabelStrategy } from './label-strategy.js';
 import lockMailboxBounded from './mailbox-lock.js';
+import {
+  type OutgoingAttachmentInput,
+  resolveOutgoingAttachments,
+} from './outgoing-attachments.js';
 import assertMailboxRemovable from './protected-mailboxes.js';
 
 /**
@@ -1631,10 +1636,18 @@ export default class ImapService {
       bcc?: string[];
       html?: boolean;
       inReplyTo?: string;
+      /** Inline base64 `content` or a local file `path` (checked by the read guard). */
+      attachments?: OutgoingAttachmentInput[];
     },
   ): Promise<{ id: number; mailbox: string }> {
-    const client = await this.connections.getImapClient(accountName);
     const account = this.connections.getAccount(accountName);
+    // Read and check files before touching the server.
+    const attachments = options.attachments?.length
+      ? await resolveOutgoingAttachments(options.attachments, {
+          maxEncodedBytes: resolveSendLimitMb(account, DEFAULT_SEND_LIMIT_MB) * 1024 * 1024,
+        })
+      : [];
+    const client = await this.connections.getImapClient(accountName);
 
     // Find the Drafts folder
     const mailboxes = await client.list();
@@ -1653,6 +1666,18 @@ export default class ImapService {
       date: new Date(),
       ...(options.inReplyTo ? { inReplyTo: options.inReplyTo } : {}),
       ...(options.html ? { html: options.body } : { text: options.body }),
+      ...(attachments.length > 0
+        ? {
+            attachments: attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+              encoding: 'base64' as const,
+              contentType: a.contentType,
+            })),
+          }
+        : {}),
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
     const rawMessage: Buffer = await (
       composer as unknown as { compile: () => { build: () => Promise<Buffer> } }

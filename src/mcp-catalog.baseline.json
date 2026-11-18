@@ -735,6 +735,33 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "attachments": {
+              "description": "Extra files to attach besides the original’s: base64 parts or absolute local file paths",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64 (or use path)",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
             "body": {
               "description": "Additional message above the forwarded content",
               "maxLength": 5000000,
@@ -2212,6 +2239,33 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "attachments": {
+              "description": "Files to attach: base64 parts or absolute local file paths",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64 (or use path)",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
             "body": {
               "description": "Reply body content",
               "maxLength": 5000000,
@@ -2250,6 +2304,33 @@
             "account": {
               "description": "Account name from list_accounts",
               "type": "string"
+            },
+            "attachments": {
+              "description": "Files to attach: base64 parts or absolute local file paths",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64 (or use path)",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             },
             "bcc": {
               "description": "CC recipients",
@@ -2618,11 +2699,11 @@
               "type": "boolean"
             },
             "attachments": {
-              "description": "Files to attach, as base64 parts",
+              "description": "Files to attach: base64 parts or absolute local file paths",
               "items": {
                 "properties": {
                   "base64": {
-                    "description": "Attachment bytes as base64",
+                    "description": "Attachment bytes as base64 (or use path)",
                     "minLength": 1,
                     "type": "string"
                   },
@@ -2631,11 +2712,15 @@
                     "type": "string"
                   },
                   "filename": {
-                    "description": "Name shown to the recipient",
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
                     "type": "string"
                   }
                 },
-                "required": ["base64"],
                 "type": "object"
               },
               "type": "array"
@@ -4902,6 +4987,33 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "attachments": {
+              "description": "Extra files to attach besides the original’s: base64 parts or absolute local file paths",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64 (or use path)",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
             "body": {
               "description": "Additional message above the forwarded content",
               "maxLength": 5000000,
@@ -6110,6 +6222,33 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "attachments": {
+              "description": "Files to attach: base64 parts or absolute local file paths",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64 (or use path)",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
             "body": {
               "description": "Reply body content",
               "maxLength": 5000000,
@@ -6148,6 +6287,33 @@
             "account": {
               "description": "Account name from list_accounts",
               "type": "string"
+            },
+            "attachments": {
+              "description": "Files to attach: base64 parts or absolute local file paths",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64 (or use path)",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             },
             "bcc": {
               "description": "CC recipients",
@@ -6452,11 +6618,11 @@
               "type": "boolean"
             },
             "attachments": {
-              "description": "Files to attach, as base64 parts",
+              "description": "Files to attach: base64 parts or absolute local file paths",
               "items": {
                 "properties": {
                   "base64": {
-                    "description": "Attachment bytes as base64",
+                    "description": "Attachment bytes as base64 (or use path)",
                     "minLength": 1,
                     "type": "string"
                   },
@@ -6465,11 +6631,15 @@
                     "type": "string"
                   },
                   "filename": {
-                    "description": "Name shown to the recipient",
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
                     "type": "string"
                   }
                 },
-                "required": ["base64"],
                 "type": "object"
               },
               "type": "array"
@@ -7551,6 +7721,33 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "attachments": {
+              "description": "Files to attach: base64 parts or absolute local file paths",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64 (or use path)",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
             "body": {
               "description": "Reply body content",
               "maxLength": 5000000,
@@ -7807,11 +8004,11 @@
               "type": "boolean"
             },
             "attachments": {
-              "description": "Files to attach, as base64 parts",
+              "description": "Files to attach: base64 parts or absolute local file paths",
               "items": {
                 "properties": {
                   "base64": {
-                    "description": "Attachment bytes as base64",
+                    "description": "Attachment bytes as base64 (or use path)",
                     "minLength": 1,
                     "type": "string"
                   },
@@ -7820,11 +8017,15 @@
                     "type": "string"
                   },
                   "filename": {
-                    "description": "Name shown to the recipient",
+                    "description": "Name shown to the recipient (default: file name)",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Absolute path of a local file to attach (or use base64). Hidden files, system and app folders are refused.",
+                    "minLength": 1,
                     "type": "string"
                   }
                 },
-                "required": ["base64"],
                 "type": "object"
               },
               "type": "array"

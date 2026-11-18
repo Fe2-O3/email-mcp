@@ -15,6 +15,9 @@
  * Upstream: codefuturist/email-mcp#52, #67, #77
  */
 
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import SmtpService from './smtp.service.js';
 
 const sendMail = vi.fn().mockResolvedValue({ messageId: '<sent@example.invalid>' });
@@ -250,5 +253,82 @@ describe('send_email accepts inline parts safely', () => {
     await svc.forwardEmail('work', { emailId: '7', to: ['c@e.invalid'] });
     expect(lastPayload().disableFileAccess).toBe(true);
     expect(lastPayload().disableUrlAccess).toBe(true);
+  });
+});
+
+describe('attaching a local file by path', () => {
+  beforeEach(() => {
+    sendMail.mockClear();
+  });
+
+  async function makeFile(name: string, text: string): Promise<{ file: string; dir: string }> {
+    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'smtp-path-'));
+    const file = join(dir, name);
+    await writeFile(file, text);
+    return { file, dir };
+  }
+
+  it('send_email reads the file and sends it as base64', async () => {
+    const { file, dir } = await makeFile('notes.txt', 'hello');
+    try {
+      await buildService().sendEmail('work', {
+        to: ['a@example.invalid'],
+        subject: 's',
+        body: 'b',
+        attachments: [{ path: file }],
+      });
+      const [att] = lastPayload().attachments as Array<Record<string, unknown>>;
+      expect(att).toMatchObject({
+        filename: 'notes.txt',
+        content: Buffer.from('hello').toString('base64'),
+        encoding: 'base64',
+      });
+      expect(att.path).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reply_email and forward_email take path attachments too', async () => {
+    const { file, dir } = await makeFile('r.txt', 'reply');
+    try {
+      const svc = buildService();
+      await svc.replyToEmail('work', { emailId: '1', body: 'x', attachments: [{ path: file }] });
+      expect((lastPayload().attachments as Array<{ filename: string }>)[0].filename).toBe('r.txt');
+      await svc.forwardEmail('work', {
+        emailId: '1',
+        to: ['c@example.invalid'],
+        attachments: [{ path: file }],
+      });
+      const names = (lastPayload().attachments as Array<{ filename: string }>).map(
+        (a) => a.filename,
+      );
+      expect(names).toEqual(['invoice.pdf', 'sheet.xlsx', 'r.txt']);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a path under a hidden folder and sends nothing', async () => {
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'smtp-hidden-'));
+    await mkdir(join(dir, '.ssh'));
+    await writeFile(join(dir, '.ssh', 'id_rsa'), 'SECRET');
+    try {
+      await expect(
+        buildService().sendEmail('work', {
+          to: ['a@example.invalid'],
+          subject: 's2',
+          body: 'b',
+          attachments: [{ path: join(dir, '.ssh', 'id_rsa') }],
+        }),
+      ).rejects.toThrow(/protected location/);
+      expect(sendMail).not.toHaveBeenCalled();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

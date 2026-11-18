@@ -14,7 +14,11 @@ function buildService() {
   };
   const service = new ImapService({
     getImapClient: async () => client,
-    getAccount: () => ({ email: 'me@example.test', fullName: 'Me' }),
+    getAccount: () => ({
+      email: 'me@example.test',
+      fullName: 'Me',
+      smtp: { host: 'smtp.example.test' },
+    }),
   } as never);
   return { service, append };
 }
@@ -84,5 +88,42 @@ describe('saveDraft subject encoding', () => {
 
     expect(append.mock.calls[0][0]).toBe('Drafts');
     expect(append.mock.calls[0][2]).toContain('\\Draft');
+  });
+});
+
+describe('saveDraft attachments', () => {
+  it('stores a local file by path as a real attachment part', async () => {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'draft-att-'));
+    await writeFile(join(dir, 'plan.txt'), 'the plan');
+    try {
+      const { service, append } = buildService();
+      await service.saveDraft('acct', {
+        to: [],
+        subject: 's',
+        body: 'b',
+        attachments: [{ path: join(dir, 'plan.txt') }],
+      });
+      const raw = (append.mock.calls[0][1] as Buffer).toString('latin1');
+      expect(raw).toMatch(/filename="?plan\.txt"?/);
+      expect(raw).toContain(Buffer.from('the plan').toString('base64'));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a secret path before opening any connection', async () => {
+    const { service, append } = buildService();
+    await expect(
+      service.saveDraft('acct', {
+        to: [],
+        subject: 's',
+        body: 'b',
+        attachments: [{ path: '/etc/hosts' }],
+      }),
+    ).rejects.toThrow(/protected location/);
+    expect(append).not.toHaveBeenCalled();
   });
 });

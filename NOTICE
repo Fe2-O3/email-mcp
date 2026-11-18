@@ -38,6 +38,10 @@ The adapted files are:
                                              and filter are original)
   src/tools/export.tool.ts                   export_email tool (idea and shape;
                                              the file writer is original)
+  src/services/outgoing-attachments.ts       attach local files by path (the read
+                                             guard it calls is original)
+  src/services/outgoing-attachments.test.ts  tests for the above
+  src/tools/schema-helpers.ts                shared tool input schema pieces
 
 "Mailoo" and "Bitfloo" are names of their respective owners. They are used here
 only to attribute the code above and are not used as branding for this project.

@@ -1,13 +1,14 @@
 // Adapted from Mailoo (https://github.com/Bitfloo/mailoo, commit f537225), Copyright (c) 2026 Bitfloo, LGPL-3.0-or-later.
 /**
- * Where this server may write a file whose path a model chose, possibly after being steered by
+ * Where this server may read or write a file whose path a model chose, possibly after being steered by
  * the text of an email. The write is refused in places that would let a new file change how the
  * machine behaves: system directories, the root of a shared directory (/tmp, /Users, ...), the
  * home directory itself, dot-directories (~/.ssh, ~/.config, ~/.aws, ...), application-data
  * trees (~/Library) and this app's own config/data/state/cache directories.
  *
  * Symlinks are resolved first: a path that looks like ~/Downloads/x but leads into one of those
- * places is judged by where it really ends up.
+ * places is judged by where it really ends up. `assertSafeWritePath` guards new files;
+ * `assertSafeReadPath` (below) guards files read to be attached to outgoing mail.
  */
 
 import fs from 'node:fs/promises';
@@ -203,4 +204,81 @@ export async function assertSafeWritePath(
       fail('application data directory');
     }
   }
+}
+
+/** Nothing below these may be read either. Adds the places that hold other accounts' files and system databases. */
+const READ_DENIED_PREFIXES = [
+  ...SYSTEM_PREFIXES,
+  '/root',
+  '/var/root',
+  '/private/var/root',
+  '/var/db',
+  '/private/var/db',
+];
+
+/**
+ * Throw unless the file at `target` may be read and sent out, and return its real path.
+ *
+ * A model may have been steered by the text of an email into attaching a secret, so reading is
+ * judged as strictly as writing: the path must be absolute, is resolved through symlinks, and the
+ * file must really be a regular file. A path, or where its symlinks lead, is refused when any
+ * part of it is a system directory, a hidden file or directory (~/.ssh, ~/.aws, ~/.gnupg,
+ * ~/.config, `.env`, ...), an application-data tree (~/Library, including Keychains) or this
+ * app's own config/data/state/cache directory (config.toml, tokens, the cache).
+ */
+export async function assertSafeReadPath(
+  target: string,
+  options: Omit<LocalPathOptions, 'allowRoots' | 'within'> = {},
+): Promise<string> {
+  const fail = (reason: string): never => {
+    throw new Error(`Refusing to read a protected location (${reason}): ${target}`);
+  };
+  if (typeof target !== 'string' || target === '' || target.includes('\0')) {
+    throw new Error('Refusing to read: the path is empty or contains a NUL character');
+  }
+  if (!path.isAbsolute(target)) {
+    throw new Error(
+      `Refusing to read: the path must be absolute (no ~, no relative path): ${target}`,
+    );
+  }
+
+  const home = path.resolve(options.home ?? os.homedir());
+  const lexical = path.resolve(target);
+  let real: string;
+  try {
+    real = await fs.realpath(lexical);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') throw new Error(`File not found: ${target}`);
+    throw err;
+  }
+  const realHome = await realOrSelf(home);
+
+  const denied = [
+    xdg.config,
+    xdg.data,
+    xdg.state,
+    xdg.cache,
+    ...(options.extraDeniedRoots ?? []),
+  ].map((d) => path.resolve(d));
+  const deniedReal = await Promise.all(denied.map(realOrSelf));
+
+  for (const candidate of lexical === real ? [real] : [lexical, real]) {
+    if (READ_DENIED_PREFIXES.some((p) => isInside(candidate, p))) fail('system directory');
+    if (
+      denied.some((d) => isInside(candidate, d)) ||
+      deniedReal.some((d) => isInside(candidate, d))
+    ) {
+      fail('application config or data directory');
+    }
+    // Unlike a write, the file's own name counts too: a hidden file (.env, .netrc) is a secret.
+    if (hasHiddenSegment(candidate)) fail('hidden file or directory');
+    if (inAppDataTree(candidate, home) || inAppDataTree(candidate, realHome)) {
+      fail('application data directory');
+    }
+  }
+
+  const info = await fs.stat(real);
+  if (!info.isFile()) throw new Error(`Refusing to read: not a regular file: ${target}`);
+  return real;
 }

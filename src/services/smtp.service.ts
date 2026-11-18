@@ -15,6 +15,10 @@ import type RateLimiter from '../safety/rate-limiter.js';
 import { sanitizeTemplateVariable } from '../safety/validation.js';
 import type { SendResult } from '../types/index.js';
 import type ImapService from './imap.service.js';
+import {
+  type OutgoingAttachmentInput,
+  resolveOutgoingAttachments,
+} from './outgoing-attachments.js';
 
 /** Reply markers: Re (English), AW (German), SV (Nordic). */
 export const REPLY_PREFIX = /^\s*(re|aw|sv)\s*:/i;
@@ -44,8 +48,8 @@ export default class SmtpService {
       cc?: string[];
       bcc?: string[];
       html?: boolean;
-      /** Inline attachment parts. Content is base64; no filesystem paths are accepted. */
-      attachments?: Array<{ filename?: string; content: string; contentType?: string }>;
+      /** Attachments: inline base64 `content`, or the `path` of a local file (checked by the read guard). */
+      attachments?: OutgoingAttachmentInput[];
       /**
        * Explicit Message-ID for retries. Without it nodemailer mints a fresh
        * one per attempt, so a retried send is indistinguishable from a new
@@ -62,8 +66,7 @@ export default class SmtpService {
     this.assertNotDuplicate(accountName, options.to, options.subject, options.allowDuplicate);
 
     const account = this.connections.getAccount(accountName);
-    const attachmentLimitMb = this.sendLimitMb(account);
-    this.assertInlineAttachmentsWithinLimit(options.attachments, attachmentLimitMb);
+    const attachments = await this.resolveAttachments(account, options.attachments);
     const transport = await this.connections.getSmtpTransport(accountName);
 
     const messageId =
@@ -78,9 +81,9 @@ export default class SmtpService {
       messageId,
       ...(options.inReplyTo ? { inReplyTo: options.inReplyTo } : {}),
       ...(options.references ? { references: options.references.join(' ') } : {}),
-      ...(options.attachments && options.attachments.length > 0
+      ...(attachments.length > 0
         ? {
-            attachments: options.attachments.map((a) => ({
+            attachments: attachments.map((a) => ({
               filename: a.filename,
               content: a.content,
               encoding: 'base64' as const,
@@ -115,14 +118,13 @@ export default class SmtpService {
       body: string;
       replyAll?: boolean;
       html?: boolean;
-      attachments?: Array<{ filename?: string; content: string; contentType?: string }>;
+      attachments?: OutgoingAttachmentInput[];
     },
   ): Promise<SendResult> {
     this.checkRateLimit(accountName);
 
     const account = this.connections.getAccount(accountName);
-    const attachmentLimitMb = this.sendLimitMb(account);
-    this.assertInlineAttachmentsWithinLimit(options.attachments, attachmentLimitMb);
+    const extraAttachments = await this.resolveAttachments(account, options.attachments);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
 
     // Build recipient list — Reply-To overrides From when present
@@ -164,9 +166,9 @@ export default class SmtpService {
       references: references.join(' '),
       messageId: `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`,
       ...(options.html ? { html: options.body } : { text: options.body }),
-      ...(options.attachments?.length
+      ...(extraAttachments.length
         ? {
-            attachments: options.attachments.map((attachment) => ({
+            attachments: extraAttachments.map((attachment) => ({
               filename: attachment.filename,
               content: attachment.content,
               encoding: 'base64' as const,
@@ -203,11 +205,14 @@ export default class SmtpService {
       html?: boolean;
       /** Defaults to true: a forward that silently drops the invoice is the bug. */
       includeAttachments?: boolean;
+      /** Extra attachments added to the forward: inline base64 `content`, or a local file `path`. */
+      attachments?: OutgoingAttachmentInput[];
     },
   ): Promise<SendResult> {
     this.checkRateLimit(accountName);
 
     const account = this.connections.getAccount(accountName);
+    const extraAttachments = await this.resolveAttachments(account, options.attachments);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
 
     const subject = FORWARD_PREFIX.test(original.subject)
@@ -261,7 +266,7 @@ export default class SmtpService {
     // out, and the fetch refuses oversized originals at compose time.
     const includeAttachments =
       options.includeAttachments === undefined ? true : options.includeAttachments;
-    const attachments = includeAttachments
+    const originalAttachments = includeAttachments
       ? await this.imapService.fetchMessageAttachments(
           accountName,
           options.emailId,
@@ -269,6 +274,16 @@ export default class SmtpService {
           this.sendLimitMb(account) * 1024 * 1024,
         )
       : [];
+    const attachments = [
+      ...originalAttachments,
+      ...extraAttachments.map((a) => ({ ...a, encoding: 'base64' as const })),
+    ];
+    const totalBytes = attachments.reduce((n, a) => n + Buffer.byteLength(a.content, 'utf8'), 0);
+    if (totalBytes > this.sendLimitMb(account) * 1024 * 1024) {
+      throw new Error(
+        `The original's attachments plus the added ones exceed the ${this.sendLimitMb(account)} MB send limit.`,
+      );
+    }
 
     const mailOptions = {
       from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
@@ -309,26 +324,14 @@ export default class SmtpService {
     return resolveSendLimitMb(account, this.globalAttachmentLimitMb);
   }
 
-  private assertInlineAttachmentsWithinLimit(
-    attachments: Array<{ filename?: string; content: string }> | undefined,
-    limitMb: number,
-  ): void {
-    if (!attachments?.length) return;
-    const totalEncodedBytes = attachments.reduce(
-      (total, attachment) => total + Buffer.byteLength(attachment.content, 'utf8'),
-      0,
-    );
-    const limitBytes = limitMb * 1024 * 1024;
-    if (totalEncodedBytes <= limitBytes) return;
-
-    const names = attachments
-      .map((attachment) => attachment.filename)
-      .filter((filename): filename is string => Boolean(filename));
-    const suffix = names.length > 0 ? ` (${names.join(', ')})` : '';
-    throw new Error(
-      `Base64-encoded attachments${suffix} exceed the ${limitMb} MB send limit. ` +
-        `Reduce the attachments or set max_attachment_mb for this account if its provider allows more.`,
-    );
+  /** Read path attachments through the read guard and enforce the send limit on the base64 total. */
+  private resolveAttachments(
+    account: ReturnType<IConnectionManager['getAccount']>,
+    attachments: OutgoingAttachmentInput[] | undefined,
+  ) {
+    return resolveOutgoingAttachments(attachments, {
+      maxEncodedBytes: this.sendLimitMb(account) * 1024 * 1024,
+    });
   }
 
   /**
