@@ -488,6 +488,12 @@ export interface ScheduledEmail {
    * reply). It is never retried: the owner checks Sent, then cancels the job.
    */
   status: 'pending' | 'sending' | 'sent' | 'failed' | 'unknown';
+  /**
+   * The server and login the account name pointed at when the job was made.
+   * A job whose account now points elsewhere is not sent. Absent on jobs
+   * written by older versions.
+   */
+  accountFingerprint?: string;
   /** Refusals by the mail server so far (not counted: no connection, rate limit). */
   attempts: number;
   /** Not before this time, after a temporary problem such as no connection. */

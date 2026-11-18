@@ -9,6 +9,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
+import { currentFingerprint } from '../connections/account-identity.js';
 import type ConnectionManager from '../connections/manager.js';
 import audit from '../safety/audit.js';
 import { delimitUntrusted, SAVED_TEXT_NOTICE } from '../safety/untrusted-content.js';
@@ -20,6 +21,7 @@ import {
   LocalRuleMatchSchema,
   moveTargetProblem,
   normalizeLocalRule,
+  ruleAccountMoved,
   validateLocalRule,
 } from '../services/local-rules.service.js';
 import type { AppConfig } from '../types/index.js';
@@ -90,6 +92,9 @@ export function registerLocalRulesReadTools(
             isCatchAllRule(r.match) ? 'WARNING: matches every message' : '',
             r.account && known && !known.has(r.account)
               ? `WARNING: there is no account named ${JSON.stringify(r.account)}, so it never runs`
+              : '',
+            Array.isArray(config.accounts) && ruleAccountMoved(r, config.accounts)
+              ? `WARNING: "${r.account}" now points at another server or login, so it does not run`
               : '',
           ].filter(Boolean);
           return `- ${describeRule(r)}${flags.length > 0 ? ` [${flags.join('; ')}]` : ''}`;
@@ -182,7 +187,12 @@ export function registerLocalRulesWriteTools(
             `[DRY RUN] Would add the local rule ${JSON.stringify(name)}. Nothing was changed.\n${RUNS_ONLY_WHILE}`,
           );
         }
-        const rule = await store.add(input);
+        // Ties the rule to this mailbox, not just to its name.
+        const rule = await store.add({
+          ...input,
+          accountFingerprint:
+            account !== undefined ? currentFingerprint(connections, account) : undefined,
+        });
         await audit.log('add_local_rule', account ?? '*', { ...input, id: rule.id }, 'ok');
         return text(`Added local rule ${describeRule(rule)}\n${RUNS_ONLY_WHILE}`);
       } catch (err) {

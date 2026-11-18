@@ -13,7 +13,7 @@ import CacheStore from './cache/store.js';
 import SyncEngine from './cache/sync-engine.js';
 import { loadConfig, readAllowedRedirects } from './config/loader.js';
 import { CACHE_DB } from './config/xdg.js';
-import accountFingerprint from './connections/account-identity.js';
+import accountFingerprint, { currentFingerprint } from './connections/account-identity.js';
 import ConnectionManager from './connections/manager.js';
 import { mcpLog } from './logging.js';
 import registerAllPrompts from './prompts/register.js';
@@ -74,7 +74,12 @@ export async function buildServices(): Promise<AppServices> {
   const calendarService = new CalendarService();
   const localCalendarService = new LocalCalendarService();
   const remindersService = new RemindersService();
-  const schedulerService = new SchedulerService(smtpService, imapService, config.settings.readOnly);
+  const schedulerService = new SchedulerService(
+    smtpService,
+    imapService,
+    config.settings.readOnly,
+    (name) => currentFingerprint(connections, name),
+  );
   const watcherService = new WatcherService(config.settings.watcher, config.accounts, oauthService);
   const hooksService = new HooksService(config.settings.hooks, imapService);
   // Local rules run inside the hooks pipeline, so only the process holding the

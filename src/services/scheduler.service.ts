@@ -69,6 +69,11 @@ export default class SchedulerService {
     private imapService: ImapService,
     /** Read-only mode: queued mail is kept but never sent. */
     private readOnly = false,
+    /**
+     * Which server and login an account name points at now, or undefined when
+     * there is no such account. Without it, jobs are sent as they always were.
+     */
+    private accountIdentity?: (account: string) => string | undefined,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -112,6 +117,7 @@ export default class SchedulerService {
       attempts: 0,
       inReplyTo: options.inReplyTo,
       references: options.references,
+      accountFingerprint: this.accountIdentity?.(account),
     };
 
     // Save IMAP draft (best-effort)
@@ -281,6 +287,18 @@ export default class SchedulerService {
   }
   /* eslint-enable no-await-in-loop, no-continue */
 
+  private identityProblem(job: ScheduledEmail): string | undefined {
+    if (!this.accountIdentity) return undefined;
+    const current = this.accountIdentity(job.account);
+    if (current === undefined) {
+      return `The account "${job.account}" no longer exists, so this scheduled email was not sent.`;
+    }
+    if (job.accountFingerprint !== undefined && job.accountFingerprint !== current) {
+      return `The account "${job.account}" now points at a different server or login than when this email was scheduled, so it was not sent. Schedule it again if it should still go out.`;
+    }
+    return undefined;
+  }
+
   private async recoverInterrupted(file: string, now: number, result: CheckResult): Promise<void> {
     const lockPath = path.join(SCHEDULED_DIR, file);
     const id = file.slice(0, -'.json.sending'.length);
@@ -332,6 +350,18 @@ export default class SchedulerService {
       job.lastError = job.lastError ?? 'Max retry attempts exceeded';
       await SchedulerService.writeJob(filePath, job);
       result.failed += 1;
+      return;
+    }
+
+    // The name alone does not say which mailbox: sent from whatever account
+    // holds it today, the mail would go out under someone else's identity.
+    const mismatch = this.identityProblem(job);
+    if (mismatch) {
+      job.status = 'failed';
+      job.lastError = mismatch;
+      await SchedulerService.writeJob(filePath, job);
+      result.failed += 1;
+      result.errors.push(`${file}: ${mismatch}`);
       return;
     }
 

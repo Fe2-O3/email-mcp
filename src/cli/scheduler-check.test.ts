@@ -29,7 +29,12 @@ vi.mock('../connections/manager.js', () => ({
     }
 
     getAccount() {
-      return { email: 'me@example.invalid', username: 'me', smtp: { host: 'h' } };
+      return {
+        email: 'me@example.invalid',
+        username: 'me',
+        imap: { host: 'imap.example.invalid', port: 993 },
+        smtp: { host: 'h' },
+      };
     }
 
     async getSmtpTransport() {

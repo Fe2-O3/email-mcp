@@ -19,7 +19,7 @@ import type { AccountConfig, AppConfig, HookRule, OAuth2Config } from '../types/
 import resolvePasswordCommand from './password-command.js';
 import type { RawAccountConfig, RawAppConfig } from './schema.js';
 import { AppConfigFileSchema } from './schema.js';
-import { findUnknownKeys, imapTlsConflictWarning } from './validate.js';
+import { findConsistencyIssues, findUnknownKeys, imapTlsConflictWarning } from './validate.js';
 import { CONFIG_FILE, xdg } from './xdg.js';
 
 // ---------------------------------------------------------------------------
@@ -445,6 +445,20 @@ async function resolveKeychainPasswords(accounts: AccountConfig[]): Promise<void
   }
 }
 
+/**
+ * Mistakes that make the config mean two things at once stop the start. Two
+ * accounts with one name: tools reach the last, the watcher runs both under the
+ * one name, and a rule or hook acts on a message from one server on the other.
+ */
+function assertConsistent(raw: RawAppConfig, filePath: string): void {
+  const errors = findConsistencyIssues(raw).filter((issue) => issue.severity === 'error');
+  if (errors.length > 0) {
+    throw new Error(
+      `Configuration file at ${filePath} is invalid: ${errors.map((e) => e.message).join('; ')}`,
+    );
+  }
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -520,6 +534,7 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
     if (loose) console.error(`Warning: ${loose}`);
     warnUnknownKeys(fileConfig, filePath);
     const validated = AppConfigFileSchema.parse(fileConfig);
+    assertConsistent(validated, filePath);
     const config = await normalizeConfig(validated);
     await resolveKeychainPasswords(config.accounts);
     return config;

@@ -19,6 +19,7 @@ import path from 'node:path';
 import { z } from 'zod';
 
 import { LOCAL_RULES_FILE } from '../config/xdg.js';
+import accountFingerprint from '../connections/account-identity.js';
 import { mcpLog } from '../logging.js';
 import audit from '../safety/audit.js';
 import { isAllowedRedirect, parsePlainAddress } from '../safety/redirect-allowlist.js';
@@ -57,6 +58,11 @@ export const LocalRuleSchema = z.object({
   name: z.string().min(1),
   /** Absent: every account. */
   account: z.string().min(1).optional(),
+  /**
+   * The server and login `account` pointed at when the rule was added. A rule
+   * whose account now points elsewhere does not run. Absent on older rules.
+   */
+  accountFingerprint: z.string().min(1).optional(),
   match: LocalRuleMatchSchema,
   actions: LocalRuleActionsSchema,
   createdAt: z.string(),
@@ -389,6 +395,21 @@ export function ruleMatches(
   return Boolean(match.from ?? match.to ?? match.subject ?? match.header);
 }
 
+/**
+ * True when the rule records which mailbox its account was, and the account of
+ * that name is now a different server or login. A missing account is not
+ * "moved": such a rule matches nothing and is flagged by list_local_rules.
+ */
+export function ruleAccountMoved(
+  rule: Pick<LocalRule, 'account' | 'accountFingerprint'>,
+  accounts: readonly AccountConfig[],
+): boolean {
+  if (!rule.account || !rule.accountFingerprint) return false;
+  const account = accounts.find((a) => a.name === rule.account);
+  if (!account?.imap) return false;
+  return accountFingerprint(account) !== rule.accountFingerprint;
+}
+
 export interface LocalRulesDeps {
   store: LocalRulesStore;
   imapService: ImapService;
@@ -409,6 +430,9 @@ export interface LocalRulesDeps {
 export default class LocalRulesService {
   /** Catch-all rules already warned about, so the log has one line per rule. */
   private readonly warnedCatchAll = new Set<string>();
+
+  /** Rules whose account moved, already warned about. */
+  private readonly warnedMoved = new Set<string>();
 
   constructor(private readonly deps: LocalRulesDeps) {}
 
@@ -441,6 +465,7 @@ export default class LocalRulesService {
       ).catch(() => undefined);
       return batch;
     }
+    rules = await this.withoutMovedAccounts(rules);
     if (rules.length === 0) return batch;
 
     // Rules saved before catch-all rules were refused still run, but say so once.
@@ -467,6 +492,30 @@ export default class LocalRulesService {
       }
     }
     return unmatched;
+  }
+
+  /**
+   * Rules made for a mailbox whose account name now points at another server
+   * or login are left out, with one log line each: they would act on mail they
+   * were never written for.
+   */
+  private async withoutMovedAccounts(rules: LocalRule[]): Promise<LocalRule[]> {
+    const kept: LocalRule[] = [];
+    for (const r of rules) {
+      if (!ruleAccountMoved(r, this.deps.accounts)) {
+        kept.push(r);
+        continue;
+      }
+      if (!this.warnedMoved.has(r.id)) {
+        this.warnedMoved.add(r.id);
+        await mcpLog(
+          'warning',
+          'rules',
+          `Local rule "${r.name}" was made for "${r.account}" when it pointed at another server or login, so it does not run. Remove it, then add it again if it is still wanted.`,
+        ).catch(() => undefined);
+      }
+    }
+    return kept;
   }
 
   private async firstMatch(rules: LocalRule[], email: RuleEmail): Promise<LocalRule | undefined> {

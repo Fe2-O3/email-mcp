@@ -140,6 +140,13 @@ describe('loadConfig start-up safety', () => {
     expect(printed()).toMatch(/"broken"/);
   });
 
+  // The watcher ran one connection per entry under one name, and rules acted on the wrong server.
+  it('refuses two accounts with the same name', async () => {
+    await write(account('work', 'password = "a"') + account('work', 'password = "b"'));
+
+    await expect(loadConfig(file)).rejects.toThrow(/duplicate account name "work"/);
+  });
+
   describe('read_only', () => {
     it('keeps the [settings] of config.toml when the account comes from the environment', async () => {
       Object.assign(process.env, ENV_ACCOUNT);

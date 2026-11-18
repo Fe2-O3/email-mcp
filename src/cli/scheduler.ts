@@ -14,6 +14,7 @@ import path from 'node:path';
 
 import { loadConfig } from '../config/loader.js';
 import { xdg } from '../config/xdg.js';
+import { currentFingerprint } from '../connections/account-identity.js';
 import ConnectionManager from '../connections/manager.js';
 import RateLimiter from '../safety/rate-limiter.js';
 import ImapService from '../services/imap.service.js';
@@ -47,7 +48,9 @@ async function createSchedulerService(): Promise<SchedulerService> {
   const rateLimiter = new RateLimiter(config.settings.rateLimit);
   const imapService = new ImapService(connections);
   const smtpService = new SmtpService(connections, rateLimiter, imapService);
-  return new SchedulerService(smtpService, imapService, config.settings.readOnly);
+  return new SchedulerService(smtpService, imapService, config.settings.readOnly, (name) =>
+    currentFingerprint(connections, name),
+  );
 }
 
 // ---------------------------------------------------------------------------

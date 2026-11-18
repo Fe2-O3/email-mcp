@@ -15,3 +15,17 @@ export default function accountFingerprint(account: {
   const identity = `${account.imap.host.trim().toLowerCase()}:${account.imap.port}\n${account.username.trim().toLowerCase()}`;
   return crypto.createHash('sha256').update(identity).digest('hex').slice(0, 32);
 }
+
+/** The fingerprint of the account a name points at now, or undefined when there is none. */
+export function currentFingerprint(
+  connections: {
+    getAccount: (name: string) => { username: string; imap: { host: string; port: number } };
+  },
+  name: string,
+): string | undefined {
+  try {
+    return accountFingerprint(connections.getAccount(name));
+  } catch {
+    return undefined;
+  }
+}
