@@ -21,6 +21,7 @@ import { TLSSocket, connect as tlsConnect } from 'node:tls';
 
 import type { SentCredentials } from '../connections/credential-redaction.js';
 import { REDACTED, redactedError, sentCredentials } from '../connections/credential-redaction.js';
+import assertCanLogIn from '../connections/login-guard.js';
 import type { AccountConfig, OAuth2Config } from '../types/index.js';
 import { isLoopbackHost } from '../utils/loopback.js';
 
@@ -638,6 +639,7 @@ async function authenticate(
   const offered = (mech: string): boolean => caps.sasl.includes(mech);
   let mechanism: string;
   let initial: string;
+  assertCanLogIn(account);
   if (account.oauth2) {
     if (!options.getAccessToken) {
       throw new Error('ManageSieve OAuth login is not available in this process');

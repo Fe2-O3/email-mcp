@@ -19,12 +19,31 @@ import type { AccountConfig, AppConfig, HookRule, OAuth2Config } from '../types/
 import resolvePasswordCommand from './password-command.js';
 import type { RawAccountConfig, RawAppConfig } from './schema.js';
 import { AppConfigFileSchema } from './schema.js';
-import { imapTlsConflictWarning } from './validate.js';
+import { findUnknownKeys, imapTlsConflictWarning } from './validate.js';
 import { CONFIG_FILE, xdg } from './xdg.js';
 
 // ---------------------------------------------------------------------------
 // Environment variable loader (single-account quick setup)
 // ---------------------------------------------------------------------------
+
+const ENV_TRUE = new Set(['true', '1', 'yes', 'on']);
+const ENV_FALSE = new Set(['false', '0', 'no', 'off']);
+
+/**
+ * A yes/no environment variable, read strictly. Anything other than the usual
+ * spellings is refused: read as "off", a mistyped MCP_EMAIL_READ_ONLY=enabled
+ * would quietly run a read-write server.
+ */
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = raw.trim().toLowerCase();
+  if (ENV_TRUE.has(value)) return true;
+  if (ENV_FALSE.has(value)) return false;
+  throw new Error(
+    `${name}=${JSON.stringify(raw)} is not a yes/no value. Use true or false (1 or 0 also work).`,
+  );
+}
 
 function loadFromEnv(): RawAppConfig | null {
   const email = process.env.MCP_EMAIL_ADDRESS;
@@ -69,26 +88,26 @@ function loadFromEnv(): RawAppConfig | null {
         max_attachment_mb: parseInt(process.env.MCP_EMAIL_SEND_MAX_ATTACHMENT_MB ?? '25', 10),
       },
       idle_exit: parseInt(process.env.MCP_EMAIL_IDLE_EXIT ?? '0', 10),
-      read_only: process.env.MCP_EMAIL_READ_ONLY === 'true',
+      read_only: envBool('MCP_EMAIL_READ_ONLY', false),
       toolset: (process.env.MCP_EMAIL_TOOLSET ?? 'full') as 'full' | 'core' | 'minimal',
       cache: {
         // Opt-out rather than opt-in: the mirror is a pure win for reads and
         // degrades to live behaviour if anything goes wrong.
-        enabled: process.env.MCP_EMAIL_CACHE_ENABLED !== 'false',
+        enabled: envBool('MCP_EMAIL_CACHE_ENABLED', true),
         mailboxes: (process.env.MCP_EMAIL_CACHE_MAILBOXES ?? 'INBOX')
           .split(',')
           .map((m) => m.trim())
           .filter(Boolean),
         window_days: parseInt(process.env.MCP_EMAIL_CACHE_WINDOW_DAYS ?? '90', 10),
-        read_through: process.env.MCP_EMAIL_CACHE_READ_THROUGH === 'true',
-        offline_reads: process.env.MCP_EMAIL_CACHE_OFFLINE_READS !== 'false',
+        read_through: envBool('MCP_EMAIL_CACHE_READ_THROUGH', false),
+        offline_reads: envBool('MCP_EMAIL_CACHE_OFFLINE_READS', true),
         body_max_mb: parseInt(process.env.MCP_EMAIL_CACHE_BODY_MAX_MB ?? '200', 10),
         body_messages: parseInt(process.env.MCP_EMAIL_CACHE_BODY_MESSAGES ?? '500', 10),
         max_size_mb: parseInt(process.env.MCP_EMAIL_CACHE_MAX_SIZE_MB ?? '500', 10),
         sync_interval: parseInt(process.env.MCP_EMAIL_CACHE_SYNC_INTERVAL ?? '300', 10),
       },
       watcher: {
-        enabled: process.env.MCP_EMAIL_WATCHER_ENABLED === 'true',
+        enabled: envBool('MCP_EMAIL_WATCHER_ENABLED', false),
         folders: (process.env.MCP_EMAIL_WATCHER_FOLDERS ?? 'INBOX')
           .split(',')
           .map((f) => f.trim())
@@ -96,8 +115,8 @@ function loadFromEnv(): RawAppConfig | null {
         idle_timeout: parseInt(process.env.MCP_EMAIL_WATCHER_IDLE_TIMEOUT ?? '1740', 10),
       },
       verification: {
-        enabled: process.env.MCP_EMAIL_VERIFICATION_ENABLED === 'true',
-        include_magic_links: process.env.MCP_EMAIL_VERIFICATION_MAGIC_LINKS === 'true',
+        enabled: envBool('MCP_EMAIL_VERIFICATION_ENABLED', false),
+        include_magic_links: envBool('MCP_EMAIL_VERIFICATION_MAGIC_LINKS', false),
       },
       hooks: {
         on_new_email:
@@ -109,14 +128,14 @@ function loadFromEnv(): RawAppConfig | null {
             | 'priority-focus'
             | 'notification-only'
             | 'custom') ?? 'priority-focus',
-        auto_label: process.env.MCP_EMAIL_HOOK_AUTO_LABEL === 'true',
-        auto_flag: process.env.MCP_EMAIL_HOOK_AUTO_FLAG === 'true',
+        auto_label: envBool('MCP_EMAIL_HOOK_AUTO_LABEL', false),
+        auto_flag: envBool('MCP_EMAIL_HOOK_AUTO_FLAG', false),
         batch_delay: parseInt(process.env.MCP_EMAIL_HOOK_BATCH_DELAY ?? '5', 10),
         custom_instructions: process.env.MCP_EMAIL_HOOK_CUSTOM_INSTRUCTIONS,
         rules: [],
         alerts: {
-          desktop: process.env.MCP_EMAIL_ALERT_DESKTOP === 'true',
-          sound: process.env.MCP_EMAIL_ALERT_SOUND === 'true',
+          desktop: envBool('MCP_EMAIL_ALERT_DESKTOP', false),
+          sound: envBool('MCP_EMAIL_ALERT_SOUND', false),
           urgency_threshold:
             (process.env.MCP_EMAIL_ALERT_URGENCY_THRESHOLD as
               | 'urgent'
@@ -126,13 +145,13 @@ function loadFromEnv(): RawAppConfig | null {
           webhook_url: process.env.MCP_EMAIL_ALERT_WEBHOOK_URL ?? '',
           webhook_events: ['urgent', 'high'],
         },
-        auto_calendar: process.env.MCP_EMAIL_HOOK_AUTO_CALENDAR === 'true',
+        auto_calendar: envBool('MCP_EMAIL_HOOK_AUTO_CALENDAR', false),
         calendar_name: process.env.MCP_EMAIL_HOOK_CALENDAR_NAME ?? '',
         calendar_alarm_minutes: parseInt(
           process.env.MCP_EMAIL_HOOK_CALENDAR_ALARM_MINUTES ?? '15',
           10,
         ),
-        calendar_confirm: process.env.MCP_EMAIL_HOOK_CALENDAR_CONFIRM !== 'false',
+        calendar_confirm: envBool('MCP_EMAIL_HOOK_CALENDAR_CONFIRM', true),
       },
     },
     accounts: [
@@ -147,18 +166,18 @@ function loadFromEnv(): RawAppConfig | null {
         imap: {
           host: imapHost,
           port: parseInt(process.env.MCP_EMAIL_IMAP_PORT ?? '993', 10),
-          tls: process.env.MCP_EMAIL_IMAP_TLS !== 'false',
-          starttls: process.env.MCP_EMAIL_IMAP_STARTTLS === 'true',
-          verify_ssl: process.env.MCP_EMAIL_IMAP_VERIFY_SSL !== 'false',
+          tls: envBool('MCP_EMAIL_IMAP_TLS', true),
+          starttls: envBool('MCP_EMAIL_IMAP_STARTTLS', false),
+          verify_ssl: envBool('MCP_EMAIL_IMAP_VERIFY_SSL', true),
         },
         smtp: {
           host: smtpHost,
           port: parseInt(process.env.MCP_EMAIL_SMTP_PORT ?? '465', 10),
-          tls: process.env.MCP_EMAIL_SMTP_TLS !== 'false',
-          starttls: process.env.MCP_EMAIL_SMTP_STARTTLS === 'true',
-          verify_ssl: process.env.MCP_EMAIL_SMTP_VERIFY_SSL !== 'false',
+          tls: envBool('MCP_EMAIL_SMTP_TLS', true),
+          starttls: envBool('MCP_EMAIL_SMTP_STARTTLS', false),
+          verify_ssl: envBool('MCP_EMAIL_SMTP_VERIFY_SSL', true),
           pool: {
-            enabled: process.env.MCP_EMAIL_SMTP_POOL_ENABLED !== 'false',
+            enabled: envBool('MCP_EMAIL_SMTP_POOL_ENABLED', true),
             max_connections: parseInt(process.env.MCP_EMAIL_SMTP_POOL_MAX_CONNECTIONS ?? '1', 10),
             max_messages: parseInt(process.env.MCP_EMAIL_SMTP_POOL_MAX_MESSAGES ?? '100', 10),
           },
@@ -236,12 +255,22 @@ async function normalizeAccount(raw: RawAccountConfig): Promise<AccountConfig> {
   // password_command wins over an inline password: the explicit, more secure
   // field must not be silently defeated by a plaintext line left behind
   // during migration.
-  const password = raw.password_command
-    ? await resolvePasswordCommand(raw.password_command, raw.name)
-    : raw.password;
+  let password = raw.password;
+  let credentialError: string | undefined;
+  if (raw.password_command) {
+    try {
+      password = await resolvePasswordCommand(raw.password_command, raw.name);
+    } catch (err) {
+      // One locked vault must not stop every other account from starting.
+      password = undefined;
+      credentialError = `its password_command failed: ${err instanceof Error ? err.message : String(err)}`;
+      console.error(`Warning: account "${raw.name}" cannot log in: ${credentialError}`);
+    }
+  }
 
   return {
     name: raw.name,
+    ...(credentialError ? { credentialError } : {}),
     email: raw.email,
     fullName: raw.full_name,
     username: raw.username ?? raw.email,
@@ -279,6 +308,15 @@ async function normalizeAccount(raw: RawAccountConfig): Promise<AccountConfig> {
         }
       : undefined,
   };
+}
+
+/** One at a time, so password manager prompts do not pile up on screen at once. */
+async function normalizeAccounts(raw: RawAccountConfig[]): Promise<AccountConfig[]> {
+  const accounts: AccountConfig[] = [];
+  for (const account of raw) {
+    accounts.push(await normalizeAccount(account));
+  }
+  return accounts;
 }
 
 function normalizeHookRule(raw: {
@@ -365,7 +403,7 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
       allowedRedirects: [...(raw.sieve?.allowed_redirects ?? [])],
       allowedPrograms: [...(raw.sieve?.allowed_programs ?? [])],
     },
-    accounts: await Promise.all(raw.accounts.map(normalizeAccount)),
+    accounts: await normalizeAccounts(raw.accounts),
   };
 }
 
@@ -379,26 +417,49 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
  * The actual password is fetched from macOS Keychain at runtime.
  */
 async function resolveKeychainPasswords(accounts: AccountConfig[]): Promise<void> {
-  // Skip if keychain is not available (e.g. Linux, CI)
-  if (!(await keychainAvailable())) return;
+  const stored = accounts.filter((account) => isKeychainSentinel(account.password));
+  if (stored.length === 0) return;
+  const available = await keychainAvailable();
 
-  for (const account of accounts) {
-    if (!isKeychainSentinel(account.password)) continue;
-
-    const pwd = account.password;
-    if (pwd === undefined) continue; // unreachable: sentinel check fails on undefined
-    const keychainAccount = keychainSentinelAccount(pwd);
-    const resolved = await keychainGet(keychainAccount);
-
+  for (const account of stored) {
+    const keychainAccount = keychainSentinelAccount(account.password as string);
+    let resolved: string | null = null;
+    if (available) {
+      try {
+        resolved = await keychainGet(keychainAccount);
+      } catch {
+        resolved = null;
+      }
+    }
     if (resolved) {
       account.password = resolved;
-    } else {
-      // Leave the sentinel in place — connection will fail with a clear error
-      console.error(
-        `Warning: Password for "${account.name}" is stored in keychain as "${keychainAccount}" ` +
-          `but was not found in macOS Keychain. Run 'imap-wizard keychain migrate' to fix.`,
-      );
+      continue;
     }
+    // Never log in with the placeholder text: the server would count each try
+    // as a wrong password, and some lock the account after a few.
+    account.password = undefined;
+    account.credentialError = available
+      ? `its password is stored in the Keychain as "${keychainAccount}" but was not found there. Run 'imap-wizard keychain migrate' to fix.`
+      : `its password is stored in the Keychain as "${keychainAccount}", and no Keychain can be read on this system.`;
+    console.error(`Warning: account "${account.name}" cannot log in: ${account.credentialError}`);
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Unknown keys are ignored when the config loads, so a typo such as
+ * `read_onyl = true` would quietly drop the setting. Say so at every start.
+ */
+function warnUnknownKeys(raw: unknown, filePath: string): void {
+  for (const { path: key, suggestion } of findUnknownKeys(raw)) {
+    console.error(
+      `Warning: ${filePath} has an unknown key "${key}", which is ignored${
+        suggestion ? ` (did you mean "${suggestion}"?)` : ''
+      }.`,
+    );
   }
 }
 
@@ -425,20 +486,39 @@ export async function loadRawConfig(configPath?: string): Promise<RawAppConfig> 
  * Throws on validation errors.
  */
 export async function loadConfig(configPath?: string): Promise<AppConfig> {
+  const filePath = configPath ?? CONFIG_FILE;
+
   // 1. Try environment variables first
   const envConfig = loadFromEnv();
   if (envConfig) {
-    const validated = AppConfigFileSchema.parse(envConfig);
+    // The account comes from the environment, but config.toml still decides the
+    // settings: its read_only, toolset and limits must not be lost because an
+    // MCP client config also set the account variables.
+    let merged = envConfig;
+    const fileConfig = await loadFromFile(filePath);
+    if (fileConfig && isPlainObject((fileConfig as { settings?: unknown }).settings)) {
+      const loose = await warnOnLooseConfigPermissions(filePath);
+      if (loose) console.error(`Warning: ${loose}`);
+      warnUnknownKeys({ settings: fileConfig.settings }, filePath);
+      merged = { ...envConfig, settings: fileConfig.settings };
+      console.error(
+        `Note: the account comes from the MCP_EMAIL_* environment variables; settings come from ${filePath}.`,
+      );
+    }
+    const validated = AppConfigFileSchema.parse(merged);
+    // Read-only from either place wins: it only ever takes power away.
+    if (envConfig.settings.read_only) validated.settings.read_only = true;
     const config = await normalizeConfig(validated);
     await resolveKeychainPasswords(config.accounts);
     return config;
   }
 
   // 2. Fall back to TOML config file
-  const fileConfig = await loadFromFile(configPath);
+  const fileConfig = await loadFromFile(filePath);
   if (fileConfig) {
-    const loose = await warnOnLooseConfigPermissions(configPath ?? CONFIG_FILE);
+    const loose = await warnOnLooseConfigPermissions(filePath);
     if (loose) console.error(`Warning: ${loose}`);
+    warnUnknownKeys(fileConfig, filePath);
     const validated = AppConfigFileSchema.parse(fileConfig);
     const config = await normalizeConfig(validated);
     await resolveKeychainPasswords(config.accounts);

@@ -67,6 +67,13 @@ export interface AccountConfig {
   password?: string;
   /** Command that produced `password`. Diagnostic only — never the secret. */
   passwordCommand?: string;
+  /**
+   * Set when the account's password could not be read at start-up (its
+   * password_command failed, or its Keychain item is unreadable or missing).
+   * No connection is opened for it: a login with the wrong text counts as a
+   * failed attempt, and some servers lock the account after a few.
+   */
+  credentialError?: string;
   /** Optional per-account outbound attachment cap in MB. */
   maxAttachmentMb?: number;
   oauth2?: OAuth2Config;

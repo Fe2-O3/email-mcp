@@ -90,6 +90,15 @@ export default class WatcherService {
     const { folders } = this.config;
     const startOps: Promise<void>[] = [];
     this.accounts.forEach((account) => {
+      // Retrying every minute would only log the same error every minute.
+      if (account.credentialError) {
+        mcpLog(
+          'warning',
+          'watcher',
+          `Not watching "${account.name}": it cannot log in: ${account.credentialError}`,
+        ).catch(() => undefined);
+        return;
+      }
       folders.forEach((folder) => {
         startOps.push(this.startIdle(account, folder));
       });

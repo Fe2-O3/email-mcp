@@ -17,6 +17,7 @@ import OAuthService from '../services/oauth.service.js';
 import type { AccountConfig } from '../types/index.js';
 import { createImapClient, imapClientOptions } from '../utils/imap-client.js';
 import { redactedError, registerKnownSecrets, sentCredentials } from './credential-redaction.js';
+import assertCanLogIn from './login-guard.js';
 import type { IConnectionManager } from './types.js';
 
 type SmtpAuth =
@@ -163,6 +164,7 @@ export default class ConnectionManager implements IConnectionManager {
     }
 
     const account = this.getAccount(accountName);
+    assertCanLogIn(account);
 
     const promise = (async () => {
       // Build auth config based on auth type
@@ -217,6 +219,7 @@ export default class ConnectionManager implements IConnectionManager {
     account: AccountConfig,
     auth: SmtpAuth,
   ): TransportConfig {
+    assertCanLogIn(account);
     const pool = account.smtp.pool ?? {
       enabled: true,
       maxConnections: 1,
@@ -274,6 +277,7 @@ export default class ConnectionManager implements IConnectionManager {
     }
 
     const account = this.getAccount(accountName);
+    assertCanLogIn(account);
 
     const promise = (async () => {
       // Build auth config based on auth type

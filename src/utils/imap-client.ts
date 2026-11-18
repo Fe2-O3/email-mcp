@@ -5,6 +5,7 @@
  */
 
 import { ImapFlow } from 'imapflow';
+import assertCanLogIn from '../connections/login-guard.js';
 import type { AccountConfig } from '../types/index.js';
 
 type ImapClientOptions = NonNullable<ConstructorParameters<typeof ImapFlow>[0]>;
@@ -38,10 +39,11 @@ export function createImapClient(options: ImapClientOptions): ImapFlow {
  * that hides STARTTLS gets the login in plain text.
  */
 export function imapClientOptions(
-  account: Pick<AccountConfig, 'imap'>,
+  account: Pick<AccountConfig, 'imap'> & Partial<Pick<AccountConfig, 'name' | 'credentialError'>>,
   auth: ImapClientOptions['auth'],
   extra: Partial<ImapClientOptions> = {},
 ): ImapClientOptions {
+  assertCanLogIn(account);
   return {
     host: account.imap.host,
     port: account.imap.port,
