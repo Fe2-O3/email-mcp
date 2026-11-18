@@ -22,6 +22,7 @@ import { LOCAL_RULES_FILE } from '../config/xdg.js';
 import { mcpLog } from '../logging.js';
 import audit from '../safety/audit.js';
 import { isAllowedRedirect, parsePlainAddress } from '../safety/redirect-allowlist.js';
+import { validateLabelName } from '../safety/validation.js';
 import type { AccountConfig, EmailMeta } from '../types/index.js';
 import { matchesPattern } from '../utils/glob-match.js';
 import type ImapService from './imap.service.js';
@@ -100,6 +101,13 @@ export function validateLocalRule(
       );
     }
   }
+  for (const label of actions.labels ?? []) {
+    try {
+      validateLabelName(label);
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+    }
+  }
   const lower = rule.name.trim().toLowerCase();
   if (existing.some((r) => r.name.trim().toLowerCase() === lower)) {
     problems.push(`A local rule named ${JSON.stringify(rule.name)} already exists.`);
@@ -139,7 +147,9 @@ export class LocalRulesStore {
   /** Writes the whole list: a temp file, then a rename, so a crash never leaves half a file. */
   private async save(rules: LocalRule[]): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
-    const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    // A random part, not the clock: two saves in the same millisecond shared
+    // one temp name, and the second rename then failed with ENOENT.
+    const tmp = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     await fs.writeFile(tmp, `${JSON.stringify({ version: 1, rules }, null, 2)}\n`, {
       encoding: 'utf8',
       mode: 0o600,

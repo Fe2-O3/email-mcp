@@ -768,6 +768,13 @@ describe('ImapService', () => {
   // -----------------------------------------------------------------------
 
   describe('moveEmail', () => {
+    beforeEach(() => {
+      // The write first checks that the message exists: answer with the UIDs asked for.
+      client.search.mockImplementation(async (query: { uid: string }) =>
+        query.uid.split(',').map(Number),
+      );
+    });
+
     it('moves email between mailboxes', async () => {
       // assertRealMailbox calls client.list() internally
       client.list.mockResolvedValue([{ name: 'INBOX', path: 'INBOX', specialUse: '\\Inbox' }]);
@@ -797,6 +804,13 @@ describe('ImapService', () => {
   // -----------------------------------------------------------------------
 
   describe('deleteEmail', () => {
+    beforeEach(() => {
+      // The write first checks that the message exists: answer with the UIDs asked for.
+      client.search.mockImplementation(async (query: { uid: string }) =>
+        query.uid.split(',').map(Number),
+      );
+    });
+
     it('permanently deletes when permanent=true', async () => {
       await service.deleteEmail('test', '99', 'INBOX', true);
 
@@ -825,6 +839,13 @@ describe('ImapService', () => {
   // -----------------------------------------------------------------------
 
   describe('setFlags', () => {
+    beforeEach(() => {
+      // The write first checks that the message exists: answer with the UIDs asked for.
+      client.search.mockImplementation(async (query: { uid: string }) =>
+        query.uid.split(',').map(Number),
+      );
+    });
+
     it('adds Seen flag for read action', async () => {
       await service.setFlags('test', '10', 'INBOX', 'read');
 

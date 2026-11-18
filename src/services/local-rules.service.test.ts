@@ -114,6 +114,23 @@ describe('LocalRulesStore', () => {
     expect(await fs.readFile(store.filePath, 'utf8')).toContain('bogus');
   });
 
+  it('two saves in the same millisecond do not share a temp file', async () => {
+    // With a clock-based temp name both saves wrote one temp file and the
+    // second rename failed with ENOENT, so a saved rule was reported as failed.
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      const results = await Promise.allSettled([
+        store.add(rule({ name: 'one' })),
+        store.add(rule({ name: 'two' })),
+      ]);
+      expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled']);
+    } finally {
+      now.mockRestore();
+    }
+    const leftovers = (await fs.readdir(dir)).filter((f) => f.endsWith('.tmp'));
+    expect(leftovers).toEqual([]);
+  });
+
   it('can never be pointed at config.toml', () => {
     expect(() => new LocalRulesStore(path.join(dir, 'config.toml'))).toThrow(/config\.toml/);
   });

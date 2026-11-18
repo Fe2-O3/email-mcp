@@ -19,6 +19,7 @@ import SmtpService from '../services/smtp.service.js';
 import type { AccountConfig, AppConfig, Email, EmailMeta } from '../types/index.js';
 import { stripHtml } from '../utils/html.js';
 import offlineNotice from '../utils/offline-notice.js';
+import { parseUid } from '../utils/uid.js';
 
 export interface CliServices {
   config: AppConfig;
@@ -174,6 +175,8 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
       });
       const id = positionals[0];
       if (!id) throw new Error(emailUsage(command));
+      // One message only: "1:*" or "1,2" would reach every message they name.
+      parseUid(id);
       const account = resolveAccount(svc.config, values.account);
       const email = await svc.imap.getEmail(account.name, id, values.mailbox);
       if (values.json) asJson(email);
@@ -245,6 +248,8 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
       });
       const id = positionals[0];
       if (!id) throw new Error(emailUsage(command));
+      // One message only: "1:*" or "1,2" would reach every message they name.
+      parseUid(id);
       assertWritable(svc.config);
       const account = resolveAccount(svc.config, values.account);
       await svc.imap.setFlags(account.name, id, values.mailbox, values.off ? 'unflag' : 'flag');
@@ -263,6 +268,8 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
       });
       const id = positionals[0];
       if (!id) throw new Error(emailUsage(command));
+      // One message only: "1:*" or "1,2" would reach every message they name.
+      parseUid(id);
       assertWritable(svc.config);
       const account = resolveAccount(svc.config, values.account);
       if (!values.yes) {
@@ -284,6 +291,7 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
       });
       const [id, filename, destination = '.'] = positionals;
       if (!id || !filename) throw new Error(emailUsage(command));
+      parseUid(id);
       const account = resolveAccount(svc.config, values.account);
       const attachment = await svc.imap.downloadAttachment(
         account.name,
@@ -318,6 +326,7 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
       });
       const id = positionals[0];
       if (!id || values.body === undefined) throw new Error(emailUsage(command));
+      parseUid(id);
       assertWritable(svc.config);
       const account = resolveAccount(svc.config, values.account);
       validateInputLength(values.body, MAX_EMAIL_BODY_LENGTH, 'Body');

@@ -98,4 +98,26 @@ describe('email CLI', () => {
     );
     expect(deleteEmail).not.toHaveBeenCalled();
   });
+
+  it('refuses a range or list as a message id before asking or connecting', async () => {
+    const deleteEmail = vi.fn();
+    const setFlags = vi.fn();
+    const getEmail = vi.fn();
+    const services = { config, imap: { deleteEmail, setFlags, getEmail }, smtp: {} } as never;
+
+    for (const id of ['1:*', '*', '1,2', '1e3']) {
+      await expect(runEmailCommandWithServices('delete', [id, '--yes'], services)).rejects.toThrow(
+        /numeric UID/,
+      );
+      await expect(runEmailCommandWithServices('flag', [id], services)).rejects.toThrow(
+        /numeric UID/,
+      );
+      await expect(runEmailCommandWithServices('read', [id], services)).rejects.toThrow(
+        /numeric UID/,
+      );
+    }
+    expect(deleteEmail).not.toHaveBeenCalled();
+    expect(setFlags).not.toHaveBeenCalled();
+    expect(getEmail).not.toHaveBeenCalled();
+  });
 });

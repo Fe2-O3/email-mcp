@@ -28,6 +28,7 @@ describe('ProtonMail label strategy', () => {
   it('explains that a label must exist before it can be applied', async () => {
     const client = protonClient({
       messageCopy: vi.fn().mockRejectedValue(rejection('12 NO no such mailbox')),
+      search: vi.fn().mockResolvedValue([1]),
     });
     const strategy = await detectLabelStrategy(client);
 

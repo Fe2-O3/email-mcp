@@ -71,12 +71,18 @@ export default function registerBulkTools(server: McpServer, imapService: ImapSe
             mailbox,
             action,
             ids: ids.length,
+            succeeded: result.succeeded,
+            failed: result.failed,
             destination,
           },
-          'ok',
+          // Only ids that exist are acted on, so a call that touched nothing is not "ok".
+          result.succeeded > 0 ? 'ok' : 'error',
+          result.errors?.join('; '),
         );
 
         return {
+          // Nothing was acted on: say so as an error, not a quiet success.
+          ...(result.succeeded === 0 && result.failed > 0 ? { isError: true } : {}),
           content: [
             {
               type: 'text' as const,

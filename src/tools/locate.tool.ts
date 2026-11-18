@@ -20,7 +20,9 @@ export default function registerLocateTools(server: McpServer, imapService: Imap
         'Find a real mailbox folder an email belongs to. ' +
         'Required before move_email or delete_email when the email was found in a virtual folder ' +
         '(e.g., "All Mail", "Starred"). Returns the first real folder path found, to use as ' +
-        'sourceMailbox; on a label-based server a message may also sit in other folders.',
+        "sourceMailbox, and the email's UID in that folder. UIDs are numbered per folder, so use " +
+        'the UID returned here with that folder, not the original emailId. On a label-based server ' +
+        'a message may also sit in other folders.',
       inputSchema: z.object({
         account: z.string().describe('Account name from list_accounts'),
         emailId: z.string().describe('Email ID (UID) from list_emails'),
@@ -33,7 +35,7 @@ export default function registerLocateTools(server: McpServer, imapService: Imap
     },
     async ({ account, emailId, sourceMailbox }) => {
       try {
-        const { folders, messageId } = await imapService.findEmailFolder(
+        const { folders, messageId, uids } = await imapService.findEmailFolder(
           account,
           emailId,
           sourceMailbox,
@@ -50,12 +52,24 @@ export default function registerLocateTools(server: McpServer, imapService: Imap
           };
         }
 
-        const lines = [
-          `📁 Email ${emailId} found in:`,
-          ...folders.map((f) => `  • ${f}`),
-          '',
-          `Use this as sourceMailbox for move_email or delete_email.`,
-        ];
+        const folder = folders[0];
+        const lines = [`📁 Email ${emailId} found in:`, ...folders.map((f) => `  • ${f}`), ''];
+        if (uids && uids.length === 1) {
+          lines.push(
+            `In "${folder}" this email has UID ${uids[0]}. For move_email or delete_email use ` +
+              `emailId ${uids[0]} with sourceMailbox "${folder}"` +
+              (String(uids[0]) === emailId
+                ? '.'
+                : `, not ${emailId}: UIDs are numbered per folder, so ${emailId} there is a different email or none.`),
+          );
+        } else if (uids && uids.length > 1) {
+          lines.push(
+            `More than one email in "${folder}" has this Message-ID (UIDs ${uids.join(', ')}). ` +
+              `Check which one is meant with get_email before you move or delete, and do not use ${emailId} there.`,
+          );
+        } else {
+          lines.push(`Use this as sourceMailbox for move_email or delete_email.`);
+        }
         if (messageId) {
           lines.push(`Message-ID: ${messageId}`);
         }

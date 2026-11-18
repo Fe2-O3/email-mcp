@@ -166,6 +166,8 @@ describe('ImapService.getEmail read-through', () => {
     expect(store.getBody('acct', 'INBOX', 42, '100')).toBeDefined();
 
     (client as unknown as Record<string, unknown>).messageDelete = vi.fn().mockResolvedValue(true);
+    // The delete first checks that the message exists.
+    (client as unknown as Record<string, unknown>).search = vi.fn().mockResolvedValue([42]);
     await service.deleteEmail('acct', '42', 'INBOX', true);
 
     expect(store.getBody('acct', 'INBOX', 42, '100')).toBeUndefined();

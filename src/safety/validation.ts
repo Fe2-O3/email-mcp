@@ -88,7 +88,10 @@ export function sanitizeTemplateVariable(value: string, html: boolean): string {
 
 /**
  * Validate an email label name.
- * Rejects labels with control characters or that exceed 200 characters.
+ * Rejects labels with control characters, that exceed 200 characters, or that
+ * start with a backslash. ImapFlow sends a leading backslash as an IMAP system
+ * flag (\Deleted, \Seen) or, on Gmail, a system label (\Trash, \Inbox),
+ * so such a "label" would delete, archive or mark mail instead.
  * @param name - The label name to validate.
  * @returns The trimmed label name.
  */
@@ -106,7 +109,31 @@ export function validateLabelName(name: string): string {
     throw new Error('Label name must not contain control characters');
   }
   /* eslint-enable no-control-regex */
+  if (trimmed.startsWith('\\')) {
+    throw new Error(
+      `Label name "${trimmed}" must not start with a backslash: that names a system flag, not a label`,
+    );
+  }
   return trimmed;
+}
+
+/**
+ * Validate a label used as an IMAP keyword (RFC 9051 flag-keyword, an atom).
+ * Keywords cannot hold spaces, non-ASCII letters or the atom-special
+ * characters; ImapFlow silently drops such a flag and sends nothing, so the
+ * caller would only see a vague "server rejected" error.
+ * @param name - A label name already passed through validateLabelName.
+ * @returns The name unchanged.
+ */
+export function validateKeywordName(name: string): string {
+  const label = validateLabelName(name);
+  // atom-specials: ( ) { SP CTL % * " \ ] ; also refuse anything outside ASCII.
+  if (/[^\x21-\x7E]|[(){%*"\\\]]/.test(label)) {
+    throw new Error(
+      `Label "${label}" cannot be used on this server: IMAP keywords allow only ASCII letters, digits and simple punctuation, with no spaces or ( ) { % * " \\ ]`,
+    );
+  }
+  return label;
 }
 
 /** Maximum allowed length for email bodies (shared across send/reply/forward/draft). */
