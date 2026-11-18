@@ -28,7 +28,7 @@ describe('saveNewFile', () => {
   });
 
   it('refuses to overwrite an existing file and leaves it intact', async () => {
-    const existing = join(dir, '.zshrc');
+    const existing = join(dir, 'zshrc');
     await writeFile(existing, 'original');
     await expect(saveNewFile(existing, 'x.bin', Buffer.from('evil'))).rejects.toThrow(
       /Refusing to overwrite/,
@@ -58,5 +58,16 @@ describe('safeFileName', () => {
 
   it.each(['', '..', '.', '/'])('falls back for %j', (input) => {
     expect(safeFileName(input, 'fallback.bin')).toBe('fallback.bin');
+  });
+});
+
+describe('saveNewFile path guard', () => {
+  it('refuses a protected location before creating anything', async () => {
+    await expect(
+      saveNewFile('/etc/imap-wizard-test/x.bin', 'x.bin', Buffer.from('x')),
+    ).rejects.toThrow(/protected location/);
+    await expect(saveNewFile('~/.ssh/authorized_keys', 'x.bin', Buffer.from('x'))).rejects.toThrow(
+      /protected location/,
+    );
   });
 });

@@ -7,7 +7,9 @@
 import path from 'node:path';
 
 import type { ImapFlow } from 'imapflow';
+import { CALENDAR_ATTACHMENTS_DIR } from '../config/xdg.js';
 import type { IConnectionManager } from '../connections/types.js';
+import { assertSafeWritePath } from '../safety/local-paths.js';
 import { sanitizeMailboxName, sanitizeSearchQuery } from '../safety/validation.js';
 import type {
   AttachmentMeta,
@@ -2087,6 +2089,10 @@ export default class ImapService {
 
     if (attachmentMetas.length === 0) return [];
 
+    // destDir comes from this app (the calendar attachments folder), but it is judged like any
+    // other write: nothing may land in a protected place or leave the folder through a symlink.
+    const guard = { allowRoots: [CALENDAR_ATTACHMENTS_DIR] };
+    await assertSafeWritePath(path.join(destDir, 'probe'), guard);
     const { mkdir } = await import('node:fs/promises');
     await mkdir(destDir, { recursive: true });
 
@@ -2181,6 +2187,7 @@ export default class ImapService {
         if (!localPath.startsWith(resolvedDir + path.sep)) {
           throw new Error(`Refusing to write outside the destination directory`);
         }
+        await assertSafeWritePath(localPath, { ...guard, within: destDir });
         const { writeFile } = await import('node:fs/promises');
         await writeFile(localPath, Buffer.from(downloaded.contentBase64, 'base64'));
         return {

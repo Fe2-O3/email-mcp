@@ -3,11 +3,13 @@
  * the content of an email (prompt injection). The rules keep the blast radius to
  * "a new file appeared": the path must be absolute (`~` allowed), an existing
  * directory or a trailing separator receives a generated name, and an existing
- * file is never replaced.
+ * file is never replaced. See `assertSafeWritePath` for the places that are off limits.
  */
 
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, sep } from 'node:path';
+
+import { assertSafeWritePath } from '../safety/local-paths.js';
 
 /** Reduce an untrusted name (from an email) to a safe single path segment. */
 export function safeFileName(name: string, fallback: string): string {
@@ -34,6 +36,8 @@ export async function saveNewFile(
     info?.isDirectory() || expanded.endsWith(sep) || expanded.endsWith('/')
       ? join(expanded, generatedName)
       : expanded;
+  // Judge the final path before anything is created, so a refusal leaves no directories behind.
+  await assertSafeWritePath(target);
   await mkdir(dirname(target), { recursive: true });
   try {
     // 'wx' fails instead of replacing a file that is already there.

@@ -25,6 +25,9 @@ The adapted files are:
   src/connections/credential-redaction.test.ts
   src/mcp-catalog.test.ts                    tool catalog baseline test (approach;
                                              the baseline data is original)
+  src/safety/local-paths.ts                  protected local write locations (idea
+                                             and rules; code is rewritten)
+  src/safety/local-paths.test.ts             tests for the above
   src/tools/toolsets.ts                      toolset grouping idea (tool lists
                                              and filter are original)
   src/tools/export.tool.ts                   export_email tool (idea and shape;
