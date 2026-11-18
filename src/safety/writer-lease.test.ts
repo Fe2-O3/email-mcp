@@ -108,11 +108,26 @@ describe('writer lease', () => {
     });
   });
 
-  // A leader that kept its writers after its lock vanished would run beside the next leader.
-  it('should stop its writers when its lock file was deleted', async () => {
+  // A leader that kept its writers after its lock vanished would run beside the
+  // next leader, unless it claims the lock back first so no next leader can exist.
+  it('should claim its lock back when the file was deleted and nobody took it', async () => {
     const holder = startProcess();
+    const follower = startProcess();
     await holder.lease.tick();
     await fs.unlink(lockPath);
+    await holder.lease.tick();
+    await follower.lease.tick();
+    expect({ losses: holder.losses, leading: holder.lease.leading }).toEqual({
+      losses: 0,
+      leading: true,
+    });
+    expect(follower.lease.leading).toBe(false);
+  });
+
+  it('should stop its writers when its lock folder was removed', async () => {
+    const holder = startProcess();
+    await holder.lease.tick();
+    await fs.rm(path.dirname(lockPath), { recursive: true });
     await holder.lease.tick();
     expect({ losses: holder.losses, leading: holder.lease.leading }).toEqual({
       losses: 1,
@@ -299,14 +314,152 @@ describe('writer lease', () => {
     expect(events).toEqual(['lead', 'started', 'halted']);
   });
 
-  it('should lead without a lock, and say so, when the lock directory cannot be used', async () => {
+  // Owner decision: no lockless mode. Two processes that both ran the writers
+  // without a lock would classify, move and alert on every message twice.
+  it('should keep the writers off, and say so once, when the lock directory cannot be used', async () => {
+    await fs.writeFile(path.join(root, 'state'), 'not a directory');
+    const first = startProcess();
+    const second = startProcess();
+    await first.lease.tick();
+    await second.lease.tick();
+    await first.lease.tick();
+    expect([first.leads, second.leads]).toEqual([0, 0]);
+    expect([first.lease.leading, second.lease.leading]).toEqual([false, false]);
+    expect(first.reports).toEqual([expect.stringMatching(/stay off until/)]);
+  });
+
+  it('should take the lease once the lock directory can be used again', async () => {
     await fs.writeFile(path.join(root, 'state'), 'not a directory');
     const proc = startProcess();
-    await proc.lease.start();
-    await proc.lease.halt();
-    expect(proc.leads).toBe(1);
-    expect(proc.lease.leading).toBe(true);
-    expect(proc.reports).toEqual([expect.stringMatching(/without a lock/)]);
+    await proc.lease.tick();
+    await fs.rm(path.join(root, 'state'));
+    await proc.lease.tick();
+    expect({ leads: proc.leads, leading: proc.lease.leading }).toEqual({
+      leads: 1,
+      leading: true,
+    });
+  });
+
+  // A follower parks a nearly stale lock by rename and links it back when it
+  // finds it fresh. A leader that read the lock in that gap must not give up.
+  it('should keep leading through a moment when its lock file is missing', async () => {
+    const holder = startProcess();
+    await holder.lease.tick();
+    const parked = `${lockPath}.parked`;
+    await fs.rename(lockPath, parked);
+    await holder.lease.tick();
+    await fs.link(parked, lockPath).catch(() => undefined);
+    await fs.unlink(parked);
+    await holder.lease.tick();
+    expect({ losses: holder.losses, leading: holder.lease.leading }).toEqual({
+      losses: 0,
+      leading: true,
+    });
+    // The lock is renewed, not left for nobody.
+    const follower = startProcess();
+    clock += WRITER_LEASE_RENEW_MS;
+    await holder.lease.tick();
+    await follower.lease.tick();
+    expect(follower.lease.leading).toBe(false);
+  });
+
+  it('should step down when another process took the lock while its file was missing', async () => {
+    const holder = startProcess();
+    const other = startProcess();
+    await holder.lease.tick();
+    await fs.unlink(lockPath);
+    await other.lease.tick();
+    await holder.lease.tick();
+    expect({ losses: holder.losses, leading: holder.lease.leading }).toEqual({
+      losses: 1,
+      leading: false,
+    });
+    expect(other.lease.leading).toBe(true);
+  });
+
+  // A leader whose heartbeat cannot be written looks dead to everyone else, who
+  // take over after the stale window. It has to stop before they can.
+  it('should step down when it cannot renew its lock for most of the stale window', async () => {
+    const holder = startProcess();
+    await holder.lease.tick();
+    const denied = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    const utimes = vi.spyOn(fs, 'utimes').mockRejectedValue(denied);
+    try {
+      clock += WRITER_LEASE_RENEW_MS;
+      await holder.lease.tick();
+      expect(holder.lease.leading).toBe(true);
+      clock += WRITER_LEASE_RENEW_MS;
+      await holder.lease.tick();
+      expect(holder.lease.leading).toBe(true);
+      clock += WRITER_LEASE_RENEW_MS;
+      await holder.lease.tick();
+      expect({ losses: holder.losses, leading: holder.lease.leading }).toEqual({
+        losses: 1,
+        leading: false,
+      });
+    } finally {
+      utimes.mockRestore();
+    }
+    // A follower that takes the stale lock never overlaps it.
+    const follower = startProcess();
+    clock += WRITER_LEASE_STALE_MS;
+    await follower.lease.tick();
+    expect(follower.lease.leading).toBe(true);
+  });
+
+  it('should keep renewing while a slow writer start is still running', async () => {
+    let finishStarting: () => void = () => {};
+    const starting = new Promise<void>((resolve) => {
+      finishStarting = resolve;
+    });
+    const slow = createWriterLease({
+      lockPath,
+      onLead: () => starting,
+      onLose: () => undefined,
+      report: () => undefined,
+      now: () => clock,
+    });
+    const follower = startProcess();
+    await slow.tick();
+    // Five renewals pass while the writers are still starting: more than the stale window.
+    for (let i = 0; i < 5; i += 1) {
+      clock += WRITER_LEASE_RENEW_MS;
+      await slow.tick();
+      await follower.lease.tick();
+    }
+    expect(follower.lease.leading).toBe(false);
+    finishStarting();
+    await slow.halt();
+  });
+
+  it('should stop writers only after a slow start finished', async () => {
+    const events: string[] = [];
+    let finishStarting: () => void = () => {};
+    const starting = new Promise<void>((resolve) => {
+      finishStarting = resolve;
+    });
+    const holder = createWriterLease({
+      lockPath,
+      onLead: async () => {
+        events.push('lead');
+        await starting;
+        events.push('started');
+      },
+      onLose: () => {
+        events.push('lose');
+      },
+      report: () => undefined,
+      now: () => clock,
+    });
+    await holder.tick();
+    await fs.writeFile(lockPath, 'someone-else:1:x');
+    const losing = holder.tick();
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    finishStarting();
+    await losing;
+    expect(events).toEqual(['lead', 'started', 'lose']);
   });
 
   it('should report an unexpected error and stay a follower', async () => {

@@ -6,8 +6,9 @@
  * serve tools only and take over when the leader releases its lock, is killed, or stops renewing
  * it. The scheduler is not covered: it has its own lock.
  *
- * If the lock cannot be used at all (read-only or missing state directory), this process leads
- * without a lock, as a single process always did, and says so once.
+ * If the lock cannot be used at all (read-only or missing state directory, full disk), no process
+ * runs the writers: two leaders without a lock would act on every message twice. The lease says
+ * so once and tries again on every renewal.
  */
 
 import fs from 'node:fs/promises';
@@ -39,18 +40,37 @@ export interface WriterLease {
   start: () => Promise<void>;
   /** One step: take a free or stale lease, or renew or lose the one held. */
   tick: () => Promise<void>;
-  /** Stops trying; writers already started keep running until the caller stops them. */
+  /** Stops trying, and waits for a writer start or stop still running. */
   halt: () => Promise<void>;
   /** Frees the lease for a follower. Call it once the writers have stopped. */
   release: () => Promise<void>;
 }
 
-/** Fails closed to "not mine" only for a missing file; any other read error is surfaced. */
-async function stillHeld(lockPath: string, token: string): Promise<boolean> {
+type Holding = 'mine' | 'theirs' | 'missing';
+
+async function whoHolds(lockPath: string, token: string): Promise<Holding> {
   try {
-    return (await fs.readFile(lockPath, 'utf8')) === token;
+    return (await fs.readFile(lockPath, 'utf8')) === token ? 'mine' : 'theirs';
   } catch (err) {
-    if (errnoCode(err) === 'ENOENT') return false;
+    if (errnoCode(err) === 'ENOENT') return 'missing';
+    throw err;
+  }
+}
+
+/**
+ * The file is missing: a follower parked it by rename to check it, or someone deleted it. Writing
+ * it back with the same token, create-only, keeps the lease if nobody claimed it meanwhile; a
+ * follower that links the parked file back then finds it taken and leaves it.
+ */
+async function claimBack(lockPath: string, token: string): Promise<Holding> {
+  try {
+    await fs.writeFile(lockPath, token, { flag: 'wx' });
+    return 'mine';
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code === 'EEXIST') return whoHolds(lockPath, token);
+    // The folder itself is gone: nobody can hold a lock there now.
+    if (code === 'ENOENT') return 'missing';
     throw err;
   }
 }
@@ -63,51 +83,98 @@ export function createWriterLease(options: WriterLeaseOptions): WriterLease {
   const renewMs = options.renewMs ?? WRITER_LEASE_RENEW_MS;
   const staleMs = options.staleMs ?? WRITER_LEASE_STALE_MS;
   let token: string | undefined;
-  let lockless = false;
+  /** When the heartbeat was last written; a leader that cannot write it must step down. */
+  let renewedAt = 0;
+  let unusableReported = false;
   let halted = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   let running: Promise<void> | undefined;
+  /**
+   * Writer starts and stops, in order. A start is not awaited by the renewal step: connecting the
+   * watcher can take longer than the stale window, and a heartbeat that waited on it would let a
+   * second process take the lease meanwhile. A stop always waits for the start before it.
+   */
+  let writers: Promise<void> = Promise.resolve();
+
+  const reportError = (err: unknown): void => {
+    options.report(`Mailbox writer lease: ${err instanceof Error ? err.message : String(err)}`);
+  };
+
+  const queueWriters = (change: () => Promise<void> | void): Promise<void> => {
+    writers = writers.then(change).catch(reportError);
+    return writers;
+  };
+
+  const lose = async (): Promise<void> => {
+    token = undefined;
+    await queueWriters(options.onLose);
+  };
+
+  const acquire = async (): Promise<void> => {
+    let acquired: string | undefined;
+    try {
+      await fs.mkdir(path.dirname(options.lockPath), { recursive: true, mode: 0o700 });
+      acquired = await acquireClaim(options.lockPath, staleMs, now());
+    } catch (err) {
+      const code = errnoCode(err);
+      if (code === undefined || !LOCK_UNAVAILABLE.has(code) || halted) throw err;
+      if (!unusableReported) {
+        unusableReported = true;
+        options.report(
+          `Mailbox writer lease: cannot use ${options.lockPath} (${code}); the watcher and hooks stay off until it works.`,
+        );
+      }
+      return;
+    }
+    unusableReported = false;
+    if (acquired === undefined) return;
+    if (halted) {
+      await releaseClaim(options.lockPath, acquired);
+      return;
+    }
+    token = acquired;
+    renewedAt = now();
+    void queueWriters(options.onLead);
+  };
+
+  const renew = async (held: string): Promise<void> => {
+    let holding: Holding;
+    try {
+      holding = await whoHolds(options.lockPath, held);
+      if (holding === 'missing') holding = await claimBack(options.lockPath, held);
+      if (holding === 'mine') {
+        const at = new Date(now());
+        await fs.utimes(options.lockPath, at, at);
+        renewedAt = now();
+        return;
+      }
+    } catch (err) {
+      // Others judge this lock by its heartbeat. Step down one renewal before it can look stale,
+      // so a follower that takes it over never runs beside this process.
+      if (now() - renewedAt >= staleMs - renewMs) {
+        reportError(err);
+        options.report(
+          'Mailbox writer lease: the lock could not be renewed, so this process stopped the watcher and hooks.',
+        );
+        await lose();
+        return;
+      }
+      throw err;
+    }
+    await lose();
+  };
 
   const step = async (): Promise<void> => {
-    if (lockless) return;
     if (token === undefined) {
-      let acquired: string | undefined;
-      try {
-        await fs.mkdir(path.dirname(options.lockPath), { recursive: true, mode: 0o700 });
-        acquired = await acquireClaim(options.lockPath, staleMs, now());
-      } catch (err) {
-        const code = errnoCode(err);
-        if (code === undefined || !LOCK_UNAVAILABLE.has(code) || halted) throw err;
-        lockless = true;
-        options.report(
-          `Mailbox writer lease: cannot use ${options.lockPath} (${code}); this process runs the writers without a lock.`,
-        );
-        await options.onLead();
-        return;
-      }
-      if (acquired === undefined) return;
-      if (halted) {
-        await releaseClaim(options.lockPath, acquired);
-        return;
-      }
-      token = acquired;
-      await options.onLead();
+      await acquire();
       return;
     }
-    if (await stillHeld(options.lockPath, token)) {
-      const at = new Date(now());
-      await fs.utimes(options.lockPath, at, at);
-      return;
-    }
-    token = undefined;
-    await options.onLose();
+    await renew(token);
   };
 
   const tick = async (): Promise<void> => {
     running ??= step()
-      .catch((err: unknown) => {
-        options.report(`Mailbox writer lease: ${err instanceof Error ? err.message : String(err)}`);
-      })
+      .catch(reportError)
       .finally(() => {
         running = undefined;
       });
@@ -116,7 +183,7 @@ export function createWriterLease(options: WriterLeaseOptions): WriterLease {
 
   return {
     get leading() {
-      return token !== undefined || lockless;
+      return token !== undefined;
     },
     start: async () => {
       timer ??= setInterval(() => {
@@ -130,6 +197,7 @@ export function createWriterLease(options: WriterLeaseOptions): WriterLease {
       halted = true;
       clearInterval(timer);
       await running;
+      await writers;
     },
     release: async () => {
       if (token === undefined) return;
