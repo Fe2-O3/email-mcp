@@ -1,6 +1,9 @@
 # Server-side mail filter rules (Sieve): plan
 
-Status: approved 2026-11-18, scheduled after 0.3.4. Decisions below.
+Status: approved 2026-11-18. Implemented 2026-11-17 on the
+`cache-local-continue` branch (not released). See "Implementation notes" at
+the end. The Dovecot integration test has not run yet (no Docker locally); it
+runs in CI.
 
 ## Will it work everywhere?
 
@@ -119,3 +122,39 @@ OAuth.
    the user directs to edit that file outside this server, may change it. **No
    MCP tool can read-modify-write the allowlist**, and no tool argument can
    bypass it. A test must assert that no registered tool writes `config.toml`.
+
+## Implementation notes (2026-11-17)
+
+What shipped, and where it differs from the plan above.
+
+- **Tools.** The seven Sieve tools as planned, plus `list_local_rules`,
+  `add_local_rule`, `remove_local_rule`. All ten are in the `full` toolset only;
+  the write tools are hidden in `read_only`. Sieve tools are registered for
+  every account; `sieve_status` answers "not supported, use local rules" for
+  known providers without ManageSieve (no connection attempt) and for servers
+  that cannot be reached.
+- **Config.** Per-account `[accounts.sieve]` (`enabled`, `host`, `port`, `tls`,
+  `starttls`); without it the IMAP host is tried on 4190 with STARTTLS.
+  Top-level `[sieve] allowed_redirects` (addresses or bare domains, no
+  wildcards, no subdomain matching). Env: `MCP_EMAIL_SIEVE_*`.
+- **Put** previews unless `apply: true` (and `dryRun` always previews). It also
+  warns when the script is live because the active script includes it.
+- **Activate** executes unless `dryRun` (as the other write tools do). It does
+  not make a backup, since activation changes no script text; it reports the
+  previously active script so it can be undone, and the audit log records it.
+- **Scanner, stricter than planned.** Besides `redirect`, these are blocked
+  unless every target is allowlisted: `notify` with `mailto:` (any other notify
+  method is blocked), and Dovecot's `report`. `pipe` and `execute` are always
+  blocked. Variables in a target, `redirect :list`, dynamic include names and
+  scripts that do not tokenize are blocked. `vacation`, `reject`, `ereject`,
+  `discard`, `filter`, includes and `fileinto` to a missing folder are shown
+  as risky.
+- **Local rules** run inside the hooks pipeline (before the config.toml rules
+  and AI triage), so only the writer-lease holder applies them, and only while
+  IMAP Wizard runs with the watcher on and `read_only` off. Stored in
+  `local-rules.json` in the data directory. The forward action exists: it is
+  checked against the allowlist when added and again when it fires, and mail
+  from the account itself or from the target is not forwarded (loop guard).
+- **Not done.** Gmail filters API and Microsoft Graph rules (later, as planned).
+  No `verify_ssl` switch for ManageSieve: certificates are always checked, so a
+  self-signed server needs a loopback tunnel or a proper certificate.
