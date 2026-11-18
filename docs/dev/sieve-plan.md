@@ -1,6 +1,6 @@
 # Server-side mail filter rules (Sieve): plan
 
-Status: proposal, 2026-11-17. Not started.
+Status: approved 2026-11-18, scheduled after 0.3.4. Decisions below.
 
 ## Will it work everywhere?
 
@@ -110,8 +110,12 @@ OAuth.
 | Local-rules tools for non-Sieve providers | 1 to 2 more |
 | Gmail filters API or Microsoft Graph rules | 3 to 5 each, later |
 
-## Open questions for the owner
+## Decisions (owner, 2026-11-18)
 
-1. Ship Sieve tools first and local rules second, or both together?
-2. Is a config-file allowlist the right way to permit forwarding, or should
-   forwarding never be allowed from this app at all?
+1. **Ship Sieve tools and local rules together**, so every provider gets rules
+   on day one.
+2. **Forwarding only to a human-controlled allowlist.** `sieve.allowed_redirects`
+   (and the same list for local rules) lives in `config.toml`. The user, or an AI
+   the user directs to edit that file outside this server, may change it. **No
+   MCP tool can read-modify-write the allowlist**, and no tool argument can
+   bypass it. A test must assert that no registered tool writes `config.toml`.
