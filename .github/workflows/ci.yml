@@ -7,13 +7,18 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
+# Read-only token unless a job asks for more.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   ci:
-    uses: codefuturist/shared-workflows/.github/workflows/ci-node.yml@v1
+    # Pinned to a commit: a moved tag in another organization would run here with this repo's token.
+    uses: codefuturist/shared-workflows/.github/workflows/ci-node.yml@ca2c36c29d3550061cd3ca07f02a8239964f9567 # v1.2.0
     with:
       node-version: "24"
       run-integration: true
