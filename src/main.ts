@@ -38,6 +38,7 @@ Commands:
   setup       Alias for 'account add'
   test        Test connections for all or a specific account
   install     Register/unregister with MCP clients (Claude, Cursor, …)
+  tools       Pick what your AI can do (tick boxes; show, set, reset)
   config      Config management (show, edit, validate, path, init)
   keychain    Password management (migrate, status, remove)
   scheduler   Email scheduling management (check, list, install, uninstall, status)
@@ -67,6 +68,8 @@ Examples:
   imap-wizard install                  # Register with detected MCP clients
   imap-wizard install status           # Show client registration status
   imap-wizard install remove           # Unregister from MCP clients
+  imap-wizard tools                    # Tick which tool groups your AI gets
+  imap-wizard tools set read,send      # Same, without prompts
   imap-wizard config show              # Show config (passwords masked)
   imap-wizard config edit              # Edit global settings
   imap-wizard config validate          # Syntax, schema, typo'd keys, consistency
@@ -263,6 +266,13 @@ async function main(): Promise<void> {
     case 'config': {
       const { default: runConfigCommand } = await import('./cli/config-commands.js');
       await runConfigCommand(process.argv[3]);
+      break;
+    }
+
+    case 'tools': {
+      const { default: runToolsCommand } = await import('./cli/tools-commands.js');
+      const rest = process.argv.slice(4).join(',');
+      await runToolsCommand(process.argv[3], rest || undefined);
       break;
     }
 

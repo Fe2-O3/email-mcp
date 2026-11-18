@@ -196,6 +196,9 @@ export interface CacheConfig {
 
 export type Toolset = 'full' | 'core' | 'minimal';
 
+/** A tick box in `imap-wizard tools`. See TOOL_GROUPS in tools/toolsets.ts. */
+export type ToolGroup = 'read' | 'send' | 'organize' | 'rules' | 'calendar' | 'alerts';
+
 export interface AppConfig {
   settings: {
     rateLimit: number;
@@ -207,6 +210,8 @@ export interface AppConfig {
     readOnly: boolean;
     /** Which tools to register: everything, everyday mail work, or triage and read only. */
     toolset: Toolset;
+    /** Tool groups to register. When set it wins over toolset; absent means use toolset. */
+    tools?: ToolGroup[];
     cache: CacheConfig;
     watcher: WatcherConfig;
     verification: VerificationConfig;

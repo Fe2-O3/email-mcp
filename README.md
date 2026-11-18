@@ -149,8 +149,9 @@ Now ask your assistant: *"What's unread in my inbox?"*
   minutes, but never while a call is still using it.
 - **No plaintext passwords needed.** Use the macOS Keychain, Linux
   `secret-tool`, a password command (1Password, Bitwarden, `pass`), or OAuth2.
-- **Fewer tools when you want them.** A `core` or `minimal` toolset sends the
-  model a shorter list. Handy for local models.
+- **Pick what your AI can do.** Setup asks with tick boxes (read, send,
+  organize, filter rules, calendar, alerts). Change it any time with
+  `imap-wizard tools`. A shorter list is handy for local models.
 
 ---
 
@@ -214,10 +215,34 @@ post exploits in public.
 `email://{account}/unread` `email://{account}/stats` `email://templates/{name}`
 `email://scheduled`
 
+### Choosing tools
+
+Setup asks "What should your AI be able to do?" and shows tick boxes. Change
+the answer any time:
+
+```bash
+imap-wizard tools                  # tick boxes
+imap-wizard tools show             # what is on now
+imap-wizard tools set read,send    # no prompts (scripts)
+imap-wizard tools reset            # back to the toolset preset
+```
+
+| Group | Tools | What's in it |
+|---|---|---|
+| `read` (always on) | 16 | list, search and open mail, threads, attachments, export, contacts, stats, health, security check, templates list |
+| `send` | 9 | send, reply, forward, drafts, apply a template, scheduled sends |
+| `organize` | 12 | mark, move, delete, bulk actions, labels, folders |
+| `rules` | 10 | Sieve filters on the server, local rules |
+| `calendar` | 8 | invites, events, reminders |
+| `alerts` | 6 | new-mail watcher, desktop and webhook alerts |
+
+This is saved as `settings.tools` (env var `MCP_EMAIL_TOOLS`, comma-separated).
+When it is set it wins over `toolset`. Restart your AI app after a change.
+
 ### Toolsets
 
-If your client or model struggles with a long tool list, send fewer tools with
-`settings.toolset` (env var `MCP_EMAIL_TOOLSET`):
+The older presets still work as shortcuts, via `settings.toolset` (env var
+`MCP_EMAIL_TOOLSET`):
 
 | `toolset` | Tools (normal / read-only) | What's in it |
 |---|---|---|
@@ -225,6 +250,7 @@ If your client or model struggles with a long tool list, send fewer tools with
 | `"core"` | 24 / 10 | Minimal, plus `get_emails`, `get_email_status`, mark, move, delete, `bulk_action`, labels, drafts, `forward_email`, `download_attachment`, `export_email` |
 | `"minimal"` | 8 / 6 | `list_accounts` `list_mailboxes` `list_emails` `search_emails` `get_email` `get_thread` `send_email` `reply_email` |
 
+`read_only` still hides every tool that changes mail, whatever you picked.
 Prompts and resources stay in every toolset.
 
 Also included: Streamable HTTP transport, an IMAP IDLE watcher with optional AI
@@ -321,7 +347,7 @@ Set these in your client's MCP config instead of writing a file:
 | `MCP_EMAIL_PASSWORD` or `MCP_EMAIL_PASSWORD_COMMAND` | your app password, or a command that prints it |
 
 Settings have matching variables too, for example `MCP_EMAIL_READ_ONLY=true`,
-`MCP_EMAIL_TOOLSET`, `MCP_EMAIL_RATE_LIMIT` and `MCP_EMAIL_IDLE_EXIT`. The
+`MCP_EMAIL_TOOLSET`, `MCP_EMAIL_TOOLS`, `MCP_EMAIL_RATE_LIMIT` and `MCP_EMAIL_IDLE_EXIT`. The
 filter-rule lists are `MCP_EMAIL_SIEVE_ALLOWED_REDIRECTS` and
 `MCP_EMAIL_SIEVE_ALLOWED_PROGRAMS` (comma-separated). Yes/no variables take
 `true`/`false`, `1`/`0` or `yes`/`no`; anything else stops the server with an

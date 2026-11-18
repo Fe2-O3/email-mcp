@@ -13,6 +13,7 @@ import {
   intro,
   isCancel,
   log,
+  multiselect,
   note,
   outro,
   password as p_password,
@@ -42,9 +43,11 @@ import {
   keychainSet,
   makeKeychainSentinel,
 } from '../security/keychain.js';
-import type { AccountConfig } from '../types/index.js';
+import { normalizeToolGroups, TOOL_GROUP_NAMES } from '../tools/toolsets.js';
+import type { AccountConfig, ToolGroup } from '../types/index.js';
 import ensureInteractive from './guard.js';
 import { detectProvider } from './providers.js';
+import { countTools, toolGroupOptions } from './tools-commands.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -588,7 +591,24 @@ async function addAccount(): Promise<void> {
   const ok = await testConnections(testAccount);
   if (!ok) return;
 
-  // 5. Save
+  // 5. On a first setup, ask what the AI may do. Later changes: `imap-wizard tools`.
+  let toolGroups: ToolGroup[] | undefined;
+  if (!existingConfig) {
+    const picked = await multiselect<ToolGroup>({
+      message: 'What should your AI be able to do? (space to tick, enter to go on)',
+      options: toolGroupOptions(),
+      initialValues: [...TOOL_GROUP_NAMES],
+      required: false,
+    });
+    if (isCancel(picked)) {
+      cancel('Setup cancelled. Nothing was saved.');
+      return;
+    }
+    toolGroups = normalizeToolGroups(picked);
+    log.info(`${countTools(toolGroups)} tools on. Change this any time with 'imap-wizard tools'.`);
+  }
+
+  // 6. Save
 
   // Store password in keychain if available (more secure than plain text)
   if (await keychainAvailable()) {
@@ -614,6 +634,7 @@ async function addAccount(): Promise<void> {
           idle_exit: 0,
           read_only: false,
           toolset: 'full',
+          ...(toolGroups ? { tools: toolGroups } : {}),
           cache: {
             enabled: true,
             mailboxes: ['INBOX'],

@@ -8,6 +8,12 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+### Added
+
+- Pick what your AI can do. Setup now asks "What should your AI be able to do?" with tick boxes: Read mail, Send and reply, Organize, Filter rules, Calendar and reminders, Alerts. Reading is always on.
+- New `imap-wizard tools` command to change the choice later (`show`, `set read,send`, `reset`). It edits only the one `tools` line in config.toml, so comments stay.
+- New `settings.tools` setting (env `MCP_EMAIL_TOOLS`). When set it wins over `toolset`. The `full`, `core` and `minimal` presets and `read_only` work as before.
+
 ## [0.3.6] — 2026-11-18
 
 A safety and reliability release. A full review of the app by several models found about 120 problems; this release fixes most of them. Some behavior is stricter than before; see **Changed**.

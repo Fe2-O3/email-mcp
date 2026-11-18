@@ -71,9 +71,9 @@ export default function registerAllTools(
   hooksService: HooksService,
   extras: ToolExtras = {},
 ): void {
-  const { readOnly, toolset } = config.settings;
-  // Tools outside the configured toolset are skipped at registration.
-  const server = restrictToToolset(fullServer, toolset);
+  const { readOnly, toolset, tools } = config.settings;
+  // Tools outside the configured toolset (or tool groups) are skipped at registration.
+  const server = restrictToToolset(fullServer, toolset, tools);
   // The forwarding allowlist is read from config.toml each time it is needed. No
   // tool receives a way to change it, and nothing below writes config.toml.
   const sieveManager = new SieveManager({
@@ -108,7 +108,7 @@ export default function registerAllTools(
   registerLocateTools(server, imapService);
   registerSecurityTools(server, imapService);
   registerWatcherReadTools(server, watcherService, hooksService);
-  // Only in the full toolset: no core/minimal list names them.
+  // Only in the full toolset or the "rules" group: no core/minimal list names them.
   registerSieveReadTools(server, connections, sieveManager);
   const localRulesStore = extras.localRulesStore ?? new LocalRulesStore();
   registerLocalRulesReadTools(server, localRulesStore, config);

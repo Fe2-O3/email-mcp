@@ -255,6 +255,7 @@ export const CacheConfigSchema = z.object({
 });
 
 export const ToolsetSchema = z.enum(['full', 'core', 'minimal']);
+export const ToolGroupSchema = z.enum(['read', 'send', 'organize', 'rules', 'calendar', 'alerts']);
 
 export const SettingsSchema = z.object({
   rate_limit: z.number().int().min(1).default(10),
@@ -274,6 +275,10 @@ export const SettingsSchema = z.object({
   // "core" (read, send and everyday mail management) or "minimal" (triage
   // and read). read_only still removes write tools within any toolset.
   toolset: ToolsetSchema.default('full'),
+  // A finer choice than toolset: the tool groups to turn on, as ticked in
+  // `imap-wizard tools`. When present it wins over toolset. "read" is always
+  // added. Absent (the default) means toolset decides.
+  tools: z.array(ToolGroupSchema).optional(),
   cache: CacheConfigSchema.default(() => ({
     enabled: true,
     mailboxes: ['INBOX'],

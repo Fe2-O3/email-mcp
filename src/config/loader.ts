@@ -90,6 +90,13 @@ function loadFromEnv(): RawAppConfig | null {
       idle_exit: parseInt(process.env.MCP_EMAIL_IDLE_EXIT ?? '0', 10),
       read_only: envBool('MCP_EMAIL_READ_ONLY', false),
       toolset: (process.env.MCP_EMAIL_TOOLSET ?? 'full') as 'full' | 'core' | 'minimal',
+      ...(process.env.MCP_EMAIL_TOOLS !== undefined
+        ? {
+            tools: process.env.MCP_EMAIL_TOOLS.split(',')
+              .map((g) => g.trim())
+              .filter(Boolean) as NonNullable<RawAppConfig['settings']['tools']>,
+          }
+        : {}),
       cache: {
         // Opt-out rather than opt-in: the mirror is a pure win for reads and
         // degrades to live behaviour if anything goes wrong.
@@ -358,6 +365,7 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
       idleExit: raw.settings.idle_exit,
       readOnly: raw.settings.read_only,
       toolset: raw.settings.toolset,
+      ...(raw.settings.tools ? { tools: raw.settings.tools } : {}),
       cache: {
         enabled: raw.settings.cache.enabled,
         mailboxes: raw.settings.cache.mailboxes,
@@ -643,6 +651,51 @@ export async function appendAccountToConfig(
 }
 
 /**
+ * Set (or, with null, remove) `settings.tools` in an existing config file by
+ * editing that one line, so every comment and other setting stays as written.
+ * The result is parsed and schema-checked before it replaces the file; if the
+ * edit did not land exactly (for example a hand-written multi-line `tools`
+ * array), nothing is written and this throws.
+ */
+export async function setToolGroupsInConfig(
+  groups: readonly string[] | null,
+  filePath: string = CONFIG_FILE,
+): Promise<RawAppConfig> {
+  const existing = await fs.readFile(filePath, 'utf-8');
+  const lines = existing.split('\n');
+  const line = groups === null ? null : `tools = [${groups.map((g) => `"${g}"`).join(', ')}]`;
+  const header = lines.findIndex((l) => /^\s*\[settings\]\s*(#.*)?$/.test(l));
+  if (header === -1) {
+    if (line !== null) lines.unshift('[settings]', line, '');
+  } else {
+    let end = lines.length;
+    for (let i = header + 1; i < lines.length; i++) {
+      if (/^\s*\[/.test(lines[i] ?? '')) {
+        end = i;
+        break;
+      }
+    }
+    const at = lines.slice(header + 1, end).findIndex((l) => /^\s*tools\s*=/.test(l));
+    if (at !== -1) {
+      if (line === null) lines.splice(header + 1 + at, 1);
+      else lines[header + 1 + at] = line;
+    } else if (line !== null) {
+      lines.splice(header + 1, 0, line);
+    }
+  }
+  const next = lines.join('\n');
+  const checked = AppConfigFileSchema.parse(parseTOML(next));
+  const landed = checked.settings.tools ?? null;
+  if (JSON.stringify(landed) !== JSON.stringify(groups === null ? null : [...groups])) {
+    throw new Error(
+      `Could not update "tools" in ${filePath} safely. Edit the [settings] tools line by hand.`,
+    );
+  }
+  await writeConfigText(filePath, next);
+  return checked;
+}
+
+/**
  * Warn when an existing config is readable by anyone but its owner.
  *
  * Tightening it automatically would be the wrong call: the file may be
@@ -683,6 +736,7 @@ rate_limit = 10  # max emails per minute per account
 idle_exit = 0  # seconds without MCP requests before the stdio server exits (0 = never)
 read_only = false  # set to true to disable all write operations
 toolset = "full"  # "full" (all tools), "core" (everyday mail work) or "minimal" (triage and read)
+# tools = ["read", "send", "organize"]  # pick tool groups instead; run 'imap-wizard tools'
 
 [settings.send]
 max_attachment_mb = 25  # base64-encoded attachment total per message, MB
