@@ -8,6 +8,60 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+## [0.3.6] — 2026-11-18
+
+A safety and reliability release. A full review of the app by several models found about 120 problems; this release fixes most of them. Some behavior is stricter than before; see **Changed**.
+
+### Changed (stricter than before)
+
+- A one-message tool given a UID range or list (`1:*`, `1,2`) is refused instead of acting on many messages.
+- `delete_mailbox` refuses a folder that still holds mail. `send_draft` only sends messages from the Drafts folder, then moves them to Trash.
+- Local rules refuse catch-all patterns and moves into special-use folders (Trash, Junk, Drafts, Sent, Archive) or watched folders, and check labels. Old catch-all rules still load and run, with a warning.
+- Sieve: a script that includes a server-wide script, or runs `filter` with a program not listed in the new `[sieve] allowed_programs`, is refused. You cannot delete a script the active script includes, or a backup that is the only copy of a script.
+- The alert webhook can only be set in `config.toml`; `configure_alerts` no longer takes `webhook_url` or `webhook_events`.
+- The scheduler sends nothing while `read_only` is on; queued mail waits.
+- `download_attachment` and `export_email` refuse file names that start with a dot and types that run when opened (`.command`, `.terminal`, `.app`, `.scpt`, `.sh`, `.plist`).
+- If the writer lock cannot be used, the watcher, hooks and alerts pause until it works, instead of running in every window.
+- With the account set by environment variables, `[settings]` still come from `config.toml` (a line says so), and `read_only` on in either place wins. Yes/no variables are read strictly; a value like `enabled` stops the start. Two accounts with the same name stop the start.
+- An IMAP account with both `tls` and `starttls` loads with a warning and uses implicit TLS.
+
+### Added
+
+- `allow_duplicate` on `send_email`, `reply_email`, `forward_email` and `send_draft`; `occurrence` on `download_attachment` (and `--occurrence` on the CLI) for two attachments with the same name.
+- `[sieve] allowed_programs` (env `MCP_EMAIL_SIEVE_ALLOWED_PROGRAMS`) and a per-account `append_sent` setting (off by default for Gmail, which files sent mail itself).
+- Forwards carry an `X-IMAP-Wizard-Forwarded` header, and rules never forward a marked message.
+
+### Fixed
+
+- **Sending:** two identical sends at once now produce one send. A send that may or may not have reached the server is reported as "unknown, check Sent first" and never retried. A refused recipient no longer makes other queued sends fail. Replies say who received them and warn when Reply-To is on another domain.
+- **Scheduler:** scheduled mail is never resent after the server may have taken it. A short outage no longer fails a job for good. Failed and unknown jobs are visible and can be cancelled. OAuth accounts work, and every scheduled send is in the audit log.
+- **Drafts, folders, expunge:** editing a draft, deleting a folder or expunging no longer loses other mail. Permanent delete on a server without UIDPLUS works, with a warning.
+- **Watcher:** an email with a bad date, a STARTTLS failure or a restart no longer stops the watcher. Mail that arrived during a gap of under an hour is caught up.
+- **Connections:** the 30-minute connection rotation waits until nothing is using the connection. The 60-second mailbox wait also covers opening the mailbox. The first cache sync fetches in chunks of 500 and resumes if cut off. Move, delete, mark and bulk actions cut off by a dropped connection say the server may have done it.
+- **OAuth:** one token refresh per account, bad answers refused, 30-second limit, rotated refresh tokens kept, and the mail sender rebuilt before its token runs out.
+- **Cache:** an account name pointed at another server drops its old cached mail. A cache from a newer build is left alone, and a broken cache file is replaced. `account delete` removes that account's cached mail.
+- **Passwords:** an account whose Keychain item or password command can't be read never logs in with the wrong text; other accounts keep working. Passwords and tokens are scrubbed from error text in more forms.
+- **CLI:** `account add` no longer overwrites a config file it cannot read, and `account edit` keeps settings it does not ask about. `keychain remove` and `migrate` do nothing when you answer No. `config.toml` is written safely, with the previous copy kept as `config.toml.bak`. `scheduler uninstall` leaves other cron lines alone. `imap-wizard read` prints no terminal control codes.
+- **HTTP mode:** repeated and simultaneous calls work, and SIGTERM exits cleanly.
+- **Attachments:** two with the same name keep their own bytes; inline and name-only PDFs are listed and forwarded; saved files are never overwritten; one failed attachment no longer hides the others. `savePath` allows files up to 50 MB. A message body that did not download is reported instead of shown as empty.
+- **Calendar:** attachments are saved only after you accept the dialog, the dialog shows the real date, and an unreadable email date no longer builds a calendar script. Calendar and Reminders lists report a refused permission instead of an empty list.
+- **Rules:** edits at the same time no longer lose each other, matching can no longer freeze the app, and removing a forward address applies at once. Scheduled emails and rules stop when their account now points at a different server or login.
+- **Audit log:** a full or broken audit log no longer makes a finished action look like it failed.
+- `list_templates` names broken template files, and a failed batch of new mail is logged.
+
+### Security
+
+- Windows desktop alerts no longer run PowerShell code from an email subject.
+- Tool results that contain email text are marked as untrusted, including structured results (`untrusted: true`), calendar, contacts, stats and Sieve server text. AI triage can no longer have its fence closed by a subject line.
+- `get_email_security` trusts only the top authentication header and your own server's headers. `get_verification_code` fences the link and warns when its host is not the sender's.
+- `get_email` with `markRead` is refused on a read-only server.
+- The audit log, calendar state, attachments and cache files are owner-only (0600/0700). A `config.toml` readable by others gets a warning.
+- Releases build only real version tags, outside actions are pinned to commits, and the downloaded `mcp-publisher` is checked against its sha256.
+
+### Docs
+
+- README covers the per-process send limit, the forward allowlist (read live from `config.toml`, for standing forwards only), what read-only mode covers, and Docker volumes for the state and data folders.
+
 ## [0.3.5] — 2026-11-18
 
 ### Added
