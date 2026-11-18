@@ -17,6 +17,7 @@ import {
   keychainSet,
   makeKeychainSentinel,
 } from '../security/keychain.js';
+import ensureInteractive from './guard.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,6 +102,7 @@ async function keychainStatus(): Promise<void> {
  * Migrate all plain-text passwords to macOS Keychain.
  */
 async function keychainMigrate(): Promise<void> {
+  ensureInteractive();
   intro('imap-wizard > Keychain Migration');
 
   if (!(await keychainAvailable())) {
@@ -141,6 +143,10 @@ async function keychainMigrate(): Promise<void> {
     initialValue: true,
   });
   assertNotCancel(proceed);
+  if (!proceed) {
+    cancel('Nothing was migrated.');
+    return;
+  }
 
   const spin = spinner();
   spin.start('Migrating passwords to Keychain...');
@@ -180,6 +186,7 @@ async function keychainMigrate(): Promise<void> {
  * Remove a password from Keychain.
  */
 async function keychainRemove(accountName?: string): Promise<void> {
+  ensureInteractive();
   intro('imap-wizard > Remove Keychain Entry');
 
   if (!(await keychainAvailable())) {
@@ -234,6 +241,10 @@ async function keychainRemove(accountName?: string): Promise<void> {
     initialValue: false,
   });
   assertNotCancel(confirmed);
+  if (!confirmed) {
+    cancel('Nothing was removed.');
+    return;
+  }
 
   await keychainDelete(target);
   log.success(`Removed Keychain password for "${target}".`);

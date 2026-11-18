@@ -13,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { loadConfig } from '../config/loader.js';
+import { xdg } from '../config/xdg.js';
 import ConnectionManager from '../connections/manager.js';
 import RateLimiter from '../safety/rate-limiter.js';
 import ImapService from '../services/imap.service.js';
@@ -23,6 +24,17 @@ const LAUNCHD_LABEL = 'com.email-mcp.scheduler';
 const LAUNCHD_PLIST_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
 const LAUNCHD_PLIST = path.join(LAUNCHD_PLIST_DIR, `${LAUNCHD_LABEL}.plist`);
 const CRONTAB_MARKER = '# email-mcp scheduler';
+const SCHEDULER_LOG = path.join(xdg.state, 'scheduler.log');
+
+/** Escape text for an XML element body. */
+export function xmlEscape(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Quote one word for a POSIX shell (cron runs the line through sh). */
+export function shellQuote(word: string): string {
+  return `'${word.replace(/'/g, `'\\''`)}'`;
+}
 
 function getExecutablePath(): string {
   return process.argv[1] ?? 'imap-wizard';
@@ -113,23 +125,24 @@ async function runInstall(): Promise<void> {
   <string>${LAUNCHD_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${process.execPath}</string>
-    <string>${execPath}</string>
+    <string>${xmlEscape(process.execPath)}</string>
+    <string>${xmlEscape(execPath)}</string>
     <string>scheduler</string>
     <string>check</string>
   </array>
   <key>StartInterval</key>
   <integer>60</integer>
   <key>StandardOutPath</key>
-  <string>/tmp/email-mcp-scheduler.log</string>
+  <string>${xmlEscape(SCHEDULER_LOG)}</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/email-mcp-scheduler.log</string>
+  <string>${xmlEscape(SCHEDULER_LOG)}</string>
   <key>RunAtLoad</key>
   <true/>
 </dict>
 </plist>`;
 
     await fs.mkdir(LAUNCHD_PLIST_DIR, { recursive: true });
+    await fs.mkdir(xdg.state, { recursive: true, mode: 0o700 });
     await fs.writeFile(LAUNCHD_PLIST, plist);
 
     try {
@@ -143,7 +156,7 @@ async function runInstall(): Promise<void> {
     console.log('   Runs every 60 seconds');
   } else if (platform === 'linux') {
     // Linux: crontab
-    const cronLine = `* * * * * ${process.execPath} ${execPath} scheduler check ${CRONTAB_MARKER}`;
+    const cronLine = `* * * * * ${shellQuote(process.execPath)} ${shellQuote(execPath)} scheduler check ${CRONTAB_MARKER}`;
 
     try {
       const existing = execSync('crontab -l 2>/dev/null', {
@@ -167,6 +180,14 @@ async function runInstall(): Promise<void> {
   }
 }
 
+/** The crontab without the scheduler line; every other line is untouched. */
+export function removeSchedulerCron(existing: string): string {
+  return existing
+    .split('\n')
+    .filter((line) => !line.includes(CRONTAB_MARKER))
+    .join('\n');
+}
+
 async function runUninstall(): Promise<void> {
   const platform = os.platform();
 
@@ -188,9 +209,9 @@ async function runUninstall(): Promise<void> {
       const existing = execSync('crontab -l 2>/dev/null', {
         encoding: 'utf-8',
       });
-      const lines = existing.split('\n').filter((line) => !line.includes(CRONTAB_MARKER));
-      const newCrontab = lines.join('\n');
-      execSync(`echo '${newCrontab}' | crontab -`, { stdio: 'pipe' });
+      // Hand the text to crontab on stdin: no shell, so quotes and backslashes
+      // in other jobs come back byte for byte.
+      execFileSync('crontab', ['-'], { input: removeSchedulerCron(existing), stdio: 'pipe' });
       console.log('✅ Removed Linux crontab scheduler');
     } catch {
       console.log('ℹ️  No crontab scheduler found');

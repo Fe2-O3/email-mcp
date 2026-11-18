@@ -183,6 +183,23 @@ function sieveFromEnv(): RawAccountConfig['sieve'] {
 // TOML file loader
 // ---------------------------------------------------------------------------
 
+/**
+ * One line for a TOML syntax error: the position only. smol-toml's own message
+ * quotes the lines around the error, which can include a plaintext password.
+ */
+export function describeTomlError(err: unknown): string {
+  const { line, column } = (err ?? {}) as { line?: unknown; column?: unknown };
+  if (typeof line === 'number' && typeof column === 'number') {
+    return `TOML syntax error at line ${line}, column ${column}.`;
+  }
+  return 'TOML syntax error.';
+}
+
+function isTomlError(err: unknown): boolean {
+  const e = err as { line?: unknown; column?: unknown; codeblock?: unknown } | null;
+  return typeof e?.line === 'number' && typeof e?.column === 'number' && 'codeblock' in (e ?? {});
+}
+
 async function loadFromFile(filePath: string = CONFIG_FILE): Promise<RawAppConfig | null> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
@@ -190,7 +207,8 @@ async function loadFromFile(filePath: string = CONFIG_FILE): Promise<RawAppConfi
     return parsed as unknown as RawAppConfig;
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
-    throw new Error(`Configuration file at ${filePath} is invalid: ${(err as Error).message}`);
+    const reason = isTomlError(err) ? describeTomlError(err) : (err as Error).message;
+    throw new Error(`Configuration file at ${filePath} is invalid: ${reason}`);
   }
 }
 
@@ -412,6 +430,8 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
   // 2. Fall back to TOML config file
   const fileConfig = await loadFromFile(configPath);
   if (fileConfig) {
+    const loose = await warnOnLooseConfigPermissions(configPath ?? CONFIG_FILE);
+    if (loose) console.error(`Warning: ${loose}`);
     const validated = AppConfigFileSchema.parse(fileConfig);
     const config = await normalizeConfig(validated);
     await resolveKeychainPasswords(config.accounts);
@@ -427,21 +447,63 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
 }
 
 /**
- * Save configuration to a TOML file.
+ * Write a config file safely: to a temp file in the same folder, then rename,
+ * so a crash mid-write can never leave a half-written or empty config. The
+ * file being replaced is kept as `<file>.bak` (same folder, same 0600 mode),
+ * so one bad edit never costs the only copy.
+ */
+async function writeConfigText(filePath: string, text: string): Promise<void> {
+  const dir = path.dirname(filePath);
+  // This file holds plaintext IMAP/SMTP passwords and OAuth refresh tokens.
+  // Default umask gives it 0644, readable by every account on the machine.
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await fs.writeFile(tmp, text, { encoding: 'utf-8', mode: 0o600 });
+    try {
+      await fs.copyFile(filePath, `${filePath}.bak`);
+      await fs.chmod(`${filePath}.bak`, 0o600);
+    } catch {
+      // No existing file to keep (first write), or it is unreadable.
+    }
+    await fs.rename(tmp, filePath);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
+  // `mode` on writeFile only applies when the file is created, so make the
+  // final file owner-only whatever it was before.
+  await fs.chmod(filePath, 0o600);
+}
+
+/**
+ * Save configuration to a TOML file. This regenerates the whole file, so
+ * comments and keys this version does not know are not carried over; the
+ * previous file is kept as `<file>.bak`.
  */
 export async function saveConfig(
   config: RawAppConfig,
   filePath: string = CONFIG_FILE,
 ): Promise<void> {
-  const dir = path.dirname(filePath);
-  // This file holds plaintext IMAP/SMTP passwords and OAuth refresh tokens.
-  // Default umask gives it 0644, readable by every account on the machine.
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  const toml = stringifyTOML(config as Record<string, unknown>);
-  await fs.writeFile(filePath, toml, { encoding: 'utf-8', mode: 0o600 });
-  // `mode` on writeFile only applies when the file is created, so an existing
-  // world-readable config would keep its permissions silently.
-  await fs.chmod(filePath, 0o600);
+  await writeConfigText(filePath, stringifyTOML(config as Record<string, unknown>));
+}
+
+/**
+ * Add one account to an existing config file by appending its TOML text, so
+ * every comment, unknown key and setting already in the file stays exactly
+ * as it was. The result is parsed and schema-checked before it replaces the
+ * file; on any failure the file is untouched.
+ */
+export async function appendAccountToConfig(
+  account: RawAccountConfig,
+  filePath: string = CONFIG_FILE,
+): Promise<RawAppConfig> {
+  const existing = await fs.readFile(filePath, 'utf-8');
+  const addition = stringifyTOML({ accounts: [account] } as Record<string, unknown>);
+  const next = `${existing.replace(/\s+$/, '')}\n\n${addition}`;
+  const checked = AppConfigFileSchema.parse(parseTOML(next));
+  await writeConfigText(filePath, next);
+  return checked;
 }
 
 /**

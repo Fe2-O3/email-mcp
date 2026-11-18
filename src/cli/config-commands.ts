@@ -7,6 +7,7 @@
  */
 
 import fs from 'node:fs/promises';
+import path from 'node:path';
 
 import { cancel, confirm, intro, isCancel, log, outro, text } from '@clack/prompts';
 import { parse as parseTOML } from 'smol-toml';
@@ -14,6 +15,7 @@ import { parse as parseTOML } from 'smol-toml';
 import {
   CONFIG_FILE,
   configExists,
+  describeTomlError,
   generateTemplate,
   loadConfig,
   loadRawConfig,
@@ -114,9 +116,11 @@ async function initConfig(): Promise<void> {
     }
   }
 
-  const dir = CONFIG_FILE.replace(/\/[^/]+$/, '');
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, generateTemplate(), 'utf-8');
+  // The file will hold passwords: owner-only file in an owner-only folder.
+  const dir = path.dirname(CONFIG_FILE);
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  await fs.writeFile(CONFIG_FILE, generateTemplate(), { encoding: 'utf-8', mode: 0o600 });
+  await fs.chmod(CONFIG_FILE, 0o600);
   log.success(`Template config created at ${CONFIG_FILE}`);
   log.info("Edit the file to add your email accounts, then run 'imap-wizard test'.");
   outro('Done!');
@@ -249,7 +253,7 @@ async function validateConfig(): Promise<void> {
   try {
     parsed = parseTOML(content);
   } catch (err) {
-    console.error(`❌ TOML syntax error:\n   ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`❌ ${describeTomlError(err)}`);
     process.exitCode = 1;
     return;
   }

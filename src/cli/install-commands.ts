@@ -145,7 +145,11 @@ async function fileExists(filePath: string): Promise<boolean> {
 async function readJsonFile(filePath: string): Promise<Record<string, unknown>> {
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(raw) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('it is not a JSON object');
+    }
+    return parsed as Record<string, unknown>;
   } catch (err) {
     if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
       return {};
@@ -159,7 +163,21 @@ async function readJsonFile(filePath: string): Promise<Record<string, unknown>> 
 async function writeJsonFile(filePath: string, data: Record<string, unknown>): Promise<void> {
   const dir = path.dirname(filePath);
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf-8');
+  // This is another app's file: write a temp file and rename it, and keep the
+  // previous version beside it as <file>.imap-wizard.bak.
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await fs.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, 'utf-8');
+    try {
+      await fs.copyFile(filePath, `${filePath}.imap-wizard.bak`);
+    } catch {
+      // First write: nothing to keep.
+    }
+    await fs.rename(tmp, filePath);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
 }
 
 function isRegistered(config: Record<string, unknown>, serversKey: string): boolean {
@@ -369,7 +387,9 @@ async function runStatus(): Promise<void> {
       if (isRegistered(cfg, client.serversKey)) {
         const servers = cfg[client.serversKey] as Record<string, unknown>;
         const entry = servers.email as ServerEntry | undefined;
-        const cmd = entry ? `${entry.command} ${entry.args.join(' ')}` : 'unknown';
+        const cmd = entry?.command
+          ? `${entry.command} ${(Array.isArray(entry.args) ? entry.args : []).join(' ')}`.trim()
+          : 'unknown';
         return `  ✅ ${client.name} — registered (${cmd})\n     ${client.configPath}`;
       }
 

@@ -21,14 +21,22 @@ import {
   text,
 } from '@clack/prompts';
 
-import { CONFIG_FILE, configExists, loadRawConfig, saveConfig } from '../config/loader.js';
+import {
+  appendAccountToConfig,
+  CONFIG_FILE,
+  configExists,
+  loadRawConfig,
+  saveConfig,
+} from '../config/loader.js';
 import type { RawAccountConfig, RawAppConfig } from '../config/schema.js';
-import { AppConfigFileSchema } from '../config/schema.js';
+import { AccountConfigSchema, AppConfigFileSchema } from '../config/schema.js';
 import ConnectionManager from '../connections/manager.js';
 import {
   isKeychainSentinel,
   keychainAvailable,
   keychainDelete,
+  keychainGet,
+  keychainSentinelAccount,
   keychainSet,
   makeKeychainSentinel,
 } from '../security/keychain.js';
@@ -362,6 +370,22 @@ export function buildTestAccount(
 }
 
 /**
+ * Check a built account against the config schema before anything is sent to
+ * a server, so an unencrypted choice to a remote host is refused up front
+ * instead of after the password has crossed the network in the clear.
+ * Prints each problem and returns false when the account is not acceptable.
+ */
+function accountPassesSchema(account: RawAccountConfig): boolean {
+  const result = AccountConfigSchema.safeParse(account);
+  if (result.success) return true;
+  for (const issue of result.error.issues) {
+    log.error(issue.message);
+  }
+  cancel('Nothing was tested or saved. Change the security setting and try again.');
+  return false;
+}
+
+/**
  * Test IMAP and SMTP connections. Returns true if both succeed or user opts to proceed.
  */
 async function testConnections(account: AccountConfig): Promise<boolean> {
@@ -436,6 +460,50 @@ export function buildRawAccount(
   };
 }
 
+/**
+ * Apply an edit to an existing account: start from what is already in the
+ * file and change only the fields the wizard asks about. Everything else
+ * (oauth2, password_command, sieve, max_attachment_mb, verify_ssl, pool
+ * settings the wizard does not show) is kept as it was.
+ * @internal Exported for testing.
+ */
+export function buildEditedAccount(
+  current: RawAccountConfig,
+  identity: { name: string; email: string; fullName: string },
+  creds: { username: string; password: string },
+  server: ServerSettings,
+  passwordChanged: boolean,
+): RawAccountConfig {
+  const edited: RawAccountConfig = {
+    ...current,
+    name: identity.name,
+    email: identity.email,
+    full_name: identity.fullName || undefined,
+    username: creds.username || identity.email,
+    imap: {
+      ...current.imap,
+      host: server.imapHost,
+      port: server.imapPort,
+      tls: server.imapTls,
+      starttls: server.imapStarttls,
+    },
+    smtp: {
+      ...current.smtp,
+      host: server.smtpHost,
+      port: server.smtpPort,
+      tls: server.smtpTls,
+      starttls: server.smtpStarttls,
+      pool: {
+        enabled: server.smtpPoolEnabled,
+        max_connections: server.smtpPoolMaxConnections,
+        max_messages: server.smtpPoolMaxMessages,
+      },
+    },
+  };
+  if (passwordChanged) edited.password = creds.password;
+  return edited;
+}
+
 // ---------------------------------------------------------------------------
 // Subcommands
 // ---------------------------------------------------------------------------
@@ -485,8 +553,13 @@ async function addAccount(): Promise<void> {
   if (exists) {
     try {
       existingConfig = await loadRawConfig();
-    } catch {
-      log.warning('Could not parse existing config. A new config will be created.');
+    } catch (err) {
+      // Never write over a file we could not read: it may hold every other
+      // account. The message carries the position only, not the file's text.
+      log.error(`Could not read your existing config at ${CONFIG_FILE}:`);
+      log.error(err instanceof Error ? err.message : String(err));
+      cancel('Nothing was changed. Fix the file (or move it aside) and run this again.');
+      return;
     }
   }
 
@@ -506,13 +579,14 @@ async function addAccount(): Promise<void> {
   // 3. Credentials
   const creds = await promptCredentials({ email: identity.email });
 
-  // 4. Test connections
+  // 4. Check the choices, then test connections
+  const newAccount = buildRawAccount(identity, creds, server);
+  if (!accountPassesSchema(newAccount)) return;
   const testAccount = buildTestAccount(identity, creds, server);
   const ok = await testConnections(testAccount);
   if (!ok) return;
 
-  // 5. Build and save
-  const newAccount = buildRawAccount(identity, creds, server);
+  // 5. Save
 
   // Store password in keychain if available (more secure than plain text)
   if (await keychainAvailable()) {
@@ -583,7 +657,12 @@ async function addAccount(): Promise<void> {
       };
 
   AppConfigFileSchema.parse(config);
-  await saveConfig(config);
+  if (existingConfig) {
+    // Append, so comments and settings already in the file are kept as written.
+    await appendAccountToConfig(newAccount);
+  } else {
+    await saveConfig(config);
+  }
   log.success(`Account "${identity.name}" added. Config saved to ${CONFIG_FILE}`);
 
   note(
@@ -729,7 +808,12 @@ async function editAccount(nameArg?: string): Promise<void> {
     });
   }
 
-  // Test connections
+  const passwordChanged = fields === 'credentials' || fields === 'all';
+  const updatedAccount = buildEditedAccount(current, identity, creds, server, passwordChanged);
+  if (!accountPassesSchema(updatedAccount)) return;
+
+  // Test connections. The password to test with is the one just typed, or the
+  // stored one; a Keychain placeholder is never used as a password.
   const shouldTest = await confirm({
     message: 'Test connections with updated settings?',
     initialValue: true,
@@ -737,18 +821,65 @@ async function editAccount(nameArg?: string): Promise<void> {
   assertNotCancel(shouldTest);
 
   if (shouldTest) {
-    const testAccount = buildTestAccount(identity, creds, server);
-    const ok = await testConnections(testAccount);
-    if (!ok) return;
+    let testPassword: string | undefined = creds.password;
+    if (!passwordChanged && isKeychainSentinel(current.password)) {
+      const stored = (await keychainAvailable())
+        ? await keychainGet(keychainSentinelAccount(current.password as string))
+        : null;
+      testPassword = stored ?? undefined;
+    }
+    if (!passwordChanged && (current.password_command || current.oauth2)) {
+      testPassword = undefined;
+    }
+    if (testPassword === undefined || testPassword === '') {
+      log.info('Skipping the connection test: no password is available to test with here.');
+    } else {
+      const ok = await testConnections(
+        buildTestAccount(identity, { ...creds, password: testPassword }, server),
+      );
+      if (!ok) return;
+    }
   }
 
-  // Save updated account
-  const updatedAccount = buildRawAccount(identity, creds, server);
-
-  // Store password in keychain if available
-  if ((await keychainAvailable()) && creds.password) {
+  // Password storage
+  const renamed = identity.name !== current.name;
+  if (passwordChanged) {
+    // A new password was typed: store it (Keychain when available).
+    if ((await keychainAvailable()) && creds.password) {
+      try {
+        await keychainSet(identity.name, creds.password);
+        updatedAccount.password = makeKeychainSentinel(identity.name);
+        log.info('Password stored in secure keychain.');
+        if (renamed && isKeychainSentinel(current.password)) {
+          await keychainDelete(keychainSentinelAccount(current.password as string));
+        }
+      } catch (err) {
+        log.warning(`Could not store password in Keychain: ${err}`);
+        log.info('Password saved in config file (less secure).');
+      }
+    }
+  } else if (isKeychainSentinel(current.password)) {
+    // The password stays where it is. Only a rename moves the Keychain item,
+    // and only after the secret has been read and copied to the new name.
+    const oldName = keychainSentinelAccount(current.password as string);
+    if (renamed && (await keychainAvailable())) {
+      try {
+        const secret = await keychainGet(oldName);
+        if (secret) {
+          await keychainSet(identity.name, secret);
+          updatedAccount.password = makeKeychainSentinel(identity.name);
+          await keychainDelete(oldName);
+        } else {
+          log.warning(`Keychain item "${oldName}" was not found; the config still points at it.`);
+        }
+      } catch (err) {
+        log.warning(`Could not move the Keychain item: ${err}`);
+      }
+    }
+  } else if ((await keychainAvailable()) && current.password) {
+    // A plain-text password in the file moves to the Keychain, as before.
     try {
-      await keychainSet(identity.name, creds.password);
+      await keychainSet(identity.name, current.password);
       updatedAccount.password = makeKeychainSentinel(identity.name);
       log.info('Password stored in secure keychain.');
     } catch (err) {
