@@ -21,6 +21,10 @@ const BROAD_ROOT_NAMES = [
   'Users',
   'home',
   'private',
+  // macOS keeps the real /tmp and /var under /private; name them so the rule
+  // holds even where they are not symlinked (Linux CI, other systems).
+  'private/tmp',
+  'private/var',
   'var',
   'tmp',
   'opt',
@@ -120,7 +124,9 @@ function hasHiddenSegment(p: string): boolean {
 function inAppDataTree(p: string, home: string): boolean {
   const rel = path.relative(fold(home), fold(p));
   if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return false;
-  const [top, second] = rel.split(path.sep);
+  // Match these names case-insensitively everywhere: a case-sensitive Linux file
+  // system can still hold a "Library" or "AppData" tree.
+  const [top, second] = rel.split(path.sep).map((part) => part.toLowerCase());
   if (!top || ![...APP_DATA_TREES].some((t) => t.toLowerCase() === top)) return false;
   // iCloud Drive and cloud-provider folders live under ~/Library but are user document space.
   return !(top === 'library' && (second === 'mobile documents' || second === 'cloudstorage'));
