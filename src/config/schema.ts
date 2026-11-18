@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 
+import { parseAllowlistEntry } from '../safety/redirect-allowlist.js';
 import { isLoopbackHost, LOOPBACK_HOSTS_TEXT } from '../utils/loopback.js';
 
 export const ImapConfigSchema = z.object({
@@ -55,6 +56,18 @@ export const OAuth2ConfigSchema = z.object({
   scopes: z.array(z.string()).optional(),
 });
 
+/**
+ * Per-account ManageSieve endpoint. Without this block the server is probed at the
+ * IMAP host, port 4190, with STARTTLS.
+ */
+export const SieveAccountConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  host: z.string().min(1, 'Sieve host cannot be empty').optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  tls: z.boolean().default(false),
+  starttls: z.boolean().default(true),
+});
+
 export const AccountConfigSchema = z
   .object({
     name: z.string().min(1, 'Account name is required'),
@@ -69,6 +82,7 @@ export const AccountConfigSchema = z
     oauth2: OAuth2ConfigSchema.optional(),
     imap: ImapConfigSchema,
     smtp: SmtpConfigSchema,
+    sieve: SieveAccountConfigSchema.optional(),
   })
   // Boolean() rather than a ?? chain: ?? short-circuits on non-nullish, so a
   // leftover `password = ""` would swallow a valid password_command.
@@ -97,7 +111,38 @@ export const AccountConfigSchema = z
         });
       }
     });
+    // ManageSieve logs in with the same credentials.
+    const { sieve } = account;
+    if (sieve?.enabled && !sieve.tls && !sieve.starttls) {
+      const host = sieve.host ?? account.imap.host;
+      if (host.trim() !== '' && !isLoopbackHost(host)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sieve', 'tls'],
+          message: `Account ${JSON.stringify(account.name)}: ManageSieve to ${JSON.stringify(host)} would be unencrypted (tls = false and starttls = false). Set tls = true or starttls = true, or use a loopback host (${LOOPBACK_HOSTS_TEXT}).`,
+        });
+      }
+    }
   });
+
+/**
+ * Global Sieve settings. `allowed_redirects` is the only thing that can allow a
+ * forward (Sieve redirect, notify mailto:, or a local rule). A human edits it in
+ * this file; no tool writes it.
+ */
+export const SieveGlobalConfigSchema = z.object({
+  allowed_redirects: z
+    .array(z.string())
+    .default(() => [])
+    .superRefine((entries, ctx) => {
+      entries.forEach((entry, index) => {
+        const parsed = parseAllowlistEntry(entry);
+        if ('error' in parsed) {
+          ctx.addIssue({ code: 'custom', path: [index], message: parsed.error });
+        }
+      });
+    }),
+});
 
 export const WatcherConfigSchema = z.object({
   enabled: z.boolean().default(false),
@@ -310,6 +355,7 @@ export const AppConfigFileSchema = z.object({
       },
     }),
   ),
+  sieve: SieveGlobalConfigSchema.default(() => ({ allowed_redirects: [] })),
   accounts: z.array(AccountConfigSchema).min(1, 'At least one account is required'),
 });
 

@@ -72,6 +72,30 @@ export interface AccountConfig {
   oauth2?: OAuth2Config;
   imap: ImapConfig;
   smtp: SmtpConfig;
+  /** ManageSieve settings. Absent means auto-detect from the IMAP host. */
+  sieve?: SieveAccountConfig;
+}
+
+/** Per-account ManageSieve (RFC 5804) endpoint. */
+export interface SieveAccountConfig {
+  enabled: boolean;
+  /** Defaults to the IMAP host. */
+  host?: string;
+  /** Defaults to 4190. */
+  port?: number;
+  /** Implicit TLS from the first byte. Wins over starttls. */
+  tls: boolean;
+  /** Upgrade with STARTTLS before logging in (the RFC 5804 default). */
+  starttls: boolean;
+}
+
+/**
+ * Global Sieve settings. `allowedRedirects` is edited by a human in config.toml only:
+ * no tool reads-modifies-writes it, and no tool argument bypasses it.
+ */
+export interface SieveGlobalConfig {
+  /** Addresses (`a@example.com`) or domains (`example.com`) mail may be forwarded to. */
+  allowedRedirects: string[];
 }
 
 export interface WatcherConfig {
@@ -177,6 +201,8 @@ export interface AppConfig {
     verification: VerificationConfig;
     hooks: HooksConfig;
   };
+  /** Absent means an empty forwarding allowlist. */
+  sieve?: SieveGlobalConfig;
   accounts: AccountConfig[];
 }
 

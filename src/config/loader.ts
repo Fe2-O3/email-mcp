@@ -52,6 +52,12 @@ function loadFromEnv(): RawAppConfig | null {
     : undefined;
 
   return {
+    sieve: {
+      allowed_redirects: (process.env.MCP_EMAIL_SIEVE_ALLOWED_REDIRECTS ?? '')
+        .split(',')
+        .map((a) => a.trim())
+        .filter(Boolean),
+    },
     settings: {
       rate_limit: parseInt(process.env.MCP_EMAIL_RATE_LIMIT ?? '10', 10),
       send: {
@@ -152,8 +158,23 @@ function loadFromEnv(): RawAppConfig | null {
             max_messages: parseInt(process.env.MCP_EMAIL_SMTP_POOL_MAX_MESSAGES ?? '100', 10),
           },
         },
+        sieve: sieveFromEnv(),
       },
     ],
+  };
+}
+
+/** An account `sieve` block only when one of its variables is set; otherwise auto-detect. */
+function sieveFromEnv(): RawAccountConfig['sieve'] {
+  const { env } = process;
+  const keys = ['ENABLED', 'HOST', 'PORT', 'TLS', 'STARTTLS'];
+  if (!keys.some((key) => env[`MCP_EMAIL_SIEVE_${key}`] !== undefined)) return undefined;
+  return {
+    enabled: env.MCP_EMAIL_SIEVE_ENABLED !== 'false',
+    host: env.MCP_EMAIL_SIEVE_HOST || undefined,
+    port: env.MCP_EMAIL_SIEVE_PORT ? parseInt(env.MCP_EMAIL_SIEVE_PORT, 10) : undefined,
+    tls: env.MCP_EMAIL_SIEVE_TLS === 'true',
+    starttls: env.MCP_EMAIL_SIEVE_STARTTLS !== 'false',
   };
 }
 
@@ -224,6 +245,15 @@ async function normalizeAccount(raw: RawAccountConfig): Promise<AccountConfig> {
         maxMessages: raw.smtp.pool.max_messages,
       },
     },
+    sieve: raw.sieve
+      ? {
+          enabled: raw.sieve.enabled,
+          host: raw.sieve.host,
+          port: raw.sieve.port,
+          tls: raw.sieve.tls,
+          starttls: raw.sieve.starttls,
+        }
+      : undefined,
   };
 }
 
@@ -302,6 +332,7 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
         calendarConfirm: raw.settings.hooks.calendar_confirm ?? true,
       },
     },
+    sieve: { allowedRedirects: [...(raw.sieve?.allowed_redirects ?? [])] },
     accounts: await Promise.all(raw.accounts.map(normalizeAccount)),
   };
 }
@@ -502,6 +533,13 @@ max_attachment_mb = 25  # base64-encoded attachment total per message, MB
 # webhook_url = ""        # HTTP POST to Slack/Discord/ntfy.sh/etc.
 # webhook_events = ["urgent", "high"]  # which priorities trigger webhook
 
+# Mail filter rules. Forwarding (Sieve redirect, notify mailto:, and the local
+# rule forward action) is allowed ONLY to the addresses or domains listed here.
+# Edit this list yourself: no IMAP Wizard tool can change it, and no tool
+# argument can get around it. A domain does not cover its subdomains.
+# [sieve]
+# allowed_redirects = ["me@example.org", "example.net"]
+
 [[accounts]]
 name = "personal"
 email = "you@example.com"
@@ -529,6 +567,16 @@ verify_ssl = true
 enabled = true
 max_connections = 1
 max_messages = 100
+
+# Server-side filter rules (Sieve over ManageSieve). Without this block the
+# IMAP host is tried on port 4190 with STARTTLS. Gmail, Outlook, iCloud and
+# most large providers have no ManageSieve: use local rules there.
+# [accounts.sieve]
+# enabled = true
+# host = "imap.example.com"
+# port = 4190
+# tls = false       # implicit TLS from the first byte (wins over starttls)
+# starttls = true   # upgrade before logging in; certificates are always checked
 `;
 }
 
