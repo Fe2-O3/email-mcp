@@ -46,6 +46,62 @@ export interface SendEmailOptions {
   allowDuplicate?: boolean;
 }
 
+/**
+ * The mail server may or may not have accepted the message (a timeout or a
+ * dropped connection after the text was sent). Never retried automatically:
+ * the caller must check the Sent folder first.
+ */
+export class UncertainSendError extends Error {
+  constructor(reason: string) {
+    super(
+      `The mail server did not confirm this email (${reason}), so it may or may not have been sent. ` +
+        'Result: unknown. Check the Sent folder before sending again. It was not retried.',
+    );
+    this.name = 'UncertainSendError';
+  }
+}
+
+/** Error codes that mean the server never took the message (it refused it or was never reached). */
+const NOT_SENT_CODES = new Set([
+  'EENVELOPE',
+  'EMESSAGE',
+  'EAUTH',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EDNS',
+  'ETLS',
+]);
+
+/**
+ * Did the server certainly not accept the message? A reply code to a command,
+ * a refused recipient, a refused login or a failure to connect at all all mean
+ * yes. A timeout or a dropped connection anywhere else is uncertain: the text
+ * may already be delivered.
+ */
+function isDefiniteRefusal(err: unknown): boolean {
+  const { code, responseCode, command } = (err ?? {}) as {
+    code?: string;
+    responseCode?: number;
+    command?: string;
+  };
+  return (
+    (code !== undefined && NOT_SENT_CODES.has(code)) ||
+    command === 'CONN' ||
+    typeof responseCode === 'number'
+  );
+}
+
+/** A refused recipient or a server reply leaves the shared connection healthy; only a broken one is dropped. */
+function leavesTransportHealthy(err: unknown): boolean {
+  const { code, responseCode } = (err ?? {}) as { code?: string; responseCode?: number };
+  if (code === 'EENVELOPE' || code === 'EMESSAGE') return true;
+  return typeof responseCode === 'number' && code !== 'EAUTH';
+}
+
+function domainOf(address: string | undefined): string {
+  return (address?.split('@').pop() ?? '').trim().toLowerCase();
+}
+
 export interface ReplyOptions {
   emailId: string;
   mailbox?: string;
@@ -53,6 +109,8 @@ export interface ReplyOptions {
   replyAll?: boolean;
   html?: boolean;
   attachments?: OutgoingAttachmentInput[];
+  /** Set on a deliberate repeat to pass the duplicate-send guard. */
+  allowDuplicate?: boolean;
 }
 
 export interface ForwardOptions {
@@ -64,6 +122,8 @@ export interface ForwardOptions {
   html?: boolean;
   /** Defaults to true: a forward that silently drops the invoice is the bug. */
   includeAttachments?: boolean;
+  /** Set on a deliberate repeat to pass the duplicate-send guard. */
+  allowDuplicate?: boolean;
   /** Extra attachments added to the forward: inline base64 `content`, or a local file `path`. */
   attachments?: OutgoingAttachmentInput[];
 }
@@ -83,27 +143,31 @@ export default class SmtpService {
   // -------------------------------------------------------------------------
 
   async sendEmail(accountName: string, options: SendEmailOptions): Promise<SendResult> {
-    this.checkRateLimit(accountName);
-    this.assertNotDuplicate(accountName, options.to, options.subject, options.allowDuplicate);
+    const key = `${accountName}|${options.to.slice().sort().join(',')}|${options.subject}`;
+    return this.guardedSend(key, options.allowDuplicate, async () => {
+      this.checkRateLimit(accountName);
 
-    const mailOptions = await this.composeSend(accountName, options);
-    const transport = await this.connections.getSmtpTransport(accountName);
+      const mailOptions = await this.composeSend(accountName, options);
+      const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+      const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
-    this.recordDuplicate(accountName, options.to, options.subject);
-    this.fileToSent(accountName, mailOptions);
+      this.fileToSent(accountName, mailOptions);
 
-    return {
-      messageId: result.messageId ?? '',
-      status: 'sent',
-    };
+      return {
+        messageId: result.messageId ?? '',
+        status: 'sent' as const,
+      };
+    });
   }
 
   /** Everything `sendEmail` checks and builds, without sending, filing or counting against the rate limit. */
   async previewSend(accountName: string, options: SendEmailOptions): Promise<DryRunPlan> {
     this.assertRateLimitAvailable(accountName);
-    this.assertNotDuplicate(accountName, options.to, options.subject, options.allowDuplicate);
+    this.peekDuplicate(
+      `${accountName}|${options.to.slice().sort().join(',')}|${options.subject}`,
+      options.allowDuplicate,
+    );
     const mailOptions = await this.composeSend(accountName, options);
     return SmtpService.describeMail('send this email', mailOptions);
   }
@@ -147,32 +211,48 @@ export default class SmtpService {
   // -------------------------------------------------------------------------
 
   async replyToEmail(accountName: string, options: ReplyOptions): Promise<SendResult> {
-    this.checkRateLimit(accountName);
+    const key = `${accountName}|reply|${options.mailbox ?? 'INBOX'}|${options.emailId}|${options.replyAll ? 'all' : 'one'}`;
+    return this.guardedSend(key, options.allowDuplicate, async () => {
+      this.checkRateLimit(accountName);
 
-    const mailOptions = await this.composeReply(accountName, options);
-    const transport = await this.connections.getSmtpTransport(accountName);
+      const { mailOptions, warnings } = await this.composeReply(accountName, options);
+      const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+      const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
-    this.fileToSent(accountName, mailOptions);
+      this.fileToSent(accountName, mailOptions);
 
-    return {
-      messageId: result.messageId ?? '',
-      status: 'sent',
-    };
+      return {
+        messageId: result.messageId ?? '',
+        status: 'sent' as const,
+        to: String(mailOptions.to ?? '')
+          .split(', ')
+          .filter(Boolean),
+        cc: String(mailOptions.cc ?? '')
+          .split(', ')
+          .filter(Boolean),
+        ...(warnings.length > 0 ? { warnings } : {}),
+      };
+    });
   }
 
   /** Everything `replyToEmail` checks and builds, without sending or counting against the rate limit. */
   async previewReply(accountName: string, options: ReplyOptions): Promise<DryRunPlan> {
     this.assertRateLimitAvailable(accountName);
-    const mailOptions = await this.composeReply(accountName, options);
-    return SmtpService.describeMail('send this reply', mailOptions);
+    this.peekDuplicate(
+      `${accountName}|reply|${options.mailbox ?? 'INBOX'}|${options.emailId}|${options.replyAll ? 'all' : 'one'}`,
+      options.allowDuplicate,
+    );
+    const { mailOptions, warnings } = await this.composeReply(accountName, options);
+    const plan = SmtpService.describeMail('send this reply', mailOptions);
+    plan.notes.push(...warnings.map((w) => `Warning: ${w}`));
+    return plan;
   }
 
   private async composeReply(
     accountName: string,
     options: ReplyOptions,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<{ mailOptions: Record<string, unknown>; warnings: string[] }> {
     const account = this.connections.getAccount(accountName);
     const extraAttachments = await this.resolveAttachments(account, options.attachments);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
@@ -180,6 +260,17 @@ export default class SmtpService {
     // Build recipient list — Reply-To overrides From when present
     const to = [original.replyTo?.address ?? original.from.address];
     const cc: string[] = [];
+    const warnings: string[] = [];
+    // Using Reply-To is normal. Sending to a different domain than the sender
+    // without saying so is what hides a spoofed message, so say it.
+    if (
+      original.replyTo?.address &&
+      domainOf(original.replyTo.address) !== domainOf(original.from.address)
+    ) {
+      warnings.push(
+        `This reply goes to ${original.replyTo.address} (the Reply-To address), which is on a different domain than the sender ${original.from.address}.`,
+      );
+    }
 
     if (options.replyAll) {
       // Add all original To recipients except ourselves
@@ -205,7 +296,7 @@ export default class SmtpService {
       ? original.subject
       : `Re: ${original.subject}`;
 
-    return {
+    const mailOptions = {
       from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to: to.join(', '),
       cc: cc.length > 0 ? cc.join(', ') : undefined,
@@ -227,6 +318,7 @@ export default class SmtpService {
       disableFileAccess: true,
       disableUrlAccess: true,
     };
+    return { mailOptions, warnings };
   }
 
   // -------------------------------------------------------------------------
@@ -234,24 +326,35 @@ export default class SmtpService {
   // -------------------------------------------------------------------------
 
   async forwardEmail(accountName: string, options: ForwardOptions): Promise<SendResult> {
-    this.checkRateLimit(accountName);
+    return this.guardedSend(
+      SmtpService.forwardKey(accountName, options),
+      options.allowDuplicate,
+      async () => {
+        this.checkRateLimit(accountName);
 
-    const mailOptions = await this.composeForward(accountName, options);
-    const transport = await this.connections.getSmtpTransport(accountName);
+        const mailOptions = await this.composeForward(accountName, options);
+        const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+        const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
-    this.fileToSent(accountName, mailOptions);
+        this.fileToSent(accountName, mailOptions);
 
-    return {
-      messageId: result.messageId ?? '',
-      status: 'sent',
-    };
+        return {
+          messageId: result.messageId ?? '',
+          status: 'sent' as const,
+        };
+      },
+    );
+  }
+
+  private static forwardKey(accountName: string, options: ForwardOptions): string {
+    return `${accountName}|forward|${options.mailbox ?? 'INBOX'}|${options.emailId}|${options.to.slice().sort().join(',')}|${(options.cc ?? []).slice().sort().join(',')}`;
   }
 
   /** Everything `forwardEmail` checks and builds, without sending or counting against the rate limit. */
   async previewForward(accountName: string, options: ForwardOptions): Promise<DryRunPlan> {
     this.assertRateLimitAvailable(accountName);
+    this.peekDuplicate(SmtpService.forwardKey(accountName, options), options.allowDuplicate);
     const mailOptions = await this.composeForward(accountName, options);
     return SmtpService.describeMail('forward this email', mailOptions);
   }
@@ -409,29 +512,44 @@ export default class SmtpService {
   }
 
   /**
-   * Recent sends, keyed by account | recipients | subject. A retried send is
+   * Recent sends, keyed by account | what is being sent. A retried send is
    * otherwise indistinguishable from a new one: nodemailer mints a fresh
    * random Message-ID per attempt, so a timeout-then-retry delivers twice and
    * mailbox providers file both copies.
+   *
+   * A key is reserved BEFORE the first network wait, so two identical calls
+   * started together cannot both pass. It is released on a definite failure
+   * and kept, marked "unknown", when the server may have accepted the mail.
    */
-  private readonly recentSends = new Map<string, number>();
+  private readonly recentSends = new Map<
+    string,
+    { at: number; state: 'inflight' | 'sent' | 'unknown' }
+  >();
 
-  /** Window in which an identical account+recipients+subject send is refused. */
+  /** Window in which an identical send that went out is refused. */
   private static readonly DUPLICATE_SEND_WINDOW_MS = 60_000;
 
-  private assertNotDuplicate(
-    accountName: string,
-    to: string[],
-    subject: string,
-    allowDuplicate?: boolean,
-  ): void {
-    const key = `${accountName}|${to.slice().sort().join(',')}|${subject}`;
-    const last = this.recentSends.get(key);
-    if (
-      last !== undefined &&
-      Date.now() - last < SmtpService.DUPLICATE_SEND_WINDOW_MS &&
-      !allowDuplicate
-    ) {
+  /** An unknown result blocks a repeat for longer: the owner needs time to check Sent. */
+  private static readonly UNKNOWN_SEND_WINDOW_MS = 30 * 60_000;
+
+  /** Throw if a send with this key is under way, went out lately or ended unknown. Changes nothing. */
+  private peekDuplicate(key: string, allowDuplicate?: boolean): void {
+    if (allowDuplicate) return;
+    const mark = this.recentSends.get(key);
+    if (!mark) return;
+    const age = Date.now() - mark.at;
+    if (mark.state === 'inflight') {
+      throw new Error(
+        'The same email is already being sent. Wait for it to finish before sending again.',
+      );
+    }
+    if (mark.state === 'unknown' && age < SmtpService.UNKNOWN_SEND_WINDOW_MS) {
+      throw new Error(
+        'An earlier send with the same details ended with an unknown result: the server may have accepted it. ' +
+          'Check the Sent folder first. If it did not go out, set allow_duplicate to true to send it again.',
+      );
+    }
+    if (mark.state === 'sent' && age < SmtpService.DUPLICATE_SEND_WINDOW_MS) {
       throw new Error(
         `An email with the same recipients and subject was sent less than a minute ago. ` +
           `If this is a deliberate resend, set allow_duplicate to true.`,
@@ -439,15 +557,46 @@ export default class SmtpService {
     }
   }
 
-  private recordDuplicate(accountName: string, to: string[], subject: string): void {
-    const key = `${accountName}|${to.slice().sort().join(',')}|${subject}`;
-    this.recentSends.set(key, Date.now());
-    if (this.recentSends.size > 1000) {
-      const cutoff = Date.now() - SmtpService.DUPLICATE_SEND_WINDOW_MS;
-      for (const [k, ts] of this.recentSends) {
-        if (ts < cutoff) this.recentSends.delete(k);
-        if (this.recentSends.size <= 500) break;
+  /** Reserve the key, run the send, then record how it ended. */
+  private async guardedSend<T>(
+    key: string,
+    allowDuplicate: boolean | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    this.peekDuplicate(key, allowDuplicate);
+    const mark = { at: Date.now(), state: 'inflight' as 'inflight' | 'sent' | 'unknown' };
+    this.recentSends.set(key, mark);
+    const settle = (state: 'sent' | 'unknown' | 'released') => {
+      // A deliberate resend may have replaced our mark; leave theirs alone.
+      if (this.recentSends.get(key) !== mark) return;
+      if (state === 'released') {
+        this.recentSends.delete(key);
+        return;
       }
+      mark.state = state;
+      mark.at = Date.now();
+      this.pruneRecentSends();
+    };
+    try {
+      const result = await run();
+      settle('sent');
+      return result;
+    } catch (err) {
+      settle(err instanceof UncertainSendError ? 'unknown' : 'released');
+      throw err;
+    }
+  }
+
+  private pruneRecentSends(): void {
+    if (this.recentSends.size <= 1000) return;
+    const now = Date.now();
+    for (const [k, m] of this.recentSends) {
+      const ttl =
+        m.state === 'unknown'
+          ? SmtpService.UNKNOWN_SEND_WINDOW_MS
+          : SmtpService.DUPLICATE_SEND_WINDOW_MS;
+      if (m.state !== 'inflight' && now - m.at > ttl) this.recentSends.delete(k);
+      if (this.recentSends.size <= 500) break;
     }
   }
 
@@ -503,9 +652,13 @@ export default class SmtpService {
         message?: Buffer;
       };
     } catch (err) {
-      this.connections.invalidateSmtpTransport(accountName);
+      // A refused recipient or a server reply leaves the pool fine; closing it
+      // would fail other sends queued behind this one for no reason.
+      if (!leavesTransportHealthy(err)) this.connections.invalidateSmtpTransport(accountName);
       // A refused login can quote the password or token the server was sent.
-      throw redactedError(err, sentCredentials(this.connections.getAccount(accountName)));
+      const safe = redactedError(err, sentCredentials(this.connections.getAccount(accountName)));
+      if (isDefiniteRefusal(err)) throw safe;
+      throw new UncertainSendError(safe.message);
     }
   }
 
@@ -513,18 +666,36 @@ export default class SmtpService {
   // Send draft
   // -------------------------------------------------------------------------
 
-  async sendDraft(accountName: string, draftId: number, mailbox?: string): Promise<SendResult> {
-    this.checkRateLimit(accountName);
+  async sendDraft(
+    accountName: string,
+    draftId: number,
+    mailbox?: string,
+    allowDuplicate?: boolean,
+  ): Promise<SendResult> {
+    const key = `${accountName}|draft|${mailbox ?? ''}|${draftId}`;
+    const { result, draftsPath } = await this.guardedSend(key, allowDuplicate, async () => {
+      this.checkRateLimit(accountName);
 
-    const { mailOptions, draftsPath } = await this.composeDraft(accountName, draftId, mailbox);
-    const transport = await this.connections.getSmtpTransport(accountName);
+      const composed = await this.composeDraft(accountName, draftId, mailbox);
+      const transport = await this.connections.getSmtpTransport(accountName);
 
-    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+      const sent = await this.sendWithRecovery(accountName, transport, composed.mailOptions);
+      this.fileToSent(accountName, composed.mailOptions);
+      return { result: sent, draftsPath: composed.draftsPath };
+    });
 
-    // The sent draft goes to Trash, never a plain permanent delete.
-    const warnings = await this.imapService.trashDraft(accountName, draftId, draftsPath);
-
-    this.fileToSent(accountName, mailOptions);
+    // The mail is out. Tidying the draft is best effort: a failure here must
+    // not look like a failed send, because the caller would send it again.
+    let warnings: string[] = [];
+    try {
+      // The sent draft goes to Trash, never a plain permanent delete.
+      warnings = await this.imapService.trashDraft(accountName, draftId, draftsPath);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      warnings = [
+        `The email was sent, but the draft could not be moved to Trash (${reason}). Delete draft ${draftId} yourself so it is not sent twice.`,
+      ];
+    }
 
     return {
       messageId: result.messageId ?? '',
@@ -538,8 +709,10 @@ export default class SmtpService {
     accountName: string,
     draftId: number,
     mailbox?: string,
+    allowDuplicate?: boolean,
   ): Promise<DryRunPlan> {
     this.assertRateLimitAvailable(accountName);
+    this.peekDuplicate(`${accountName}|draft|${mailbox ?? ''}|${draftId}`, allowDuplicate);
     const { mailOptions, draftsPath } = await this.composeDraft(accountName, draftId, mailbox);
     if (!mailOptions.to && !mailOptions.cc && !mailOptions.bcc) {
       throw new Error(`Draft ${draftId} has no recipients. Add some before sending it.`);

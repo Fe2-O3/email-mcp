@@ -131,6 +131,12 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .array(attachmentInput)
           .optional()
           .describe('Files to attach: base64 parts or absolute local file paths'),
+        allow_duplicate: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Deliberately reply to the same email again. Use it only after checking the Sent folder.',
+          ),
         dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -141,6 +147,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         const replyOptions = {
           ...params,
           attachments: toOutgoingAttachments(params.attachments),
+          allowDuplicate: params.allow_duplicate,
         };
         if (params.dryRun) {
           return dryRunResult(await smtpService.previewReply(params.account, replyOptions));
@@ -156,7 +163,13 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           content: [
             {
               type: 'text' as const,
-              text: `✅ Reply sent successfully!\nMessage-ID: ${result.messageId}`,
+              text: [
+                '✅ Reply sent successfully!',
+                `To: ${(result.to ?? []).join(', ')}`,
+                ...(result.cc && result.cc.length > 0 ? [`Cc: ${result.cc.join(', ')}`] : []),
+                `Message-ID: ${result.messageId}`,
+                ...(result.warnings ?? []).map((w) => `⚠️ ${w}`),
+              ].join('\n'),
             },
           ],
         };
@@ -220,6 +233,12 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .describe(
             'Extra files to attach besides the original\u2019s: base64 parts or absolute local file paths',
           ),
+        allow_duplicate: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Deliberately forward the same email to the same people again. Use it only after checking the Sent folder.',
+          ),
         dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -233,6 +252,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           ...params,
           attachments: toOutgoingAttachments(params.attachments),
           includeAttachments: params.include_attachments,
+          allowDuplicate: params.allow_duplicate,
         };
         if (params.dryRun) {
           return dryRunResult(await smtpService.previewForward(params.account, forwardOptions));

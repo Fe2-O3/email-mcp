@@ -15,7 +15,10 @@ describe('SmtpService send error redaction', () => {
       }),
       getSmtpTransport: async () => ({
         sendMail: async () => {
-          throw new Error(`Invalid login: 535 5.7.8 ${PASSWORD} rejected`);
+          // A refused login, as nodemailer reports it: the server never took the mail.
+          throw Object.assign(new Error(`Invalid login: 535 5.7.8 ${PASSWORD} rejected`), {
+            code: 'EAUTH',
+          });
         },
       }),
       invalidateSmtpTransport,

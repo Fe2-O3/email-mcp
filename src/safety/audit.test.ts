@@ -89,4 +89,43 @@ describe('Audit Logger', () => {
     expect(mockFs.appendFile.mock.calls[0][2]).toMatchObject({ mode: 0o600 });
     expect(mockFs.chmod).toHaveBeenCalledWith(expect.any(String), 0o600);
   });
+
+  describe('when the log cannot be written', () => {
+    let stderr: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+    afterEach(() => {
+      stderr.mockRestore();
+    });
+
+    it('never rejects when the append fails, and warns once for a streak', async () => {
+      // A good write first, so a failure left over from an earlier test cannot hide the first warning.
+      await audit.log('t', 'a', {}, 'ok');
+      stderr.mockClear();
+      mockFs.appendFile.mockRejectedValue(new Error('ENOSPC: no space left on device'));
+      await expect(audit.log('send_email', 'a', {}, 'ok')).resolves.toBeUndefined();
+      await expect(audit.log('send_email', 'a', {}, 'error', 'x')).resolves.toBeUndefined();
+      const warnings = stderr.mock.calls.filter((c: unknown[]) => String(c[0]).includes('[audit]'));
+      expect(warnings).toHaveLength(1);
+      expect(String(warnings[0][0])).toContain('ENOSPC');
+    });
+
+    it('never rejects when the folder cannot be created', async () => {
+      mockFs.mkdir.mockRejectedValue(new Error('EACCES: permission denied'));
+      await expect(audit.log('move_email', 'a', {}, 'ok')).resolves.toBeUndefined();
+    });
+
+    it('warns again after a write works and then fails again', async () => {
+      mockFs.appendFile.mockRejectedValueOnce(new Error('EIO'));
+      await audit.log('t', 'a', {}, 'ok');
+      await audit.log('t', 'a', {}, 'ok'); // works, resets the streak
+      stderr.mockClear();
+      mockFs.appendFile.mockRejectedValueOnce(new Error('EIO again'));
+      await audit.log('t', 'a', {}, 'ok');
+      expect(
+        stderr.mock.calls.filter((c: unknown[]) => String(c[0]).includes('[audit]')),
+      ).toHaveLength(1);
+    });
+  });
 });

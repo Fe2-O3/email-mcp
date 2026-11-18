@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     exclude: ['src/__integration__/**'],
+    setupFiles: ['src/isolate-home.test-helper.ts'],
     reporters: ['default', 'junit', 'json'],
     outputFile: {
       junit: 'reports/test-results.xml',

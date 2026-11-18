@@ -846,6 +846,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately forward the same email to the same people again. Use it only after checking the Sent folder.",
+              "type": "boolean"
+            },
             "attachments": {
               "description": "Extra files to attach besides the original’s: base64 parts or absolute local file paths",
               "items": {
@@ -2395,6 +2400,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately reply to the same email again. Use it only after checking the Sent folder.",
+              "type": "boolean"
+            },
             "attachments": {
               "description": "Files to attach: base64 parts or absolute local file paths",
               "items": {
@@ -2828,6 +2838,11 @@
             "account": {
               "description": "Account name from list_accounts",
               "type": "string"
+            },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately send this draft again. Use it only after checking the Sent folder.",
+              "type": "boolean"
             },
             "dryRun": {
               "default": false,
@@ -5478,6 +5493,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately forward the same email to the same people again. Use it only after checking the Sent folder.",
+              "type": "boolean"
+            },
             "attachments": {
               "description": "Extra files to attach besides the original’s: base64 parts or absolute local file paths",
               "items": {
@@ -6794,6 +6814,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately reply to the same email again. Use it only after checking the Sent folder.",
+              "type": "boolean"
+            },
             "attachments": {
               "description": "Files to attach: base64 parts or absolute local file paths",
               "items": {
@@ -7163,6 +7188,11 @@
             "account": {
               "description": "Account name from list_accounts",
               "type": "string"
+            },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately send this draft again. Use it only after checking the Sent folder.",
+              "type": "boolean"
             },
             "dryRun": {
               "default": false,
@@ -8307,6 +8337,11 @@
             "account": {
               "description": "Account name from list_accounts",
               "type": "string"
+            },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately reply to the same email again. Use it only after checking the Sent folder.",
+              "type": "boolean"
             },
             "attachments": {
               "description": "Files to attach: base64 parts or absolute local file paths",

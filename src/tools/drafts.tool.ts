@@ -112,14 +112,24 @@ export default function registerDraftTools(
         account: z.string().describe('Account name from list_accounts'),
         id: z.number().int().describe('Draft email UID (from list_emails on Drafts mailbox)'),
         mailbox: z.string().optional().describe('Drafts folder path (auto-detected if omitted)'),
+        allow_duplicate: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Deliberately send this draft again. Use it only after checking the Sent folder.',
+          ),
         dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ account, id, mailbox, dryRun }) => {
+    async ({ account, id, mailbox, allow_duplicate: allowDuplicate, dryRun }) => {
       try {
-        if (dryRun) return dryRunResult(await smtpService.previewSendDraft(account, id, mailbox));
-        const result = await smtpService.sendDraft(account, id, mailbox);
+        if (dryRun) {
+          return dryRunResult(
+            await smtpService.previewSendDraft(account, id, mailbox, allowDuplicate),
+          );
+        }
+        const result = await smtpService.sendDraft(account, id, mailbox, allowDuplicate);
 
         await audit.log('send_draft', account, { id, mailbox }, 'ok');
 
@@ -128,7 +138,11 @@ export default function registerDraftTools(
             {
               type: 'text' as const,
               text: [
-                `✅ Draft sent (Message-ID: ${result.messageId}). Draft moved to Trash.`,
+                `✅ Draft sent (Message-ID: ${result.messageId}).${
+                  (result.warnings ?? []).some((w) => w.includes('could not be moved'))
+                    ? ''
+                    : ' Draft moved to Trash.'
+                }`,
                 ...(result.warnings ?? []).map((w) => `⚠️ ${w}`),
               ].join('\n'),
             },

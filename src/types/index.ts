@@ -289,6 +289,9 @@ export interface DryRunPlan {
 export interface SendResult {
   messageId: string;
   status: 'sent' | 'failed';
+  /** Who a reply went to (replies only). */
+  to?: string[];
+  cc?: string[];
   /** Things the caller should be told about a send that did go out. */
   warnings?: string[];
 }
