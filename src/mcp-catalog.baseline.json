@@ -630,6 +630,34 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "properties": {
             "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID (UID) from list_emails or get_email",
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox containing the email",
+              "type": "string"
+            },
+            "savePath": {
+              "description": "Absolute path to write the .eml to, or an existing directory to receive <YYYY-MM-DD>_<uid>.eml. Parent directories are created. An existing file is not overwritten.",
+              "type": "string"
+            }
+          },
+          "required": ["account", "emailId"],
+          "type": "object"
+        },
+        "name": "export_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
               "description": "Account name",
               "type": "string"
             },
@@ -2398,6 +2426,34 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "properties": {
             "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID (UID) from list_emails or get_email",
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox containing the email",
+              "type": "string"
+            },
+            "savePath": {
+              "description": "Absolute path to write the .eml to, or an existing directory to receive <YYYY-MM-DD>_<uid>.eml. Parent directories are created. An existing file is not overwritten.",
+              "type": "string"
+            }
+          },
+          "required": ["account", "emailId"],
+          "type": "object"
+        },
+        "name": "export_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
               "description": "Account name",
               "type": "string"
             },
@@ -3686,6 +3742,34 @@
           "type": "object"
         },
         "name": "download_attachment",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID (UID) from list_emails or get_email",
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox containing the email",
+              "type": "string"
+            },
+            "savePath": {
+              "description": "Absolute path to write the .eml to, or an existing directory to receive <YYYY-MM-DD>_<uid>.eml. Parent directories are created. An existing file is not overwritten.",
+              "type": "string"
+            }
+          },
+          "required": ["account", "emailId"],
+          "type": "object"
+        },
+        "name": "export_email",
         "outputSchema": null
       },
       {

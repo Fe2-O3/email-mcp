@@ -27,6 +27,8 @@ The adapted files are:
                                              the baseline data is original)
   src/tools/toolsets.ts                      toolset grouping idea (tool lists
                                              and filter are original)
+  src/tools/export.tool.ts                   export_email tool (idea and shape;
+                                             the file writer is original)
 
 "Mailoo" and "Bitfloo" are names of their respective owners. They are used here
 only to attribute the code above and are not used as branding for this project.

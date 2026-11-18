@@ -1975,6 +1975,73 @@ export default class ImapService {
   }
 
   // -------------------------------------------------------------------------
+  // Export a message's raw RFC 822 source
+  // -------------------------------------------------------------------------
+
+  /**
+   * Fetch the raw RFC 822 source of one message for export as a .eml file.
+   *
+   * imapflow sends `source: true` as BODY.PEEK[], so \Seen is never set, and the
+   * mailbox is opened with EXAMINE (read-only) so a server that ignores PEEK still
+   * cannot change a flag. An oversized message is refused before its source is
+   * transferred, and again by the octets that actually arrived.
+   */
+  async exportEmail(
+    accountName: string,
+    emailId: string,
+    mailbox: string,
+    maxSizeBytes: number,
+  ): Promise<{ filename: string; mimeType: string; size: number; source: Buffer }> {
+    if (!/^[1-9]\d*$/.test(emailId.trim())) {
+      throw new Error(`Invalid email ID "${emailId}": expected a numeric UID`);
+    }
+    const uidText = emailId.trim();
+    const safeMailbox = sanitizeMailboxName(mailbox);
+    const client = await this.connections.getImapClient(accountName);
+
+    const lock = await imapCommand(`Opening mailbox "${safeMailbox}"`, () =>
+      client.getMailboxLock(safeMailbox, { readOnly: true }),
+    );
+    try {
+      const meta = await client.fetchOne(
+        uidText,
+        { uid: true, size: true, internalDate: true },
+        { uid: true },
+      );
+      if (!meta) {
+        throw new Error(`Email ${emailId} not found in ${mailbox}`);
+      }
+      if (typeof meta.size === 'number' && meta.size > maxSizeBytes) {
+        throw new Error(
+          `Email ${uidText} is ${meta.size} bytes, over the ${maxSizeBytes}-byte limit`,
+        );
+      }
+
+      const msg = await client.fetchOne(uidText, { uid: true, source: true }, { uid: true });
+      if (!msg || !Buffer.isBuffer(msg.source)) {
+        throw new Error(`Could not fetch the source of email ${emailId} in ${mailbox}`);
+      }
+      if (msg.source.length > maxSizeBytes) {
+        throw new Error(
+          `Email ${uidText} is ${msg.source.length} bytes, over the ${maxSizeBytes}-byte limit`,
+        );
+      }
+
+      const date =
+        meta.internalDate instanceof Date ? meta.internalDate : new Date(meta.internalDate ?? NaN);
+      const day = Number.isNaN(date.getTime()) ? 'undated' : date.toISOString().slice(0, 10);
+      return {
+        filename: `${day}_${uidText}.eml`,
+        mimeType: 'message/rfc822',
+        size: msg.source.length,
+        source: msg.source,
+      };
+    } finally {
+      lock.release();
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Save all email attachments to a local directory
   // -------------------------------------------------------------------------
 

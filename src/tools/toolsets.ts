@@ -37,6 +37,7 @@ export const CORE_TOOLS: readonly string[] = [
   'save_draft',
   'send_draft',
   'download_attachment',
+  'export_email',
   'forward_email',
 ];
 
