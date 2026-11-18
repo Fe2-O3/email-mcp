@@ -5,6 +5,9 @@ import path from 'node:path';
 import type { AppServices } from './app.js';
 import { startBackgroundServices } from './app.js';
 
+// Captured before any test installs fake timers.
+const realSetTimeout = globalThis.setTimeout;
+
 function fakeServices(readOnly: boolean) {
   const hooksService = { start: vi.fn(), stop: vi.fn() };
   const watcherService = { start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() };
@@ -142,7 +145,18 @@ describe('startBackgroundServices', () => {
 
     // The leader stops and frees the lease; the follower takes over on its next try.
     await firstHandle.stop();
-    await vi.advanceTimersByTimeAsync(31_000);
+    // The takeover mixes fake timers with real lease-file I/O, which can finish
+    // after one timer pass on a slow machine. Keep stepping both clocks.
+    let tookOver = false;
+    void takeoverStarted.then(() => {
+      tookOver = true;
+    });
+    for (let i = 0; i < 20 && !tookOver; i += 1) {
+      await vi.advanceTimersByTimeAsync(31_000);
+      await new Promise((resolve) => {
+        realSetTimeout(resolve, 25);
+      });
+    }
     await takeoverStarted;
     expect(follower.hooksService.start).toHaveBeenCalledTimes(1);
     expect(follower.watcherService.start).toHaveBeenCalledTimes(1);
