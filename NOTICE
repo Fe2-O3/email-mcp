@@ -49,6 +49,12 @@ The adapted files are:
   src/utils/file-claim.ts                    lock-file claim (adds the host and
                                              process id check for a dead holder)
   src/utils/file-claim.test.ts               tests for the above
+  src/services/sieve.service.ts              ManageSieve client (socket reader,
+                                             byte budget, deadlines, PLAIN login;
+                                             literal-aware responses, CHECKSCRIPT,
+                                             implicit TLS and OAuth added here)
+  src/services/sieve.service.protocol.test.ts
+                                             socket-level tests for the above
 
 "Mailoo" and "Bitfloo" are names of their respective owners. They are used here
 only to attribute the code above and are not used as branding for this project.
