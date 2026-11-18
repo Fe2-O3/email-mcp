@@ -2,14 +2,14 @@
 
 # IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 51 tools plus an opt-in verification tool, 912 tests green, 20 upstream bugs fixed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 51 tools plus an opt-in verification tool, 1008 tests green, 20 upstream bugs fixed" width="100%">
 
 **Let your AI assistant read, search, send and sort your email over plain IMAP and SMTP.**
 
 [![release](https://img.shields.io/github/v/release/Fe2-O3/imap-wizard?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/imap-wizard/releases)
 [![npm](https://img.shields.io/npm/v/imap-wizard?color=CB3837&style=flat-square&logo=npm)](https://www.npmjs.com/package/imap-wizard)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-912%20passing-22c55e?style=flat-square)](#development)
+[![tests](https://img.shields.io/badge/tests-1008%20passing-22c55e?style=flat-square)](#development)
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
 <a href="#quick-start">Quick start</a> ·
@@ -160,6 +160,9 @@ Now ask your assistant: *"What's unread in my inbox?"*
 | Duplicate-send guard | on | A retried send is spotted and refused unless you pass `allow_duplicate` |
 | Audit log | on | Writes are logged, with sensitive fields hidden, to `~/.local/share/email-mcp/audit.log` |
 | Untrusted-content markers | always | Email text in tool output is wrapped in `<<<UNTRUSTED_EXTERNAL_CONTENT>>>` markers that tell the model it is data, not instructions |
+| Safe file reading | always | Attachments sent by file path must be absolute, regular files; hidden files and folders (`~/.ssh`, `.env`), system folders, `~/Library` and this app's own folders are refused, symlinks included |
+| Preview before writing | opt-in per call | `dryRun: true` on send, reply, forward, `send_draft`, move, delete, `bulk_action`, mailbox and label deletes shows what would happen without doing it |
+| One background worker | always | With several AI windows open, only one process runs the watcher, alerts and AI triage; another takes over within 2 minutes if it stops |
 | Safe file saving | always | `download_attachment` and `export_email` save only to absolute paths, never overwrite a file, and refuse system folders, hidden folders, the home folder itself and this app's own folders |
 | Protected mailboxes | always | `delete_mailbox` and `rename_mailbox` refuse INBOX, Sent, Drafts, Trash, Junk and Archive |
 | Encrypted logins | enforced | A config with `tls = false` and `starttls = false` to a non-local host is refused when it loads |
@@ -211,7 +214,7 @@ If your client or model struggles with a long tool list, send fewer tools with
 | `toolset` | Tools (normal / read-only) | What's in it |
 |---|---|---|
 | `"full"` (default) | 51 / 26 | Everything above |
-| `"core"` | 21 / 9 | Minimal, plus `get_emails`, mark, move, delete, labels, drafts, `forward_email`, `download_attachment`, `export_email` |
+| `"core"` | 24 / 10 | Minimal, plus `get_emails`, `get_email_status`, mark, move, delete, `bulk_action`, labels, drafts, `forward_email`, `download_attachment`, `export_email` |
 | `"minimal"` | 8 / 6 | `list_accounts` `list_mailboxes` `list_emails` `search_emails` `get_email` `get_thread` `send_email` `reply_email` |
 
 Prompts and resources stay in every toolset.
@@ -538,7 +541,7 @@ request bodies. See the [CHANGELOG](CHANGELOG.md).
 pnpm install
 pnpm check             # Biome lint and format
 pnpm typecheck
-pnpm test              # unit tests (912 across 88 files)
+pnpm test              # unit tests (1008 across 92 files)
 pnpm test:integration  # against a throwaway GreenMail server (needs Docker)
 pnpm smoke             # every tool against a real configured account
 ```

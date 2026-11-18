@@ -8,6 +8,24 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-11-18
+
+### Added
+
+- Attach local files by path: `send_email`, `reply_email`, `forward_email` and `save_draft` accept `path` next to `base64` (`reply_email` and `forward_email` take attachments for the first time). Reads are guarded: absolute paths and regular files only; hidden files and folders (`~/.ssh`, `.env`), system folders, `~/Library` and this app's own folders are refused, symlinks resolved first. Adapted from Mailoo by Bitfloo.
+- `dryRun: true` on 11 write tools (send, reply, forward, `send_draft`, move, delete, `bulk_action`, create/rename/delete mailbox, `delete_label`) validates everything and reports what would happen, without writing. Pattern from Mailoo by Bitfloo.
+- One background writer per machine: with several server processes running, only one runs the watcher, alerts and AI triage; another takes over if it dies (process gone) or hangs (no heartbeat for 120 s). Adapted from Mailoo by Bitfloo.
+- `core` toolset now includes `delete_label`, `bulk_action` and `get_email_status` (24 tools; 10 in read-only).
+
+### Fixed
+
+- `get_verification_code` marks email-derived text as untrusted content.
+- The `bcc` field of `send_email` and `save_draft` was described as CC recipients.
+
+### Docs
+
+- Sieve plan updated with the owner's decisions: Sieve and local rules ship together; forwarding only to a config-file allowlist that no tool can change.
+
 ## [0.3.3] — 2026-11-18
 
 ### Added
@@ -146,6 +164,7 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 - README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
 - Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
+[0.3.4]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.4
 [0.3.3]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.1
