@@ -18,6 +18,7 @@ import { mcpLog } from './logging.js';
 import registerAllPrompts from './prompts/register.js';
 import registerAllResources from './resources/register.js';
 import RateLimiter from './safety/rate-limiter.js';
+import { createWriterLease, WRITER_LEASE_FILE } from './safety/writer-lease.js';
 import createServer from './server.js';
 import CalendarService from './services/calendar.service.js';
 import HooksService from './services/hooks.service.js';
@@ -176,6 +177,7 @@ export interface BackgroundHandle {
 export function startBackgroundServices(
   services: AppServices,
   lowLevelServer: Server | null,
+  options: { leasePath?: string } = {},
 ): BackgroundHandle {
   const { hooksService, watcherService, schedulerService, imapService, syncEngine, config } =
     services;
@@ -197,18 +199,45 @@ export function startBackgroundServices(
     };
   }
 
-  hooksService.start(lowLevelServer);
+  // Several AI windows start several servers on the same accounts. Only the
+  // process holding the writer lease runs the watcher and the hooks (alerts and
+  // AI triage); the others serve tools and take over if the holder goes away.
+  // The scheduler keeps its own lock and runs in every process.
+  const logLease = (level: 'info' | 'warning', message: string): void => {
+    mcpLog(level, 'server', message).catch(() => undefined);
+  };
+  const lease = createWriterLease({
+    lockPath: options.leasePath ?? WRITER_LEASE_FILE,
+    onLead: async () => {
+      hooksService.start(lowLevelServer);
+      await watcherService.start();
+      logLease('info', 'This process runs the watcher and hooks');
+    },
+    onLose: async () => {
+      hooksService.stop();
+      await watcherService.stop();
+      logLease('warning', 'Another IMAP Wizard process took over the watcher and hooks');
+    },
+    report: (message) => logLease('warning', message),
+  });
+
   syncEngine?.start();
 
   void (async () => {
     try {
-      await watcherService.start();
+      await lease.start();
       // A fast shutdown can run stop() while this startup block is still
       // awaiting. Every handle armed below must be re-checked against the
       // stopped flag at each resume point, or it outlives its own teardown
       // and keeps the event loop alive forever.
       if (stopped) return;
-      await mcpLog('info', 'server', 'IMAP Wizard background services started');
+      await mcpLog(
+        'info',
+        'server',
+        lease.leading
+          ? 'IMAP Wizard background services started'
+          : 'IMAP Wizard background services started; another process runs the watcher and hooks',
+      );
 
       // Check for overdue scheduled emails on startup.
       try {
@@ -263,8 +292,13 @@ export function startBackgroundServices(
       stopped = true;
       if (schedulerInterval) clearInterval(schedulerInterval);
       if (cacheInterval) clearInterval(cacheInterval);
+      // Halt first so this process cannot win the lease mid-shutdown, and
+      // release only after the writers stopped so the next leader never
+      // overlaps them.
+      await lease.halt();
       hooksService.stop();
       await watcherService.stop();
+      await lease.release();
       syncEngine?.stop();
       imapService.dispose();
       // The mirror commits incrementally under WAL, so closing here is tidy

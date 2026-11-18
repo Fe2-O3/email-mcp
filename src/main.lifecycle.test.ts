@@ -262,7 +262,10 @@ describe('shutdown during body backfill', () => {
       cacheStore: store,
     };
 
-    const handle = startBackgroundServices(services as never, null);
+    const leaseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bg-lease-'));
+    const handle = startBackgroundServices(services as never, null, {
+      leasePath: path.join(leaseDir, 'mailbox-writers.lock'),
+    });
     await firstFetchStarted;
     await handle.stop();
     stopped = true;
@@ -278,5 +281,6 @@ describe('shutdown during body backfill', () => {
     // stop() closed the store; a late write would have thrown inside the cache
     // adapter, which swallows it, so closed is the observable end state.
     expect(() => store.getBody('work', 'INBOX', 1, '100')).toThrow();
+    await fs.rm(leaseDir, { recursive: true, force: true });
   });
 });

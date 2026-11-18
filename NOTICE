@@ -41,7 +41,14 @@ The adapted files are:
   src/services/outgoing-attachments.ts       attach local files by path (the read
                                              guard it calls is original)
   src/services/outgoing-attachments.test.ts  tests for the above
-  src/tools/schema-helpers.ts                shared tool input schema pieces
+  src/tools/schema-helpers.ts                shared tool input schema pieces and
+                                             the dryRun parameter
+  src/safety/writer-lease.ts                 one background writer per machine
+                                             (adds a lock-less fallback)
+  src/safety/writer-lease.test.ts            tests for the above
+  src/utils/file-claim.ts                    lock-file claim (adds the host and
+                                             process id check for a dead holder)
+  src/utils/file-claim.test.ts               tests for the above
 
 "Mailoo" and "Bitfloo" are names of their respective owners. They are used here
 only to attribute the code above and are not used as branding for this project.
