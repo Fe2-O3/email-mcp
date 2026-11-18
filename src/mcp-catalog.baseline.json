@@ -824,7 +824,161 @@
           "type": "object"
         },
         "name": "get_email",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "answered": {
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "filename": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "number"
+                  }
+                },
+                "required": ["filename", "mimeType", "size"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "body": {
+              "type": "string"
+            },
+            "bulk": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "enum": ["newsletter", "automated"],
+                  "type": "string"
+                },
+                "listId": {
+                  "type": "string"
+                },
+                "oneClick": {
+                  "type": "boolean"
+                },
+                "unsubscribe": {
+                  "type": "string"
+                }
+              },
+              "required": ["kind", "oneClick"],
+              "type": "object"
+            },
+            "cc": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "date": {
+              "type": "string"
+            },
+            "flagged": {
+              "type": "boolean"
+            },
+            "from": {
+              "additionalProperties": false,
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["address"],
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "inReplyTo": {
+              "type": "string"
+            },
+            "labels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "offline": {
+              "additionalProperties": false,
+              "properties": {
+                "cachedAt": {
+                  "type": "string"
+                }
+              },
+              "required": ["cachedAt"],
+              "type": "object"
+            },
+            "seen": {
+              "type": "boolean"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "to": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "messageId",
+            "subject",
+            "from",
+            "to",
+            "date",
+            "seen",
+            "flagged",
+            "answered",
+            "labels",
+            "attachments",
+            "account",
+            "mailbox"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -986,7 +1140,190 @@
           "type": "object"
         },
         "name": "get_emails",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "emails": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["filename", "mimeType", "size"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "cc": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inReplyTo": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "offline": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cachedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["cachedAt"],
+                    "type": "object"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "labels",
+                  "attachments"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "errors": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "error"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            }
+          },
+          "required": ["account", "mailbox", "count", "emails", "errors"],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -1035,7 +1372,200 @@
           "type": "object"
         },
         "name": "get_thread",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageCount": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["filename", "mimeType", "size"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "cc": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inReplyTo": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "offline": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cachedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["cachedAt"],
+                    "type": "object"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "labels",
+                  "attachments"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "threadId",
+            "messageCount",
+            "participants",
+            "messages"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -1134,7 +1664,38 @@
           "type": "object"
         },
         "name": "list_accounts",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "accounts": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "type": ["string", "null"]
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["name", "email", "fullName"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": ["count", "accounts"],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -2562,7 +3123,161 @@
           "type": "object"
         },
         "name": "get_email",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "answered": {
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "filename": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "number"
+                  }
+                },
+                "required": ["filename", "mimeType", "size"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "body": {
+              "type": "string"
+            },
+            "bulk": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "enum": ["newsletter", "automated"],
+                  "type": "string"
+                },
+                "listId": {
+                  "type": "string"
+                },
+                "oneClick": {
+                  "type": "boolean"
+                },
+                "unsubscribe": {
+                  "type": "string"
+                }
+              },
+              "required": ["kind", "oneClick"],
+              "type": "object"
+            },
+            "cc": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "date": {
+              "type": "string"
+            },
+            "flagged": {
+              "type": "boolean"
+            },
+            "from": {
+              "additionalProperties": false,
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["address"],
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "inReplyTo": {
+              "type": "string"
+            },
+            "labels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "offline": {
+              "additionalProperties": false,
+              "properties": {
+                "cachedAt": {
+                  "type": "string"
+                }
+              },
+              "required": ["cachedAt"],
+              "type": "object"
+            },
+            "seen": {
+              "type": "boolean"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "to": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "messageId",
+            "subject",
+            "from",
+            "to",
+            "date",
+            "seen",
+            "flagged",
+            "answered",
+            "labels",
+            "attachments",
+            "account",
+            "mailbox"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -2724,7 +3439,190 @@
           "type": "object"
         },
         "name": "get_emails",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "emails": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["filename", "mimeType", "size"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "cc": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inReplyTo": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "offline": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cachedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["cachedAt"],
+                    "type": "object"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "labels",
+                  "attachments"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "errors": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "error"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            }
+          },
+          "required": ["account", "mailbox", "count", "emails", "errors"],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -2773,7 +3671,200 @@
           "type": "object"
         },
         "name": "get_thread",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageCount": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["filename", "mimeType", "size"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "cc": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inReplyTo": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "offline": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cachedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["cachedAt"],
+                    "type": "object"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "labels",
+                  "attachments"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "threadId",
+            "messageCount",
+            "participants",
+            "messages"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -2872,7 +3963,38 @@
           "type": "object"
         },
         "name": "list_accounts",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "accounts": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "type": ["string", "null"]
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["name", "email", "fullName"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": ["count", "accounts"],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -3869,7 +4991,161 @@
           "type": "object"
         },
         "name": "get_email",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "answered": {
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "filename": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "number"
+                  }
+                },
+                "required": ["filename", "mimeType", "size"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "body": {
+              "type": "string"
+            },
+            "bulk": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "enum": ["newsletter", "automated"],
+                  "type": "string"
+                },
+                "listId": {
+                  "type": "string"
+                },
+                "oneClick": {
+                  "type": "boolean"
+                },
+                "unsubscribe": {
+                  "type": "string"
+                }
+              },
+              "required": ["kind", "oneClick"],
+              "type": "object"
+            },
+            "cc": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "date": {
+              "type": "string"
+            },
+            "flagged": {
+              "type": "boolean"
+            },
+            "from": {
+              "additionalProperties": false,
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["address"],
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "inReplyTo": {
+              "type": "string"
+            },
+            "labels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "offline": {
+              "additionalProperties": false,
+              "properties": {
+                "cachedAt": {
+                  "type": "string"
+                }
+              },
+              "required": ["cachedAt"],
+              "type": "object"
+            },
+            "seen": {
+              "type": "boolean"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "to": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "messageId",
+            "subject",
+            "from",
+            "to",
+            "date",
+            "seen",
+            "flagged",
+            "answered",
+            "labels",
+            "attachments",
+            "account",
+            "mailbox"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -3910,7 +5186,190 @@
           "type": "object"
         },
         "name": "get_emails",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "emails": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["filename", "mimeType", "size"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "cc": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inReplyTo": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "offline": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cachedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["cachedAt"],
+                    "type": "object"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "labels",
+                  "attachments"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "errors": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "error"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            }
+          },
+          "required": ["account", "mailbox", "count", "emails", "errors"],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -3951,7 +5410,200 @@
           "type": "object"
         },
         "name": "get_thread",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageCount": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["filename", "mimeType", "size"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "cc": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inReplyTo": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "offline": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cachedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["cachedAt"],
+                    "type": "object"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "labels",
+                  "attachments"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "threadId",
+            "messageCount",
+            "participants",
+            "messages"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -4042,7 +5694,38 @@
           "type": "object"
         },
         "name": "list_accounts",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "accounts": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "type": ["string", "null"]
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["name", "email", "fullName"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": ["count", "accounts"],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -5071,7 +6754,161 @@
           "type": "object"
         },
         "name": "get_email",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "answered": {
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "filename": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "number"
+                  }
+                },
+                "required": ["filename", "mimeType", "size"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "body": {
+              "type": "string"
+            },
+            "bulk": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "enum": ["newsletter", "automated"],
+                  "type": "string"
+                },
+                "listId": {
+                  "type": "string"
+                },
+                "oneClick": {
+                  "type": "boolean"
+                },
+                "unsubscribe": {
+                  "type": "string"
+                }
+              },
+              "required": ["kind", "oneClick"],
+              "type": "object"
+            },
+            "cc": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "date": {
+              "type": "string"
+            },
+            "flagged": {
+              "type": "boolean"
+            },
+            "from": {
+              "additionalProperties": false,
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["address"],
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "inReplyTo": {
+              "type": "string"
+            },
+            "labels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "offline": {
+              "additionalProperties": false,
+              "properties": {
+                "cachedAt": {
+                  "type": "string"
+                }
+              },
+              "required": ["cachedAt"],
+              "type": "object"
+            },
+            "seen": {
+              "type": "boolean"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "to": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "messageId",
+            "subject",
+            "from",
+            "to",
+            "date",
+            "seen",
+            "flagged",
+            "answered",
+            "labels",
+            "attachments",
+            "account",
+            "mailbox"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -5112,7 +6949,200 @@
           "type": "object"
         },
         "name": "get_thread",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "messageCount": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["filename", "mimeType", "size"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "cc": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inReplyTo": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "offline": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cachedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["cachedAt"],
+                    "type": "object"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "labels",
+                  "attachments"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["address"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "threadId",
+            "messageCount",
+            "participants",
+            "messages"
+          ],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {
@@ -5203,7 +7233,38 @@
           "type": "object"
         },
         "name": "list_accounts",
-        "outputSchema": null
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "accounts": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "type": ["string", "null"]
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["name", "email", "fullName"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": ["count", "accounts"],
+          "type": "object"
+        }
       },
       {
         "inputSchema": {

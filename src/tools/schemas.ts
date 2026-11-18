@@ -95,3 +95,73 @@ export const verificationOutputSchema = z.object({
   copied: z.boolean(),
   copy_error: z.string().optional(),
 });
+
+/** Attachment as listed on a message (name, type, size; never the content). */
+export const attachmentMetaSchema = z.object({
+  filename: z.string(),
+  mimeType: z.string(),
+  size: z.number(),
+});
+
+/**
+ * One message as `get_email`, `get_emails` and `get_thread` return it. `body` is the same text the
+ * human-readable output shows (after `format` and `maxLength`), raw and without the untrusted-content
+ * markers that wrap the text output.
+ */
+export const emailDetailSchema = z.object({
+  id: z.string(),
+  messageId: z.string(),
+  subject: z.string(),
+  from: emailAddressSchema,
+  to: z.array(emailAddressSchema),
+  cc: z.array(emailAddressSchema).optional(),
+  date: z.string(),
+  seen: z.boolean(),
+  flagged: z.boolean(),
+  answered: z.boolean(),
+  labels: z.array(z.string()),
+  bulk: bulkSignalSchema.optional(),
+  inReplyTo: z.string().optional(),
+  attachments: z.array(attachmentMetaSchema),
+  /** Omitted for older messages when get_thread is asked for newestFirst. */
+  body: z.string().optional(),
+  /** Present only when served from the local cache because the server was unreachable. */
+  offline: z.object({ cachedAt: z.string() }).optional(),
+});
+
+/** Structured result for `get_email`. */
+export const emailGetOutputSchema = emailDetailSchema.extend({
+  account: z.string(),
+  mailbox: z.string(),
+});
+
+/** Structured result for `get_emails`. */
+export const emailBatchOutputSchema = z.object({
+  account: z.string(),
+  mailbox: z.string(),
+  count: z.number().int(),
+  emails: z.array(emailDetailSchema),
+  errors: z.array(z.object({ id: z.string(), error: z.string() })),
+});
+
+/** Structured result for `get_thread`. */
+export const threadOutputSchema = z.object({
+  account: z.string(),
+  mailbox: z.string(),
+  threadId: z.string(),
+  messageCount: z.number().int(),
+  participants: z.array(emailAddressSchema),
+  messages: z.array(emailDetailSchema),
+});
+
+/** Structured result for `list_accounts`. */
+export const accountListOutputSchema = z.object({
+  count: z.number().int(),
+  accounts: z.array(
+    z.object({
+      name: z.string(),
+      email: z.string(),
+      fullName: z.string().nullable(),
+    }),
+  ),
+});

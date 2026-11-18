@@ -12,6 +12,8 @@ import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
+import toEmailDetail from './email-detail.js';
+import { threadOutputSchema } from './schemas.js';
 
 // ---------------------------------------------------------------------------
 // Body helpers
@@ -88,6 +90,7 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
               'Ideal for AI triage of long threads where only the latest reply matters.',
           ),
       }),
+      outputSchema: threadOutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ account, message_id: messageId, mailbox, format, maxLength, newestFirst }) => {
@@ -102,6 +105,14 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
                 text: `No thread found for Message-ID: ${messageId}`,
               },
             ],
+            structuredContent: {
+              account,
+              mailbox,
+              threadId: thread.threadId,
+              messageCount: 0,
+              participants: [],
+              messages: [],
+            },
           };
         }
 
@@ -116,6 +127,8 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
           ),
           '',
         ];
+
+        const details: ReturnType<typeof toEmailDetail>[] = [];
 
         ordered.forEach((email, idx) => {
           let label: string;
@@ -147,9 +160,11 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
           // In newestFirst mode, only render body for the newest (first) message
           if (newestFirst && idx > 0) {
             messageLines.push('(body omitted — use get_email to read this message)');
+            details.push(toEmailDetail(email, email.id));
           } else {
-            messageLines.push('');
-            messageLines.push(applyBodyFormat(email.bodyText, email.bodyHtml, format, maxLength));
+            const body = applyBodyFormat(email.bodyText, email.bodyHtml, format, maxLength);
+            messageLines.push('', body);
+            details.push(toEmailDetail(email, email.id, body));
           }
 
           parts.push(delimitUntrusted(messageLines.join('\n')));
@@ -158,6 +173,14 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
 
         return {
           content: [{ type: 'text' as const, text: parts.join('\n') }],
+          structuredContent: {
+            account,
+            mailbox,
+            threadId: thread.threadId,
+            messageCount: thread.messageCount,
+            participants: thread.participants,
+            messages: details,
+          },
         };
       } catch (err) {
         return {

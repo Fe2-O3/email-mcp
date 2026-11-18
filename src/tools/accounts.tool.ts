@@ -5,6 +5,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type ConnectionManager from '../connections/manager.js';
+import { accountListOutputSchema } from './schemas.js';
 
 export default function registerAccountsTools(
   server: McpServer,
@@ -16,6 +17,7 @@ export default function registerAccountsTools(
       title: 'List accounts',
       description:
         'List all configured email accounts. Call this first to discover available account names for use with other tools.',
+      outputSchema: accountListOutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => {
@@ -41,6 +43,7 @@ export default function registerAccountsTools(
                 : 'No accounts configured.',
           },
         ],
+        structuredContent: { count: accounts.length, accounts },
       };
     },
   );

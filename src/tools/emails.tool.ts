@@ -10,7 +10,13 @@ import type { Email, EmailMeta } from '../types/index.js';
 import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
 import offlineNotice from '../utils/offline-notice.js';
-import { emailListOutputSchema, emailStatusOutputSchema } from './schemas.js';
+import toEmailDetail from './email-detail.js';
+import {
+  emailBatchOutputSchema,
+  emailGetOutputSchema,
+  emailListOutputSchema,
+  emailStatusOutputSchema,
+} from './schemas.js';
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -254,6 +260,7 @@ export default function registerEmailsTools(
             'Explicitly mark the email as read after fetching (default: false — reading is non-destructive by default)',
           ),
       }),
+      outputSchema: emailGetOutputSchema,
       // markRead=true sets \Seen, so on a writable server this is not a pure read.
       // read_only refuses markRead, and the hint says read-only there.
       annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: true },
@@ -295,10 +302,13 @@ export default function registerEmailsTools(
           );
         }
 
-        parts.push('', '--- Body ---', '');
-        parts.push(
-          applyBodyFormat(email.bodyText, email.bodyHtml, format as BodyFormat, maxLength),
+        const body = applyBodyFormat(
+          email.bodyText,
+          email.bodyHtml,
+          format as BodyFormat,
+          maxLength,
         );
+        parts.push('', '--- Body ---', '', body);
 
         if (markRead) {
           // markRead is a write even though get_email is otherwise a read.
@@ -320,6 +330,7 @@ export default function registerEmailsTools(
               text: `${notice ? `${notice}\n\n` : ''}${delimitUntrusted(parts.join('\n'))}`,
             },
           ],
+          structuredContent: { account, mailbox, ...toEmailDetail(email, emailId, body) },
         };
       } catch (err) {
         return {
@@ -369,11 +380,14 @@ export default function registerEmailsTools(
           .optional()
           .describe('Truncate each email body at this many characters.'),
       }),
+      outputSchema: emailBatchOutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ account, ids, mailbox, format, maxLength }) => {
       const results: string[] = [];
       const errors: string[] = [];
+      const details: ReturnType<typeof toEmailDetail>[] = [];
+      const failures: { id: string; error: string }[] = [];
 
       const settled = await Promise.allSettled(
         ids.map(async (emailId) => imapService.getEmail(account, emailId, mailbox)),
@@ -392,6 +406,7 @@ export default function registerEmailsTools(
             format as BodyFormat,
             maxLength,
           );
+          details.push(toEmailDetail(email, emailId, body));
           const attachLine =
             email.attachments.length > 0
               ? `📎 ${email.attachments.map((a) => a.filename).join(', ')}`
@@ -422,7 +437,9 @@ export default function registerEmailsTools(
           );
         } else {
           const err = outcome.reason as unknown;
-          errors.push(`[${emailId}] Error: ${err instanceof Error ? err.message : String(err)}`);
+          const message = err instanceof Error ? err.message : String(err);
+          errors.push(`[${emailId}] Error: ${message}`);
+          failures.push({ id: emailId, error: message });
         }
       });
 
@@ -436,6 +453,13 @@ export default function registerEmailsTools(
 
       return {
         content: [{ type: 'text' as const, text: parts.join('\n') }],
+        structuredContent: {
+          account,
+          mailbox,
+          count: details.length,
+          emails: details,
+          errors: failures,
+        },
       };
     },
   );
