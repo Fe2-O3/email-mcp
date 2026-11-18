@@ -46,9 +46,6 @@
     "docker:compose": "docker compose up",
     "docker:clean": "docker images --format '{{.Repository}}:{{.Tag}}' | grep imap-wizard | xargs docker rmi -f 2>/dev/null; true",
     "docker:prune": "docker image prune -f && docker buildx prune -f",
-    "release:check": "goreleaser check",
-    "release:snapshot": "goreleaser release --snapshot --clean && pnpm docker:clean",
-    "release:dry-run": "goreleaser release --skip=publish --clean && pnpm docker:clean",
     "prepublishOnly": "tsc -p tsconfig.build.json"
   },
   "keywords": [
@@ -100,7 +97,7 @@
     "vitest": "^5.1.0"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.13.0"
   },
   "packageManager": "pnpm@11.22.0",
   "publishConfig": {
