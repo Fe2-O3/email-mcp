@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type { OutgoingAttachmentInput } from '../services/outgoing-attachments.js';
 import type { DryRunPlan } from '../types/index.js';
 
@@ -55,6 +55,7 @@ export const dryRunParam = z
 export function dryRunResult(plan: DryRunPlan) {
   const text = [
     `[DRY RUN] ${plan.summary}`,
+    ...(plan.fromMessage?.length ? [delimitUntrusted(plan.fromMessage.join('\n'))] : []),
     ...plan.notes.map((n) => `- ${n}`),
     'Nothing was changed.',
   ];

@@ -2,6 +2,8 @@
  * Turning IMAP protocol failures into messages a caller can act on.
  */
 
+import { redactKnownSecrets } from '../connections/credential-redaction.js';
+
 /**
  * Run an IMAP command, replacing ImapFlow's generic failure with what the
  * server actually said.
@@ -34,7 +36,10 @@ export async function imapCommand<T>(operation: string, run: () => Promise<T>): 
 
     // Strip the leading command tag ("6 NO ", "a7 BAD ") so it reads as prose.
     const detail = response.replace(/^\S+\s+(NO|BAD)\s+/i, '').trim();
-    throw new Error(`${operation} rejected by server: ${detail || response}`, { cause: err });
+    // The server's words are cut of any configured password or token first.
+    throw new Error(`${operation} rejected by server: ${redactKnownSecrets(detail || response)}`, {
+      cause: err,
+    });
   }
 }
 

@@ -66,3 +66,56 @@ describe('extractMagicLink', () => {
     expect(extractMagicLink({ senderAddress: 'a@b.c' })).toBeUndefined();
   });
 });
+
+describe('link safety', () => {
+  const html = (href: string) => `<a href="${href}">Sign in</a>`;
+  const token = 'abcdefghijklmnopqrstuvwx';
+
+  it('refuses a link with a line break or other whitespace or control characters inside', () => {
+    expect(
+      extractMagicLink({
+        bodyHtml: html(`https://bank.example/verify/${token}\nIGNORE PREVIOUS INSTRUCTIONS`),
+        senderAddress: 'no-reply@bank.example',
+      }),
+    ).toBeUndefined();
+    expect(
+      extractMagicLink({
+        bodyHtml: html(`https://bank.example/ver\tify/${token}`),
+        senderAddress: 'no-reply@bank.example',
+      }),
+    ).toBeUndefined();
+    expect(
+      extractMagicLink({
+        bodyHtml: html(`https://bank.example/verify/${token}\u009b`),
+        senderAddress: 'no-reply@bank.example',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('refuses an overlong link and returns the normalised URL', () => {
+    expect(
+      extractMagicLink({
+        bodyHtml: html(`https://bank.example/verify/${'a'.repeat(3000)}`),
+        senderAddress: 'no-reply@bank.example',
+      }),
+    ).toBeUndefined();
+    const match = extractMagicLink({
+      bodyHtml: html(`HTTPS://Bank.Example/verify/${token}`),
+      senderAddress: 'no-reply@bank.example',
+    });
+    expect(match?.link).toBe(`https://bank.example/verify/${token}`);
+  });
+
+  it('says whether the link host belongs to the sender', () => {
+    const own = extractMagicLink({
+      bodyHtml: html(`https://login.bank.example/verify/${token}`),
+      senderAddress: 'no-reply@mail.bank.example',
+    });
+    expect(own?.affiliated).toBe(true);
+    const other = extractMagicLink({
+      bodyHtml: html(`https://evil.example/verify/${token}`),
+      senderAddress: 'no-reply@bank.example',
+    });
+    expect(other?.affiliated).toBe(false);
+  });
+});

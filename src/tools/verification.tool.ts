@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { delimitUntrusted } from '../safety/untrusted-content.js';
+import { delimitUntrusted, UNTRUSTED_STRUCTURED } from '../safety/untrusted-content.js';
 import ClipboardService from '../services/clipboard.service.js';
 import type ImapService from '../services/imap.service.js';
 import VerificationService from '../services/verification.service.js';
@@ -97,8 +97,15 @@ export default function registerVerificationTool(
         const valueLabel = hit.kind === 'code' ? 'Code' : 'Sign-in link';
         // The service name, sender and subject all come from the message, so they sit inside the
         // untrusted markers; a hostile subject cannot pass as the tool's own words.
+        // A link is the sender's text, line breaks and all, so it is fenced too. A code is
+        // the short run of letters, digits and dashes the extractor picked out.
         const lines = [
-          `${valueLabel}: ${hit.display}`,
+          hit.kind === 'link'
+            ? `${valueLabel}:\n${delimitUntrusted(hit.display)}`
+            : `${valueLabel}: ${hit.display}`,
+          ...(hit.hostDiffers
+            ? ["The link's host is not the sender's domain: check where it goes before opening it."]
+            : []),
           `Account/mailbox: ${hit.account}/${hit.mailbox}`,
           `Age: ${ageSeconds}s${hit.confidence ? ` · Confidence: ${hit.confidence}` : ''}`,
           delimitUntrusted(
@@ -123,6 +130,8 @@ export default function registerVerificationTool(
             confidence: hit.confidence,
             copied,
             copy_error: copyError,
+            ...(hit.kind === 'link' ? { link_host_differs: Boolean(hit.hostDiffers) } : {}),
+            ...UNTRUSTED_STRUCTURED,
           },
         };
       } catch (err) {

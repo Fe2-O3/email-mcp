@@ -8,7 +8,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractAuthenticationResults, parseAuthSignals } from './auth-results.js';
+import {
+  authservId,
+  extractAuthenticationResults,
+  parseAuthSignals,
+  selectTrustedAuthResults,
+} from './auth-results.js';
 
 const GMAIL =
   'authentication-results: mx.google.com;\r\n' +
@@ -73,5 +78,37 @@ describe('parseAuthSignals', () => {
   it('keeps temperror instead of inventing a verdict', () => {
     const s = parseAuthSignals(['spf=temperror']);
     expect(s.spf).toBe('temperror');
+  });
+});
+
+describe('selectTrustedAuthResults', () => {
+  const real = 'mx.receiver.example; spf=fail; dmarc=fail';
+  const own = 'imap.example.com; dkim=pass';
+  const forged = 'evil.example; spf=pass; dmarc=pass';
+
+  it("trusts the top header and headers from the account's own host, nothing else", () => {
+    expect(selectTrustedAuthResults([real, forged, own], ['imap.example.com'])).toEqual({
+      trusted: [real, own],
+      unverified: [forged],
+    });
+  });
+
+  it('reads the authserv-id, with or without a version, and not a verdict as an id', () => {
+    expect(authservId('mx.example.com 1; spf=pass')).toBe('mx.example.com');
+    expect(authservId('spf=fail smtp.mailfrom=x')).toBeUndefined();
+    expect(authservId('MX.Example.COM; dkim=pass')).toBe('mx.example.com');
+  });
+
+  it('treats a subdomain relationship with the own host as the same host', () => {
+    const { trusted } = selectTrustedAuthResults(
+      [real, 'gmail.com; dkim=pass', 'x.evil.com; dkim=pass'],
+      ['imap.gmail.com'],
+    );
+    expect(trusted).toHaveLength(2);
+  });
+
+  it('a trusted fail beats a trusted pass for SPF and DMARC', () => {
+    const s = parseAuthSignals(['a; spf=pass; dmarc=pass', 'b; spf=fail; dmarc=fail']);
+    expect(s).toMatchObject({ spf: 'fail', dmarc: 'fail' });
   });
 });

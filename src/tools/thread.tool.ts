@@ -8,7 +8,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import { delimitUntrusted } from '../safety/untrusted-content.js';
+import { delimitUntrusted, UNTRUSTED_STRUCTURED } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 import { formatBulk } from '../utils/bulk-headers.js';
 import { stripHtml } from '../utils/html.js';
@@ -112,6 +112,7 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
               messageCount: 0,
               participants: [],
               messages: [],
+              ...UNTRUSTED_STRUCTURED,
             },
           };
         }
@@ -121,9 +122,8 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
 
         const parts: string[] = [
           `🧵 Thread: ${total} message${total === 1 ? '' : 's'}`,
-          `Thread-ID: ${thread.threadId}`,
           delimitUntrusted(
-            `Participants: ${thread.participants.map((p) => (p.name ? `${p.name} <${p.address}>` : p.address)).join(', ')}`,
+            `Thread-ID: ${thread.threadId}\nParticipants: ${thread.participants.map((p) => (p.name ? `${p.name} <${p.address}>` : p.address)).join(', ')}`,
           ),
           '',
         ];
@@ -180,6 +180,7 @@ export default function registerThreadTools(server: McpServer, imapService: Imap
             messageCount: thread.messageCount,
             participants: thread.participants,
             messages: details,
+            ...UNTRUSTED_STRUCTURED,
           },
         };
       } catch (err) {

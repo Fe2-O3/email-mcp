@@ -20,6 +20,8 @@ export interface VerificationHit {
   subject: string;
   service: string;
   confidence?: 'high' | 'medium' | 'low';
+  /** Links only: true when the link's host is not the sender's domain. */
+  hostDiffers?: boolean;
 }
 
 export interface VerificationSearchOptions {
@@ -113,6 +115,7 @@ export default class VerificationService {
             kind: 'link',
             value: link.link,
             display: link.link,
+            hostDiffers: !link.affiliated,
             account,
             mailbox: options.mailbox,
             date: meta.date,

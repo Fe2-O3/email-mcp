@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 import { safeFileName, saveNewFile } from '../utils/save-file.js';
 
@@ -64,18 +65,21 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
             content: [
               {
                 type: 'text' as const,
-                text: JSON.stringify(
-                  {
-                    saved: true,
-                    path: resolvedPath,
-                    filename: result.filename,
-                    mimeType: result.mimeType,
-                    size: result.size,
-                    sizeHuman: `${Math.round(result.size / 1024)}KB`,
-                    sha256,
-                  },
-                  null,
-                  2,
+                // The file name and type come from the message, so the details are fenced.
+                text: delimitUntrusted(
+                  JSON.stringify(
+                    {
+                      saved: true,
+                      path: resolvedPath,
+                      filename: result.filename,
+                      mimeType: result.mimeType,
+                      size: result.size,
+                      sizeHuman: `${Math.round(result.size / 1024)}KB`,
+                      sha256,
+                    },
+                    null,
+                    2,
+                  ),
                 ),
               },
             ],
@@ -87,15 +91,17 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(
-                {
-                  filename: result.filename,
-                  mimeType: result.mimeType,
-                  size: result.size,
-                  sizeHuman: `${Math.round(result.size / 1024)}KB`,
-                },
-                null,
-                2,
+              text: delimitUntrusted(
+                JSON.stringify(
+                  {
+                    filename: result.filename,
+                    mimeType: result.mimeType,
+                    size: result.size,
+                    sizeHuman: `${Math.round(result.size / 1024)}KB`,
+                  },
+                  null,
+                  2,
+                ),
               ),
             },
             {
@@ -110,7 +116,8 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
           content: [
             {
               type: 'text' as const,
-              text: `Failed to download attachment: ${err instanceof Error ? err.message : String(err)}`,
+              // The message can list the email's attachment names, so it is fenced.
+              text: `Failed to download attachment:\n${delimitUntrusted(err instanceof Error ? err.message : String(err))}`,
             },
           ],
         };

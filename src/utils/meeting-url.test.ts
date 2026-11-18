@@ -48,4 +48,11 @@ describe('extractMeetingUrl', () => {
     expect(result).toBeDefined();
     expect(result?.url).toBe('https://meet.google.com/abc-defg-hij');
   });
+
+  it('detects Jitsi on jitsi.org and its subdomains only', () => {
+    expect(extractMeetingUrl('join https://meet.jitsi.org/room1')?.label).toBe('Jitsi');
+    expect(extractMeetingUrl('join https://jitsi.org/room1')?.label).toBe('Jitsi');
+    expect(extractMeetingUrl('join https://evil-jitsi.org/abc')).toBeUndefined();
+    expect(extractMeetingUrl('join https://notjitsi.org/abc')).toBeUndefined();
+  });
 });

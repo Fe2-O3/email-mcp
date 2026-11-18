@@ -10,13 +10,24 @@
  */
 
 import { stripHtml } from './html.js';
+import { stripControlChars } from './sanitize-text.js';
 
 export interface MagicLinkMatch {
+  /** The normalised URL (`new URL(href).href`), never the raw href text. */
   link: string;
   anchorText?: string;
   score: number;
   source: 'html' | 'text';
+  /** False when the link's host is not the sender's domain (or a subdomain of it). */
+  affiliated: boolean;
 }
+
+/** No real sign-in link is longer than this. */
+const MAX_LINK_LENGTH = 2048;
+// Tested on the raw href: the URL parser silently drops tabs and line breaks, which would hide
+// a smuggled line. Whitespace, control and bidi characters all make a link unusable.
+const hasUnsafeHrefChars = (href: string): boolean =>
+  /\s|\u2028|\u2029/.test(href) || stripControlChars(href) !== href;
 
 const ACCEPT_THRESHOLD = 4;
 const URL_KEYWORD_CAP = 6;
@@ -146,6 +157,7 @@ function scoreUrl(
   baseDomain: string | undefined,
   order: number,
 ): LinkCandidate | undefined {
+  if (href.length > MAX_LINK_LENGTH || hasUnsafeHrefChars(href)) return undefined;
   let url: URL;
   try {
     url = new URL(href);
@@ -172,7 +184,7 @@ function scoreUrl(
 
   const score = urlKeywordScore + (tokenLength >= 20 ? 2 : 0) + anchorScore + (affiliated ? 2 : 0);
 
-  return { link: href, anchorText, score, affiliated, tokenLength, order };
+  return { link: url.href, anchorText, score, affiliated, tokenLength, order };
 }
 
 function pickBest(candidates: LinkCandidate[]): LinkCandidate | undefined {
@@ -212,7 +224,13 @@ export function extractMagicLink(input: {
     }
     const best = pickBest(candidates);
     if (best) {
-      return { link: best.link, anchorText: best.anchorText, score: best.score, source: 'html' };
+      return {
+        link: best.link,
+        anchorText: best.anchorText,
+        score: best.score,
+        source: 'html',
+        affiliated: best.affiliated,
+      };
     }
   }
 
@@ -227,7 +245,9 @@ export function extractMagicLink(input: {
       if (candidate) candidates.push(candidate);
     }
     const best = pickBest(candidates);
-    if (best) return { link: best.link, score: best.score, source: 'text' };
+    if (best) {
+      return { link: best.link, score: best.score, source: 'text', affiliated: best.affiliated };
+    }
   }
 
   return undefined;

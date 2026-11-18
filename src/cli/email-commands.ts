@@ -19,6 +19,7 @@ import SmtpService from '../services/smtp.service.js';
 import type { AccountConfig, AppConfig, Email, EmailMeta } from '../types/index.js';
 import { stripHtml } from '../utils/html.js';
 import offlineNotice from '../utils/offline-notice.js';
+import { sanitizeInline, stripControlChars } from '../utils/sanitize-text.js';
 import { parseUid } from '../utils/uid.js';
 
 export interface CliServices {
@@ -91,27 +92,50 @@ function formatDate(date: string): string {
     .replace(/Z$/, ' UTC');
 }
 
+/** Names and addresses from the message, as one clean line: no terminal control codes. */
+function cleanAddress(address: { name?: string; address: string }): string {
+  const text = address.name ? `${address.name} <${address.address}>` : address.address;
+  return sanitizeInline(text, 1000);
+}
+
 function formatMeta(email: EmailMeta): string {
   const markers = [
     email.seen ? '' : 'UNREAD',
     email.flagged ? 'FLAGGED' : '',
     email.hasAttachments ? 'ATTACHMENT' : '',
   ].filter(Boolean);
-  const from = email.from.name ? `${email.from.name} <${email.from.address}>` : email.from.address;
-  return `${email.id.padStart(8)}  ${markers.join(' ')}  ${from}\n          ${email.subject || '(no subject)'}\n          ${formatDate(email.date)}`;
+  const subject = sanitizeInline(email.subject) || '(no subject)';
+  return `${email.id.padStart(8)}  ${markers.join(' ')}  ${cleanAddress(email.from)}\n          ${subject}\n          ${formatDate(email.date)}`;
 }
 
-function formatEmail(email: Email): string {
-  const from = email.from.name ? `${email.from.name} <${email.from.address}>` : email.from.address;
-  const body = email.bodyText ?? (email.bodyHtml ? stripHtml(email.bodyHtml) : '');
-  const lines = [`From: ${from}`, `To: ${email.to.map((address) => address.address).join(', ')}`];
-  if (email.cc?.length) lines.push(`Cc: ${email.cc.map((address) => address.address).join(', ')}`);
-  lines.push(`Date: ${formatDate(email.date)}`, `Subject: ${email.subject}`, '', body);
+/**
+ * Everything printed here came from the message, and a terminal obeys control codes: window
+ * titles, cursor moves that overwrite earlier lines, clipboard writes. So every header and the
+ * body lose C0, C1 and bidi controls first (newline and tab stay in the body).
+ */
+export function formatEmail(email: Email): string {
+  const body = stripControlChars(
+    email.bodyText ?? (email.bodyHtml ? stripHtml(email.bodyHtml) : ''),
+    true,
+  );
+  const lines = [
+    `From: ${cleanAddress(email.from)}`,
+    `To: ${email.to.map((address) => sanitizeInline(address.address, 320)).join(', ')}`,
+  ];
+  if (email.cc?.length) {
+    lines.push(`Cc: ${email.cc.map((address) => sanitizeInline(address.address, 320)).join(', ')}`);
+  }
+  lines.push(
+    `Date: ${formatDate(email.date)}`,
+    `Subject: ${sanitizeInline(email.subject)}`,
+    '',
+    body,
+  );
   if (email.attachments.length) {
     lines.push('', 'Attachments:');
     for (const attachment of email.attachments) {
       lines.push(
-        `  ${attachment.filename} (${attachment.mimeType}, ${formatSize(attachment.size)})`,
+        `  ${sanitizeInline(attachment.filename, 300)} (${sanitizeInline(attachment.mimeType, 100)}, ${formatSize(attachment.size)})`,
       );
     }
   }
@@ -309,7 +333,9 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
         throw new Error(`Refusing to write "${attachment.filename}" outside ${base}.`);
       }
       await writeFile(output, Buffer.from(attachment.contentBase64, 'base64'), { flag: 'wx' });
-      console.log(`Saved ${attachment.filename} (${formatSize(attachment.size)}) to ${output}`);
+      console.log(
+        `Saved ${sanitizeInline(attachment.filename, 300)} (${formatSize(attachment.size)}) to ${output}`,
+      );
       return;
     }
     case 'reply': {

@@ -243,3 +243,29 @@ export function sentCredentials(account: AccountConfig): SentCredentials {
     ],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Secrets of every configured account, for code that has no account at hand
+// ---------------------------------------------------------------------------
+
+const knownSecrets = new Set<string>();
+
+/**
+ * Remembers an account's secrets so `redactKnownSecrets` can cut them out of server text where
+ * the account is not known (IMAP command errors). Secrets shorter than the shape minimum are
+ * left out: they match the server's own words and would blank unrelated errors; the per-account
+ * `redactedError` path still handles those.
+ */
+export function registerKnownSecrets(account: AccountConfig): void {
+  sentCredentials(account).secrets.forEach((secret) => {
+    if (typeof secret === 'string' && secret.length >= SECRET_SHAPE_MIN_CHARS) {
+      knownSecrets.add(secret);
+    }
+  });
+}
+
+/** Cuts every remembered secret (and the forms it takes on the wire) out of server-supplied text. */
+export function redactKnownSecrets(text: string): string {
+  if (knownSecrets.size === 0) return text;
+  return redactSentCredentials(text, { user: '', secrets: [...knownSecrets] });
+}

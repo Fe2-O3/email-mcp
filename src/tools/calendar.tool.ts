@@ -17,6 +17,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { CALENDAR_ATTACHMENTS_DIR } from '../config/xdg.js';
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type CalendarService from '../services/calendar.service.js';
 import type ImapService from '../services/imap.service.js';
 import type LocalCalendarService from '../services/local-calendar.service.js';
@@ -63,15 +64,17 @@ export default function registerCalendarTools(
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(
-                {
-                  email_subject: email.subject,
-                  events: [],
-                  count: 0,
-                  message: 'No calendar/ICS content found in this email',
-                },
-                null,
-                2,
+              text: delimitUntrusted(
+                JSON.stringify(
+                  {
+                    email_subject: email.subject,
+                    events: [],
+                    count: 0,
+                    message: 'No calendar/ICS content found in this email',
+                  },
+                  null,
+                  2,
+                ),
               ),
             },
           ],
@@ -84,10 +87,13 @@ export default function registerCalendarTools(
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(
-              { email_subject: email.subject, events, count: events.length },
-              null,
-              2,
+            // Title, location, attendees and description are the sender's text: fenced.
+            text: delimitUntrusted(
+              JSON.stringify(
+                { email_subject: email.subject, events, count: events.length },
+                null,
+                2,
+              ),
             ),
           },
         ],
@@ -281,17 +287,17 @@ export default function registerCalendarTools(
         );
 
         // 7. Build response
-        const details: Record<string, unknown> = {
-          status: result.status,
-          message: result.message,
-        };
+        // The status and hint are ours. The message, the existing event and the new event's
+        // fields carry the email's subject, location, link and file names, so they are fenced.
+        const details: Record<string, unknown> = { status: result.status };
+        const fromEmail: Record<string, unknown> = { message: result.message };
         if (result.status === 'duplicate') {
-          details.duplicate = result.duplicate;
+          fromEmail.duplicate = result.duplicate;
           details.hint =
             'Event already exists. Use skipDuplicateCheck or update the existing event.';
         }
         if (result.status === 'added') {
-          details.event = {
+          fromEmail.event = {
             title: email.subject,
             start: eventStart.toISOString(),
             end: eventEnd.toISOString(),
@@ -310,7 +316,12 @@ export default function registerCalendarTools(
         }
 
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(details, null, 2) }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `${JSON.stringify(details, null, 2)}\n${delimitUntrusted(JSON.stringify(fromEmail, null, 2))}`,
+            },
+          ],
         };
       },
     );
@@ -468,7 +479,15 @@ export default function registerCalendarTools(
         );
       });
 
-      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+      // Event titles can come from an invite or from add_to_calendar using an email subject.
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `${lines[0]}\n${delimitUntrusted(lines.slice(2).join('\n'))}`,
+          },
+        ],
+      };
     },
   );
 
@@ -539,7 +558,14 @@ export default function registerCalendarTools(
         );
       });
 
-      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `${lines[0]}\n${delimitUntrusted(lines.slice(2).join('\n'))}`,
+          },
+        ],
+      };
     },
   );
 
@@ -721,18 +747,22 @@ export default function registerCalendarTools(
         recommendation = 'none';
       }
 
-      const analysis = {
-        emailId,
+      // Everything taken from the email sits in one fenced object. The tool's own verdict and
+      // instructions stay outside it, so email text can never pass as an instruction.
+      const fromEmail = {
         subject: email.subject,
         from: email.from.address,
         date: email.date,
-        attachmentCount: email.attachments.length,
-        recommendation,
-        alreadyAutoProcessed: alreadyProcessed,
         autoProcessedEntry: processedEntry?.entry ?? null,
         detectedEvent,
         detectedReminder,
         conferenceDetails: conference ?? null,
+      };
+      const analysis = {
+        emailId,
+        attachmentCount: email.attachments.length,
+        recommendation,
+        alreadyAutoProcessed: alreadyProcessed,
         availableActions: {
           add_to_calendar: detectedEvent !== null || meetingUrl !== undefined,
           create_reminder: detectedReminder !== null,
@@ -751,7 +781,12 @@ export default function registerCalendarTools(
       };
 
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(analysis, null, 2) }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `${JSON.stringify(analysis, null, 2)}\n\nDetails taken from the email:\n${delimitUntrusted(JSON.stringify(fromEmail, null, 2))}`,
+          },
+        ],
       };
     },
   );

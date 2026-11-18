@@ -16,7 +16,7 @@ import eventBus from '../services/event-bus.js';
 import type OAuthService from '../services/oauth.service.js';
 import type { AccountConfig } from '../types/index.js';
 import { createImapClient, imapClientOptions } from '../utils/imap-client.js';
-import { redactedError, sentCredentials } from './credential-redaction.js';
+import { redactedError, registerKnownSecrets, sentCredentials } from './credential-redaction.js';
 import type { IConnectionManager } from './types.js';
 
 type SmtpAuth =
@@ -81,6 +81,7 @@ export default class ConnectionManager implements IConnectionManager {
   constructor(accounts: AccountConfig[], oauthService?: OAuthService) {
     accounts.forEach((account) => {
       this.accounts.set(account.name, account);
+      registerKnownSecrets(account);
     });
     this.oauthService = oauthService;
   }

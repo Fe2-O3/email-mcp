@@ -251,7 +251,7 @@ export default class SmtpService {
       options.allowDuplicate,
     );
     const { mailOptions, warnings } = await this.composeReply(accountName, options);
-    const plan = SmtpService.describeMail('send this reply', mailOptions);
+    const plan = SmtpService.describeMail('send this reply', mailOptions, true);
     plan.notes.push(...warnings.map((w) => `Warning: ${w}`));
     return plan;
   }
@@ -363,7 +363,7 @@ export default class SmtpService {
     this.assertRateLimitAvailable(accountName);
     this.peekDuplicate(SmtpService.forwardKey(accountName, options), options.allowDuplicate);
     const mailOptions = await this.composeForward(accountName, options);
-    return SmtpService.describeMail('forward this email', mailOptions);
+    return SmtpService.describeMail('forward this email', mailOptions, true);
   }
 
   private async composeForward(
@@ -480,7 +480,12 @@ export default class SmtpService {
   }
 
   /** Turn a composed message into a dry-run report. Nothing in it is sent. */
-  private static describeMail(verb: string, mail: Record<string, unknown>): DryRunPlan {
+  private static describeMail(
+    verb: string,
+    mail: Record<string, unknown>,
+    /** True when the text comes from an existing email, not from the caller. */
+    derivedFromMessage = false,
+  ): DryRunPlan {
     const list = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
     const from = mail.from as string | { name?: string; address: string };
     const fromText = typeof from === 'string' ? from : from.address;
@@ -489,7 +494,7 @@ export default class SmtpService {
       content: string;
     }>;
     const bodyText = String(mail.html ?? mail.text ?? '');
-    const notes = [
+    const lines = [
       `From: ${fromText}`,
       `To: ${list(mail.to) ?? '(none)'}`,
       ...(list(mail.cc) ? [`Cc: ${list(mail.cc)}`] : []),
@@ -502,7 +507,11 @@ export default class SmtpService {
           `Attachment: ${a.filename ?? '(unnamed)'}, ${Buffer.from(a.content, 'base64').length} bytes`,
       ),
     ];
-    return { summary: `Would ${verb}.`, notes };
+    // A reply, forward or draft is built from an existing email: its subject, addresses and
+    // file names are the sender's text, so they are handed on as fenced lines, not notes.
+    return derivedFromMessage
+      ? { summary: `Would ${verb}.`, notes: [], fromMessage: lines }
+      : { summary: `Would ${verb}.`, notes: lines };
   }
 
   private sendLimitMb(account: ReturnType<IConnectionManager['getAccount']>): number {
@@ -725,7 +734,7 @@ export default class SmtpService {
     if (!mailOptions.to && !mailOptions.cc && !mailOptions.bcc) {
       throw new Error(`Draft ${draftId} has no recipients. Add some before sending it.`);
     }
-    const plan = SmtpService.describeMail('send this draft', mailOptions);
+    const plan = SmtpService.describeMail('send this draft', mailOptions, true);
     plan.notes.push(`The draft would then be moved from "${draftsPath}" to Trash.`);
     return plan;
   }

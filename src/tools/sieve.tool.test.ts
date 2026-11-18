@@ -482,9 +482,9 @@ describe('sieve_delete_script', () => {
     const { call } = await setup(
       {
         live: 'keep;',
-        [`imapwiz-backup-20260101T000000Z-live`]: 'keep;',
-        [`imapwiz-backup-20260102T000000Z-gone`]: 'stop;',
-        [`imapwiz-backup-20260103T000000Z-gone`]: 'stop;',
+        'imapwiz-backup-20260101T000000Z-live': 'keep;',
+        'imapwiz-backup-20260102T000000Z-gone': 'stop;',
+        'imapwiz-backup-20260103T000000Z-gone': 'stop;',
       },
       null,
     );

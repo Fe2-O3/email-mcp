@@ -1,3 +1,5 @@
+import ConnectionManager from '../connections/manager.js';
+import type { AccountConfig } from '../types/index.js';
 import { imapCommand, isConnectivityError } from './imap-error.js';
 
 /** ImapFlow throws Error('Command failed') and puts the detail on `.response`. */
@@ -56,6 +58,34 @@ describe('imapCommand', () => {
     });
 
     await expect(run).rejects.toThrow(/something unparseable/);
+  });
+});
+
+describe('imapCommand redaction', () => {
+  it('cuts a configured password out of the server text, in the clear or as base64', async () => {
+    const password = 'correct-horse-battery';
+    // The manager remembers every configured account's secrets.
+    new ConnectionManager([
+      {
+        name: 'x',
+        email: 'x@example.test',
+        username: 'x@example.test',
+        password,
+        imap: { host: 'h', port: 993, tls: true, starttls: false, verifySsl: true },
+        smtp: { host: 'h', port: 465, tls: true, starttls: false, verifySsl: true },
+      } as AccountConfig,
+    ]);
+    const echoed = Buffer.from(password).toString('base64');
+    const run = imapCommand('Opening mailbox "X"', async () => {
+      throw rejection(`3 NO denied for ${password}; blob ${echoed}`);
+    });
+    const error = await run.then(
+      () => undefined,
+      (e: Error) => e,
+    );
+    expect(error?.message).toMatch(/^Opening mailbox "X" rejected by server: denied for /);
+    expect(error?.message).not.toContain(password);
+    expect(error?.message).not.toContain(echoed);
   });
 });
 

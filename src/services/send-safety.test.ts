@@ -214,7 +214,8 @@ describe('reply recipients', () => {
   it('the dry run shows the warning too', async () => {
     const { svc } = makeService();
     const plan = await svc.previewReply('w', { emailId: '5', body: 'hi' });
-    expect(plan.notes.join('\n')).toMatch(/To: attacker@evil\.invalid/);
+    // The addresses came from the original email, so they travel as fenced lines.
+    expect((plan.fromMessage ?? []).join('\n')).toMatch(/To: attacker@evil\.invalid/);
     expect(plan.notes.join('\n')).toMatch(/Warning: .*different domain/);
   });
 });

@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { AppConfig } from '../types/index.js';
-import { resolveAccount, runEmailCommandWithServices } from './email-commands.js';
+import { stripControlChars } from '../utils/sanitize-text.js';
+import { formatEmail, resolveAccount, runEmailCommandWithServices } from './email-commands.js';
 
 const config = {
   accounts: [
@@ -119,5 +120,27 @@ describe('email CLI', () => {
     expect(deleteEmail).not.toHaveBeenCalled();
     expect(setFlags).not.toHaveBeenCalled();
     expect(getEmail).not.toHaveBeenCalled();
+  });
+
+  it('prints no terminal control codes from the message: not in headers, body or file names', () => {
+    const text = formatEmail({
+      id: '1',
+      messageId: '<a@b>',
+      subject: 'Hi\u001b]0;pwned\u0007 there\u009b',
+      from: { name: 'Eve\u202e', address: 'eve@example.test\u001b[2J' },
+      to: [{ address: 'me@example.test' }],
+      cc: [{ address: 'x@example.test\u0000' }],
+      date: '2026-01-01T00:00:00Z',
+      seen: true,
+      flagged: false,
+      answered: false,
+      labels: [],
+      attachments: [{ filename: 'a\u001b[31m.pdf', mimeType: 'application/pdf', size: 10 }],
+      bodyText: 'line one\n\tindented \u001b[1A\u001b[2Koverwrite \u009b\u202e end',
+    } as never);
+    // Nothing but plain layout characters is left: cleaning it again changes nothing.
+    expect(stripControlChars(text, true)).toBe(text);
+    expect(text).toContain('line one\n\tindented ');
+    expect(text).toContain('Subject: Hi]0;pwned there');
   });
 });

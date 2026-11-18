@@ -286,6 +286,8 @@ export interface DryRunPlan {
   summary: string;
   /** Things worth knowing before running it for real. */
   notes: string[];
+  /** Lines copied from an email (subject, addresses, file names): shown fenced as untrusted text. */
+  fromMessage?: string[];
 }
 
 export interface SendResult {

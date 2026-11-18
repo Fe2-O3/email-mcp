@@ -4,7 +4,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { delimitUntrusted } from '../safety/untrusted-content.js';
+import { delimitUntrusted, UNTRUSTED_STRUCTURED } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 import type { Email, EmailMeta } from '../types/index.js';
 import { formatBulk } from '../utils/bulk-headers.js';
@@ -183,6 +183,7 @@ export default function registerEmailsTools(
               hasMore: false,
               count: 0,
               emails: [],
+              ...UNTRUSTED_STRUCTURED,
             },
           };
         }
@@ -204,6 +205,7 @@ export default function registerEmailsTools(
             hasMore: result.hasMore,
             count: result.items.length,
             emails: result.items,
+            ...UNTRUSTED_STRUCTURED,
           },
         };
       } catch (err) {
@@ -267,6 +269,12 @@ export default function registerEmailsTools(
     },
     async ({ account, emailId, mailbox, format, maxLength, markRead }) => {
       try {
+        // markRead is a write even though get_email is otherwise a read. On a read-only
+        // server it is refused up front, from the flag this server was built with: the
+        // config is not re-read, so a failed re-read can never let the write through.
+        if (markRead && readOnly) {
+          throw new Error('markRead is not allowed in read-only mode');
+        }
         const email = await imapService.getEmail(account, emailId, mailbox);
 
         const notice = offlineNotice(email);
@@ -311,14 +319,6 @@ export default function registerEmailsTools(
         parts.push('', '--- Body ---', '', body);
 
         if (markRead) {
-          // markRead is a write even though get_email is otherwise a read.
-          // In read-only mode it must be refused, not silently ignored.
-          const config = await import('../config/loader.js').then((m) =>
-            m.loadConfig().catch(() => null),
-          );
-          if (config?.settings.readOnly) {
-            throw new Error('markRead is not allowed in read-only mode');
-          }
           await imapService.setFlags(account, emailId, mailbox, 'read');
         }
 
@@ -330,7 +330,12 @@ export default function registerEmailsTools(
               text: `${notice ? `${notice}\n\n` : ''}${delimitUntrusted(parts.join('\n'))}`,
             },
           ],
-          structuredContent: { account, mailbox, ...toEmailDetail(email, emailId, body) },
+          structuredContent: {
+            account,
+            mailbox,
+            ...toEmailDetail(email, emailId, body),
+            ...UNTRUSTED_STRUCTURED,
+          },
         };
       } catch (err) {
         return {
@@ -459,6 +464,7 @@ export default function registerEmailsTools(
           count: details.length,
           emails: details,
           errors: failures,
+          ...UNTRUSTED_STRUCTURED,
         },
       };
     },
@@ -493,14 +499,19 @@ export default function registerEmailsTools(
         if (flags.flagged) statusParts.push('⭐ Flagged');
         if (flags.answered) statusParts.push('↩️ Replied');
 
+        // Subject, sender and labels come from the message and the server: fenced.
         const lines = [
           `📊 Email Status`,
           `ID:      ${emailId} | Mailbox: ${mailbox}`,
-          `Subject: ${flags.subject}`,
-          `From:    ${flags.from}`,
           `Date:    ${flags.date}`,
           `Status:  ${statusParts.join(' · ')}`,
-          `Labels:  ${flags.labels.length > 0 ? flags.labels.join(', ') : '(none)'}`,
+          delimitUntrusted(
+            [
+              `Subject: ${flags.subject}`,
+              `From:    ${flags.from}`,
+              `Labels:  ${flags.labels.length > 0 ? flags.labels.join(', ') : '(none)'}`,
+            ].join('\n'),
+          ),
         ];
 
         return {
@@ -515,6 +526,7 @@ export default function registerEmailsTools(
             flagged: flags.flagged,
             answered: flags.answered,
             labels: flags.labels,
+            ...UNTRUSTED_STRUCTURED,
           },
         };
       } catch (err) {
@@ -603,6 +615,7 @@ export default function registerEmailsTools(
               hasMore: false,
               count: 0,
               emails: [],
+              ...UNTRUSTED_STRUCTURED,
             },
           };
         }
@@ -624,6 +637,7 @@ export default function registerEmailsTools(
             hasMore: result.hasMore,
             count: result.items.length,
             emails: result.items,
+            ...UNTRUSTED_STRUCTURED,
           },
         };
       } catch (err) {

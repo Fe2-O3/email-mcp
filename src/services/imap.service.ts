@@ -37,9 +37,11 @@ import {
   type AuthSignals,
   extractAuthenticationResults,
   parseAuthSignals,
+  selectTrustedAuthResults,
 } from '../utils/auth-results.js';
 import { BULK_HEADER_FIELDS, classifyBulk, parseHeaderBlock } from '../utils/bulk-headers.js';
 import { imapCommand, isConnectivityError } from '../utils/imap-error.js';
+import { sanitizeInline } from '../utils/sanitize-text.js';
 import { assertUid, assertUidPresent, parseUid, presentUids } from '../utils/uid.js';
 import type { ReconnectEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
@@ -68,9 +70,10 @@ export function toCrlf(raw: string | Buffer | Uint8Array): Buffer {
 // ---------------------------------------------------------------------------
 
 function parseAddress(addr: { name?: string; address?: string } | undefined): EmailAddress {
+  // Names and addresses come from the sender: one clean line each, no control or bidi characters.
   return {
-    name: addr?.name ?? undefined,
-    address: addr?.address ?? 'unknown',
+    name: addr?.name ? sanitizeInline(addr.name) : (addr?.name ?? undefined),
+    address: sanitizeInline(addr?.address ?? 'unknown', 320),
   };
 }
 
@@ -244,17 +247,7 @@ export function messageToEmailMeta(msg: Record<string, unknown>): EmailMeta {
     );
   }
 
-  const sanitizeUntrusted = (s: string): string => {
-    const out = s.split('\r').join(' ').split('\n').join(' ');
-    // Strip C0 controls and DEL without a regex containing them
-    let clean = '';
-    for (const ch of out) {
-      const code = ch.charCodeAt(0);
-      if (code <= 0x1f || code === 0x7f) continue;
-      clean += ch;
-    }
-    return clean.slice(0, 500);
-  };
+  const sanitizeUntrusted = (s: string): string => sanitizeInline(s);
   return {
     id: String(msg.uid),
     messageId: (envelope.messageId as string) ?? '',
@@ -1061,8 +1054,8 @@ export default class ImapService {
       let from = '';
       if (fromEntry) {
         from = fromEntry.name
-          ? `${fromEntry.name} <${fromEntry.address}>`
-          : (fromEntry.address ?? '');
+          ? `${sanitizeInline(fromEntry.name)} <${sanitizeInline(fromEntry.address ?? '')}>`
+          : sanitizeInline(fromEntry.address ?? '');
       }
 
       return {
@@ -1070,7 +1063,7 @@ export default class ImapService {
         flagged: flags.has('\\Flagged'),
         answered: flags.has('\\Answered'),
         labels,
-        subject: (envelope.subject as string) ?? '(no subject)',
+        subject: sanitizeInline((envelope.subject as string) ?? '(no subject)'),
         from,
         date: safeIsoDate(envelope.date) ?? (envelope.date ? DATE_UNKNOWN : ''),
       };
@@ -2047,7 +2040,15 @@ export default class ImapService {
     accountName: string,
     emailId: string,
     mailbox = 'INBOX',
-  ): Promise<AuthSignals & { from?: string; replyTo?: string; returnPath?: string }> {
+  ): Promise<
+    AuthSignals & {
+      from?: string;
+      replyTo?: string;
+      returnPath?: string;
+      /** Authentication-Results headers that were not trusted (the sender may have written them). */
+      unverified: string[];
+    }
+  > {
     const uid = parseUid(emailId);
     const client = await this.connections.getImapClient(accountName);
 
@@ -2061,19 +2062,26 @@ export default class ImapService {
       if (!msg) throw new Error(`Email ${emailId} not found in ${mailbox}`);
 
       const headerBlock = Buffer.isBuffer(msg.headers) ? msg.headers.toString('utf-8') : '';
-      const values = extractAuthenticationResults(headerBlock);
-      const signals = parseAuthSignals(values);
+      const account = this.connections.getAccount(accountName);
+      // Believe the topmost header (the receiving server adds its own last, on top) and
+      // headers from this account's own mail hosts. A sender can add headers of its own.
+      const { trusted, unverified } = selectTrustedAuthResults(
+        extractAuthenticationResults(headerBlock),
+        [account.imap.host, account.smtp.host],
+      );
+      const signals = parseAuthSignals(trusted);
 
       const headerValue = (key: string): string | undefined => {
         const re = new RegExp(`^${key}:[ \\t]*(.*)$`, 'im');
         const m = re.exec(headerBlock);
-        return m ? m[1].trim() : undefined;
+        return m ? sanitizeInline(m[1].trim()) : undefined;
       };
 
       return {
         ...signals,
         replyTo: headerValue('reply-to'),
         returnPath: headerValue('return-path'),
+        unverified: unverified.map((v) => sanitizeInline(v, 300)),
       };
     } finally {
       lock.release();
@@ -3185,9 +3193,10 @@ export default class ImapService {
           if (existing) {
             existing.count += 1;
           } else {
+            // Sender-chosen text: one clean line, names cut to 100 characters.
             senderMap.set(key, {
-              email: fromList[0].address,
-              name: fromList[0].name,
+              email: sanitizeInline(fromList[0].address, 320),
+              name: fromList[0].name ? sanitizeInline(fromList[0].name, 100) : fromList[0].name,
               count: 1,
             });
           }

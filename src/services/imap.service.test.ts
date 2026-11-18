@@ -871,3 +871,47 @@ describe('ImapService', () => {
     });
   });
 });
+
+describe('getEmailSecurity: whose Authentication-Results to believe', () => {
+  async function securityOf(headers: string) {
+    const client = createMockImapClient();
+    client.fetchOne.mockResolvedValue({ uid: 5, headers: Buffer.from(headers) });
+    const service = new ImapService(createMockConnectionManager(client));
+    try {
+      return await service.getEmailSecurity('test', '5', 'INBOX');
+    } finally {
+      service.dispose();
+    }
+  }
+
+  it('a forged pass below the real fail does not make the verdict pass', async () => {
+    const result = await securityOf(
+      [
+        'Authentication-Results: mx.receiver.example; spf=fail; dkim=none; dmarc=fail',
+        'Authentication-Results: evil.example; spf=pass; dkim=pass; dmarc=pass',
+        'Subject: hi',
+      ].join('\r\n'),
+    );
+    expect(result).toMatchObject({ spf: 'fail', dkim: 'none', dmarc: 'fail' });
+    expect(result.unverified).toEqual(['evil.example; spf=pass; dkim=pass; dmarc=pass']);
+  });
+
+  it("also believes a header written by the account's own mail host", async () => {
+    const result = await securityOf(
+      [
+        'Authentication-Results: mx.relay.example; spf=pass',
+        'Authentication-Results: imap.example.com; dkim=pass; dmarc=pass',
+        'Authentication-Results: evil.example; dmarc=fail',
+      ].join('\r\n'),
+    );
+    expect(result).toMatchObject({ spf: 'pass', dkim: 'pass', dmarc: 'pass' });
+    expect(result.unverified).toHaveLength(1);
+  });
+
+  it('cleans control characters out of the text it returns', async () => {
+    const result = await securityOf(
+      'Authentication-Results: a; spf=pass\r\nReply-To: x@y.example\u009b[31m\r\n',
+    );
+    expect(result.replyTo).toBe('x@y.example[31m');
+  });
+});

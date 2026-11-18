@@ -17,7 +17,8 @@ const MEETING_PATTERNS: { re: RegExp; label: string }[] = [
   { re: /https?:\/\/[\w-]+\.webex\.com\/meet\/[\w/.-]+/i, label: 'Webex' },
   { re: /https?:\/\/[\w-]+\.webex\.com\/j\.php\?[\w=&%-]+/i, label: 'Webex' },
   { re: /https?:\/\/global\.gotomeeting\.com\/join\/\d+/i, label: 'GoToMeeting' },
-  { re: /https?:\/\/[\w.-]*jitsi\.org\/[\w-]+/i, label: 'Jitsi' },
+  // The host must be jitsi.org or a subdomain, not a name that merely ends in it (evil-jitsi.org).
+  { re: /https?:\/\/(?:[\w-]+\.)*jitsi\.org\/[\w-]+/i, label: 'Jitsi' },
   { re: /https?:\/\/bluejeans\.com\/\d+/i, label: 'BlueJeans' },
   { re: /https?:\/\/whereby\.com\/[\w-]+/i, label: 'Whereby' },
 ];

@@ -9,6 +9,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 
 export default function registerLocateTools(server: McpServer, imapService: ImapService): void {
@@ -71,7 +72,7 @@ export default function registerLocateTools(server: McpServer, imapService: Imap
           lines.push(`Use this as sourceMailbox for move_email or delete_email.`);
         }
         if (messageId) {
-          lines.push(`Message-ID: ${messageId}`);
+          lines.push(delimitUntrusted(`Message-ID: ${messageId}`));
         }
 
         return {

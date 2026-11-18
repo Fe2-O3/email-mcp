@@ -5,6 +5,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import type ImapService from '../services/imap.service.js';
 
 export default function registerContactsTools(server: McpServer, imapService: ImapService): void {
@@ -38,7 +39,7 @@ export default function registerContactsTools(server: McpServer, imapService: Im
           content: [
             {
               type: 'text' as const,
-              text: `Found ${contacts.length} unique contacts from ${limit} recent emails:\n\n${JSON.stringify(contacts, null, 2)}`,
+              text: `Found ${contacts.length} unique contacts from ${limit} recent emails:\n\n${delimitUntrusted(JSON.stringify(contacts, null, 2))}`,
             },
           ],
         };
