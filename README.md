@@ -2,7 +2,7 @@
 
 # IMAP Wizard
 
-<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 50 core tools plus an opt-in verification tool, 588 tests green, 18 upstream bugs fixed" width="100%">
+<img src="docs/assets/banner.svg" alt="IMAP Wizard: email MCP server with 51 core tools plus an opt-in verification tool, 912 tests green, 18 upstream bugs fixed" width="100%">
 
 **Give your AI assistant your email, on your terms.**
 A local [MCP](https://modelcontextprotocol.io) server that lets Claude, Codex,
@@ -11,8 +11,8 @@ over plain IMAP and SMTP. No cloud service in the middle.
 
 [![release](https://img.shields.io/github/v/release/Fe2-O3/imap-wizard?label=release&color=8B5CF6&style=flat-square)](https://github.com/Fe2-O3/imap-wizard/releases)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-588%20passing-22c55e?style=flat-square)](#development)
-[![Node.js 24+](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![tests](https://img.shields.io/badge/tests-912%20passing-22c55e?style=flat-square)](#development)
+[![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![MCP SDK v2](https://img.shields.io/badge/MCP-SDK%20v2-8B5CF6?style=flat-square)](https://modelcontextprotocol.io)
 
 <a href="#quick-start">Quick start</a> ·
@@ -37,7 +37,7 @@ over plain IMAP and SMTP. No cloud service in the middle.
 
 ## Quick start
 
-You need **Node.js 24+**.
+You need **Node.js 22.13+** (24 recommended).
 
 ```bash
 npx -y imap-wizard account add   # wizard; auto-detects common providers
@@ -130,7 +130,11 @@ Setup for other clients is under [More clients](#more-clients).
 | HTTP transport token | required | `http` mode generates a bearer token, even on loopback |
 | Verification-code tool | off | `get_verification_code` is only registered when you enable it; it never reads your clipboard |
 | Encrypted logins | enforced | A config with `tls = false` and `starttls = false` to a non-loopback host is refused at load. Credentials in server error text are replaced with `[redacted]` |
-| Body cache (`read_through`) | **off** | Message bodies are only stored on disk if you turn it on. [Details](#local-body-cache-opt-in-unreleased) |
+| Untrusted-content markers | always | Email text in tool output is wrapped in `<<<UNTRUSTED_EXTERNAL_CONTENT>>>` markers that tell the model it is data, not instructions |
+| Safe file saving | always | `download_attachment` and `export_email` save only to absolute paths, never overwrite an existing file, and refuse system folders, hidden folders, the home folder itself and this app's own folders |
+| Protected mailboxes | always | `delete_mailbox` and `rename_mailbox` refuse INBOX, Sent, Drafts, Trash, Junk and archive folders |
+| Smaller tool list | `toolset = "full"` | `"core"` (21 tools) or `"minimal"` (8 tools) sends the model fewer tools; useful for local models |
+| Body cache (`read_through`) | **off** | Message bodies are only stored on disk if you turn it on. [Details](#local-body-cache-opt-in) |
 
 What is stored on disk by default: your `config.toml` (written owner-only), the
 audit log, and a local SQLite mirror of message **headers and flags** for INBOX
@@ -145,12 +149,22 @@ exploits in public.
 
 ## What it can do
 
-**50 tools** (25 read, 25 write) plus **1 opt-in tool**, **7 prompts** and
-**6 resources**. In read-only mode only the 25 read tools are registered.
+**51 tools** (26 read, 25 write) plus **1 opt-in tool**, **7 prompts** and
+**6 resources**. In read-only mode only the 26 read tools are registered.
+
+Fewer tools, if your client or model struggles with a long list:
+
+| `settings.toolset` | Tools (write mode / read-only) | What's in it |
+|---|---|---|
+| `"full"` (default) | 51 / 26 | Everything below |
+| `"core"` | 21 / 10 | Minimal, plus `get_emails`, mark, move, delete, labels, drafts, `forward_email`, `download_attachment`, `export_email` |
+| `"minimal"` | 8 / 6 | `list_accounts` `list_mailboxes` `list_emails` `search_emails` `get_email` `get_thread` `send_email` `reply_email` |
+
+Prompts and resources are available in every toolset. Env var: `MCP_EMAIL_TOOLSET`.
 
 | Group | Tools |
 |---|---|
-| **Read mail** | `list_accounts` `list_mailboxes` `list_emails` `search_emails` `get_email` `get_emails` `get_email_status` `get_thread` `download_attachment` `find_email_folder` `extract_contacts` `get_email_stats` `get_email_security` `check_health` `list_templates` |
+| **Read mail** | `list_accounts` `list_mailboxes` `list_emails` `search_emails` `get_email` `get_emails` `get_email_status` `get_thread` `download_attachment` `export_email` `find_email_folder` `extract_contacts` `get_email_stats` `get_email_security` `check_health` `list_templates` |
 | **Calendar (read)** | `extract_calendar` `analyze_email_for_scheduling` `list_calendars` `list_events` `list_reminders` `check_calendar_permissions` |
 | **Watcher (read)** | `get_watcher_status` `list_presets` `get_hooks_config` `check_notification_setup` |
 | **Send** *(write)* | `send_email` `reply_email` `forward_email` `save_draft` `send_draft` `apply_template` |
@@ -186,6 +200,7 @@ prints it). The `account add` wizard writes it for you. A typical file:
 ```toml
 [settings]
 read_only = false   # true hides every write tool
+toolset = "full"    # "core" or "minimal" for a shorter tool list
 rate_limit = 10     # max sends per minute per account
 
 [[accounts]]
@@ -445,12 +460,12 @@ request bodies. See the [CHANGELOG](CHANGELOG.md).
 pnpm install
 pnpm check             # Biome lint and format
 pnpm typecheck
-pnpm test              # unit tests (588 across 68 files)
+pnpm test              # unit tests (912 across 88 files)
 pnpm test:integration  # against a throwaway GreenMail server (needs Docker)
 pnpm smoke             # every tool against a real configured account
 ```
 
-`package.json` requires Node 24+. Contributions: see
+`package.json` requires Node 22.13+; development and CI use Node 24. Contributions: see
 [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 

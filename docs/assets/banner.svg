@@ -47,10 +47,10 @@
   <!-- stat chips -->
   <g font-family="'Segoe UI',Helvetica,Arial,sans-serif" font-size="20" font-weight="600">
     <rect x="254" y="220" width="160" height="44" rx="22" fill="#ffffff" fill-opacity="0.12" stroke="#fbbf24" stroke-width="2"/>
-    <text x="334" y="249" text-anchor="middle" fill="#fde68a">50 tools</text>
+    <text x="334" y="249" text-anchor="middle" fill="#fde68a">51 tools</text>
 
     <rect x="430" y="220" width="205" height="44" rx="22" fill="#ffffff" fill-opacity="0.12" stroke="#22d3ee" stroke-width="2"/>
-    <text x="532" y="249" text-anchor="middle" fill="#a5f3fc">588 tests green</text>
+    <text x="532" y="249" text-anchor="middle" fill="#a5f3fc">912 tests green</text>
 
     <rect x="651" y="220" width="300" height="44" rx="22" fill="#ffffff" fill-opacity="0.12" stroke="#e879f9" stroke-width="2"/>
     <text x="801" y="249" text-anchor="middle" fill="#f5d0fe">18 upstream bugs fixed</text>

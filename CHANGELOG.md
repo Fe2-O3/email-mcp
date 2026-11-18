@@ -8,6 +8,36 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-11-18
+
+### Added
+
+- `settings.toolset` (`"full"` default, `"core"`, `"minimal"`; env `MCP_EMAIL_TOOLSET`) sends the model a shorter tool list: 8 tools in minimal, 21 in core. Prompts and resources stay in every toolset. Grouping idea from Mailoo by Bitfloo.
+- `export_email` saves a message's raw source as a `.eml` file (or returns it inline up to 5 MB). Reads with `BODY.PEEK`, so it never marks mail read. Tool shape from Mailoo by Bitfloo.
+- Output schemas and structured results for `get_email`, `get_emails`, `get_thread` and `list_accounts`, so clients that generate typed tool libraries ("code mode") work better.
+- Releases publish themselves: pushing a version tag runs `.github/workflows/release.yml`, which publishes to npm (trusted publishing with provenance), the MCP Registry, a multi-arch Docker image at `ghcr.io/fe2-o3/imap-wizard`, and the GitHub release.
+
+### Security
+
+- Email text in tool output (`get_email`, `get_emails`, `get_thread`, list and search previews) is wrapped in untrusted-content markers so a message cannot pass itself off as instructions. Structured results stay raw. Adapted from Mailoo by Bitfloo.
+- `download_attachment`'s `savePath` no longer overwrites existing files or accepts relative paths. Saved files (attachments, exports, `saveEmailAttachments`) are refused in system folders, hidden folders, the home folder root and this app's own folders, including through symlinks. Path guard adapted from Mailoo by Bitfloo.
+- `delete_mailbox` and `rename_mailbox` refuse INBOX and special-use folders (Sent, Drafts, Trash, Junk, Archive). Adapted from Mailoo by Bitfloo.
+- Tool annotations are honest: `download_attachment` and `export_email` (write local files) and `get_email` with `markRead` are no longer marked read-only. They remain available in read-only mode as before.
+
+### Fixed
+
+- Waiting for a mailbox lock is bounded at 60 seconds; a stuck connection is closed and redialled instead of freezing later calls. Adapted from Mailoo by Bitfloo.
+- Read-only mode now closes IMAP connections and the cache on shutdown, like write mode.
+
+### Changed
+
+- Node.js 22.13 or newer is supported (was 24+).
+- Removed the unused GoReleaser configuration.
+
+### Docs
+
+- `docs/dev/sieve-plan.md`: plan for server-side filter rules (Sieve), including which providers support it.
+
 ## [0.3.2] — 2026-11-17
 
 ### Security
@@ -116,6 +146,7 @@ First release of the hardened fork: **84 commits** past the fork point, **428 te
 - README rewritten: client guides (Claude Desktop/Code, Cursor, VS Code, Codex, OpenCode, HTTP), version history links, comparison with upstream
 - Test suite grew to **428** tests (55 files), including stdio lifecycle (stdin close + idle exit) and the ported validator
 
+[0.3.3]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Fe2-O3/imap-wizard/releases/tag/v0.3.0
