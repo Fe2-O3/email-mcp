@@ -11,6 +11,7 @@ import type CalendarService from '../services/calendar.service.js';
 import type HooksService from '../services/hooks.service.js';
 import type ImapService from '../services/imap.service.js';
 import type LocalCalendarService from '../services/local-calendar.service.js';
+import { LocalRulesStore } from '../services/local-rules.service.js';
 import type RemindersService from '../services/reminders.service.js';
 import type SchedulerService from '../services/scheduler.service.js';
 import SieveService from '../services/sieve.service.js';
@@ -24,6 +25,8 @@ import type { AppConfig } from '../types/index.js';
 export interface ToolExtras {
   /** ManageSieve client. Pass one with an OAuth token source in production. */
   sieveService?: SieveService;
+  /** Where local rules are stored (the data directory by default, never config.toml). */
+  localRulesStore?: LocalRulesStore;
 }
 
 import registerAccountsTools from './accounts.tool.js';
@@ -38,6 +41,7 @@ import registerExportTools from './export.tool.js';
 import registerFolderTools from './folders.tool.js';
 import registerHealthTools from './health.tool.js';
 import registerLabelTools from './label.tool.js';
+import { registerLocalRulesReadTools, registerLocalRulesWriteTools } from './local-rules.tool.js';
 import registerLocateTools from './locate.tool.js';
 import registerMailboxesTools from './mailboxes.tool.js';
 import registerManageTools from './manage.tool.js';
@@ -102,6 +106,8 @@ export default function registerAllTools(
   registerWatcherReadTools(server, watcherService, hooksService);
   // Only in the full toolset: no core/minimal list names them.
   registerSieveReadTools(server, connections, sieveManager);
+  const localRulesStore = extras.localRulesStore ?? new LocalRulesStore();
+  registerLocalRulesReadTools(server, localRulesStore, config);
   if (config.settings.verification.enabled) {
     // Explicit opt-in, so it is registered in every toolset.
     registerVerificationTool(fullServer, imapService, config);
@@ -119,5 +125,6 @@ export default function registerAllTools(
     registerSchedulerTools(server, schedulerService);
     registerWatcherWriteTools(server, hooksService);
     registerSieveWriteTools(server, connections, sieveManager);
+    registerLocalRulesWriteTools(server, localRulesStore, connections, imapService, config);
   }
 }

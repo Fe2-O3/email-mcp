@@ -12,10 +12,12 @@
 import type { Server } from '@modelcontextprotocol/server';
 import { mcpLog } from '../logging.js';
 import type { EmailMeta, HookRule, HooksConfig } from '../types/index.js';
+import { matchesPattern } from '../utils/glob-match.js';
 import type { NewEmailEvent } from './event-bus.js';
 import eventBus from './event-bus.js';
 import type ImapService from './imap.service.js';
 import LocalCalendarService from './local-calendar.service.js';
+import type LocalRulesService from './local-rules.service.js';
 import type { AlertPayload, UrgencyLevel } from './notifier.service.js';
 import NotifierService from './notifier.service.js';
 
@@ -70,32 +72,6 @@ interface RuleNoMatch {
 type StaticMatchOutcome = RuleMatchResult | RuleNoMatch;
 
 // ---------------------------------------------------------------------------
-// Pattern matching helpers
-// ---------------------------------------------------------------------------
-
-/** Convert a glob-like pattern (with `*` wildcards and `|` OR) to a RegExp. */
-function globToRegex(pattern: string): RegExp {
-  const parts = pattern
-    .split('|')
-    .map((p) => p.trim())
-    .filter(Boolean);
-  const regexParts = parts.map((part) => {
-    const escaped = part.replace(/[.+?^${}()[\]\\]/g, '\\$&');
-    return escaped.replace(/\*/g, '.*');
-  });
-  return new RegExp(`^(?:${regexParts.join('|')})$`, 'i');
-}
-
-/** Test whether a value matches a glob pattern (case-insensitive). */
-function matchesPattern(pattern: string, value: string): boolean {
-  try {
-    return globToRegex(pattern).test(value);
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // HooksService
 // ---------------------------------------------------------------------------
 
@@ -131,6 +107,8 @@ export default class HooksService {
 
   private readonly localCalendar: LocalCalendarService;
 
+  private localRules: LocalRulesService | null = null;
+
   private static readonly MAX_SAMPLING_PER_MIN = 10;
 
   constructor(config: HooksConfig, imapService: ImapService) {
@@ -147,6 +125,14 @@ export default class HooksService {
   /** Returns the NotifierService instance for direct tool access. */
   getNotifier(): NotifierService {
     return this.notifier;
+  }
+
+  /**
+   * Local rules run first on every batch, before the config.toml rules and AI
+   * triage, and also when on_new_email is "none". Attach before start().
+   */
+  attachLocalRules(localRules: LocalRulesService): void {
+    this.localRules = localRules;
   }
 
   /** Returns the current hooks configuration. */
@@ -166,7 +152,7 @@ export default class HooksService {
   start(lowLevelServer: Server | null): void {
     this.lowLevelServer = lowLevelServer;
 
-    if (this.config.onNewEmail === 'none') return;
+    if (this.config.onNewEmail === 'none' && !this.localRules) return;
 
     this.boundOnNewEmail = (event: NewEmailEvent) => {
       this.onNewEmail(event);
@@ -230,13 +216,17 @@ export default class HooksService {
     this.pendingEmails = [];
     if (batch.length === 0) return;
 
+    // Local rules first: a message they handle (and maybe move) is done.
+    const remaining = this.localRules ? await this.localRules.applyToBatch(batch) : batch;
+    if (this.config.onNewEmail === 'none') return;
+
     await this.sendResourceUpdates(batch);
 
     // Partition: static-rule-matched vs needs-AI-triage
     const ruleMatched: { email: BatchEmail; rule: HookRule }[] = [];
     const needsTriage: BatchEmail[] = [];
 
-    batch.forEach((email) => {
+    remaining.forEach((email) => {
       const outcome = HooksService.matchStaticRules(email, this.config.rules);
       if (outcome.matched) {
         ruleMatched.push({ email, rule: outcome.rule });

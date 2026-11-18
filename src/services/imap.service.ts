@@ -1765,6 +1765,26 @@ export default class ImapService {
   }
 
   /**
+   * The header fields of one message (lowercased names, unfolded values), from a
+   * headers-only fetch. Used by local rules that match on a header.
+   */
+  async getHeaders(
+    accountName: string,
+    emailId: string,
+    mailbox = 'INBOX',
+  ): Promise<Record<string, string>> {
+    const client = await this.connections.getImapClient(accountName);
+    const lock = await ImapService.lockMailbox(client, mailbox);
+    try {
+      const msg = await client.fetchOne(emailId, { uid: true, headers: true }, { uid: true });
+      if (!msg) throw new Error(`Email ${emailId} not found in ${mailbox}`);
+      return Buffer.isBuffer(msg.headers) ? parseHeaderBlock(msg.headers.toString('utf-8')) : {};
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
    * Sender authentication signals for one message, from headers already on
    * the server - a single headers-only fetch, no body round trips.
    */

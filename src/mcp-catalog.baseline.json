@@ -217,6 +217,92 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "properties": {
             "account": {
+              "description": "Account name from list_accounts; omit for every account",
+              "minLength": 1,
+              "type": "string"
+            },
+            "actions": {
+              "description": "What to do: moveTo (folder), labels, flag, markRead, forwardTo (allowlisted address)",
+              "properties": {
+                "flag": {
+                  "type": "boolean"
+                },
+                "forwardTo": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "labels": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "markRead": {
+                  "type": "boolean"
+                },
+                "moveTo": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
+            "match": {
+              "description": "Conditions; all given ones must match",
+              "properties": {
+                "from": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "header": {
+                  "properties": {
+                    "name": {
+                      "minLength": 1,
+                      "pattern": "^[!-9;-~]+$",
+                      "type": "string"
+                    },
+                    "value": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": ["name", "value"],
+                  "type": "object"
+                },
+                "subject": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "to": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "name": {
+              "description": "A short unique name for the rule",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["name", "match", "actions"],
+          "type": "object"
+        },
+        "name": "add_local_rule",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
               "description": "Account name",
               "type": "string"
             },
@@ -2031,6 +2117,15 @@
       {
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {},
+          "type": "object"
+        },
+        "name": "list_local_rules",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "properties": {
             "account": {
               "description": "Account name from list_accounts",
@@ -2239,6 +2334,27 @@
           "type": "object"
         },
         "name": "remove_label",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
+            "rule": {
+              "description": "Rule id or name from list_local_rules",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["rule"],
+          "type": "object"
+        },
+        "name": "remove_local_rule",
         "outputSchema": null
       },
       {
@@ -4556,6 +4672,15 @@
           "type": "object"
         },
         "name": "list_events",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {},
+          "type": "object"
+        },
+        "name": "list_local_rules",
         "outputSchema": null
       },
       {

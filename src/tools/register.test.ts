@@ -30,6 +30,10 @@ vi.mock('./watcher.tool.js', () => ({
   registerWatcherWriteTools: vi.fn(),
 }));
 vi.mock('./verification.tool.js', () => ({ default: vi.fn() }));
+vi.mock('./local-rules.tool.js', () => ({
+  registerLocalRulesReadTools: vi.fn(),
+  registerLocalRulesWriteTools: vi.fn(),
+}));
 vi.mock('./sieve.tool.js', () => ({
   registerSieveReadTools: vi.fn(),
   registerSieveWriteTools: vi.fn(),
@@ -41,6 +45,7 @@ import registerDraftTools from './drafts.tool.js';
 import registerEmailsTools from './emails.tool.js';
 import registerFolderTools from './folders.tool.js';
 import registerLabelTools from './label.tool.js';
+import { registerLocalRulesReadTools, registerLocalRulesWriteTools } from './local-rules.tool.js';
 import registerManageTools from './manage.tool.js';
 import registerSchedulerTools from './scheduler.tool.js';
 import registerSendTools from './send.tool.js';
@@ -123,6 +128,8 @@ describe('registerAllTools', () => {
     expect(registerSchedulerTools).toHaveBeenCalled();
     expect(registerSieveReadTools).toHaveBeenCalled();
     expect(registerSieveWriteTools).toHaveBeenCalled();
+    expect(registerLocalRulesReadTools).toHaveBeenCalled();
+    expect(registerLocalRulesWriteTools).toHaveBeenCalled();
   });
 
   it('skips write tools when readOnly is true', () => {
@@ -154,6 +161,8 @@ describe('registerAllTools', () => {
     expect(registerSchedulerTools).not.toHaveBeenCalled();
     expect(registerSieveReadTools).toHaveBeenCalled();
     expect(registerSieveWriteTools).not.toHaveBeenCalled();
+    expect(registerLocalRulesReadTools).toHaveBeenCalled();
+    expect(registerLocalRulesWriteTools).not.toHaveBeenCalled();
   });
 
   it('does not register verification lookup unless explicitly enabled', () => {

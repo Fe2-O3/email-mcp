@@ -24,6 +24,7 @@ import CalendarService from './services/calendar.service.js';
 import HooksService from './services/hooks.service.js';
 import ImapService from './services/imap.service.js';
 import LocalCalendarService from './services/local-calendar.service.js';
+import LocalRulesService, { LocalRulesStore } from './services/local-rules.service.js';
 import OAuthService from './services/oauth.service.js';
 import RemindersService from './services/reminders.service.js';
 import SchedulerService from './services/scheduler.service.js';
@@ -48,6 +49,7 @@ export interface AppServices {
   watcherService: WatcherService;
   hooksService: HooksService;
   sieveService: SieveService;
+  localRulesStore: LocalRulesStore;
   /** Absent when the local mirror is disabled in config. */
   cacheStore?: CacheStore;
   syncEngine?: SyncEngine;
@@ -74,6 +76,18 @@ export async function buildServices(): Promise<AppServices> {
   const schedulerService = new SchedulerService(smtpService, imapService);
   const watcherService = new WatcherService(config.settings.watcher, config.accounts, oauthService);
   const hooksService = new HooksService(config.settings.hooks, imapService);
+  // Local rules run inside the hooks pipeline, so only the process holding the
+  // writer lease (the one running the watcher) applies them.
+  const localRulesStore = new LocalRulesStore();
+  hooksService.attachLocalRules(
+    new LocalRulesService({
+      store: localRulesStore,
+      imapService,
+      smtpService,
+      allowlist: config.sieve?.allowedRedirects ?? [],
+      accounts: config.accounts,
+    }),
+  );
   const sieveService = new SieveService({
     getAccessToken: async (oauth2) => oauthService.getAccessToken(oauth2),
   });
@@ -127,6 +141,7 @@ export async function buildServices(): Promise<AppServices> {
     watcherService,
     hooksService,
     sieveService,
+    localRulesStore,
     cacheStore,
     syncEngine,
   };
@@ -154,7 +169,7 @@ export function buildServer(services: AppServices): McpServer {
     services.schedulerService,
     services.watcherService,
     services.hooksService,
-    { sieveService: services.sieveService },
+    { sieveService: services.sieveService, localRulesStore: services.localRulesStore },
   );
   registerAllResources(
     server,

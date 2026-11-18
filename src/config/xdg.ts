@@ -66,3 +66,10 @@ export const CACHE_DB = path.join(xdg.cache, 'cache.db');
  * `cache clear` must never touch it.
  */
 export const OUTBOX_DB = path.join(xdg.state, 'outbox.db');
+
+/**
+ * Local filter rules added with the add_local_rule tool. Kept in the data
+ * directory, never in config.toml: tools may write this file, and no tool may
+ * write config.toml (where the forwarding allowlist lives).
+ */
+export const LOCAL_RULES_FILE = path.join(xdg.data, 'local-rules.json');
