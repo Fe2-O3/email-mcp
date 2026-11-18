@@ -190,6 +190,9 @@ export function startBackgroundServices(
         if (schedulerInterval) clearInterval(schedulerInterval);
         if (cacheInterval) clearInterval(cacheInterval);
         syncEngine?.stop();
+        // Same teardown as write mode: read-only still opens IMAP connections and the mirror.
+        imapService.dispose();
+        services.cacheStore?.close();
       },
     };
   }

@@ -6,6 +6,7 @@ function fakeServices(readOnly: boolean) {
   const watcherService = { start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() };
   const schedulerService = { checkAndSend: vi.fn().mockResolvedValue({ sent: 0 }) };
   const imapService = { dispose: vi.fn() };
+  const cacheStore = { close: vi.fn() };
   const syncEngine = { start: vi.fn(), stop: vi.fn(), syncMailbox: vi.fn() };
   const services = {
     config: { settings: { readOnly, cache: { mailboxes: [], syncInterval: 30 } } },
@@ -15,8 +16,17 @@ function fakeServices(readOnly: boolean) {
     schedulerService,
     imapService,
     syncEngine,
+    cacheStore,
   } as unknown as AppServices;
-  return { services, hooksService, watcherService, schedulerService, imapService, syncEngine };
+  return {
+    services,
+    hooksService,
+    watcherService,
+    schedulerService,
+    imapService,
+    syncEngine,
+    cacheStore,
+  };
 }
 
 describe('startBackgroundServices', () => {
@@ -47,6 +57,18 @@ describe('startBackgroundServices', () => {
     expect(f.hooksService.stop).not.toHaveBeenCalled();
     expect(f.watcherService.stop).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('shuts down read_only mode like write mode: disposes IMAP and closes the cache', async () => {
+    const ro = fakeServices(true);
+    await startBackgroundServices(ro.services, null).stop();
+    expect(ro.imapService.dispose).toHaveBeenCalledTimes(1);
+    expect(ro.cacheStore.close).toHaveBeenCalledTimes(1);
+
+    const rw = fakeServices(false);
+    await startBackgroundServices(rw.services, null).stop();
+    expect(rw.imapService.dispose).toHaveBeenCalledTimes(1);
+    expect(rw.cacheStore.close).toHaveBeenCalledTimes(1);
   });
 
   it('starts the watcher, hooks and scheduler when writable (control)', async () => {
