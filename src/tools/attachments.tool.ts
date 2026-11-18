@@ -3,13 +3,12 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import type ImapService from '../services/imap.service.js';
+import { safeFileName, saveNewFile } from '../utils/save-file.js';
 
 export default function registerAttachmentTools(server: McpServer, imapService: ImapService): void {
   server.registerTool(
@@ -49,17 +48,14 @@ export default function registerAttachmentTools(server: McpServer, imapService: 
 
         // If savePath is provided, write to disk and return metadata only
         if (savePath) {
-          // Expand ~ to home directory
-          const resolvedPath = savePath.startsWith('~')
-            ? join(process.env.HOME ?? '', savePath.slice(1))
-            : savePath;
-
-          // Create parent directories if needed
-          await mkdir(dirname(resolvedPath), { recursive: true });
-
-          // Decode base64 and write
+          // Same rules as export_email: absolute path, never overwrite, and a
+          // directory gets the attachment's own (sanitised) name.
           const content = Buffer.from(result.contentBase64, 'base64');
-          await writeFile(resolvedPath, content);
+          const resolvedPath = await saveNewFile(
+            savePath,
+            safeFileName(result.filename ?? '', 'attachment.bin'),
+            content,
+          );
 
           // Compute sha256
           const sha256 = createHash('sha256').update(content).digest('hex');

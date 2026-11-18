@@ -7,51 +7,24 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, sep } from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import type ImapService from '../services/imap.service.js';
+import { saveNewFile } from '../utils/save-file.js';
 
 /** Inline (base64) responses stay small; savePath may go larger. */
 export const EXPORT_INLINE_MAX_BYTES = 5 * 1024 * 1024;
 export const EXPORT_SAVE_MAX_BYTES = 50 * 1024 * 1024;
 
-/**
- * Where an export lands. `~` expands to the home directory; the path must then be
- * absolute. An existing directory (or a path ending in a separator) receives the
- * generated filename, so a message can never choose its own file name. An existing
- * file is never overwritten.
- */
+/** Where an export lands; see `saveNewFile` for the rules. */
 export async function writeEmlFile(
   savePath: string,
   generatedName: string,
   source: Buffer,
 ): Promise<string> {
-  const expanded = savePath.startsWith('~')
-    ? join(process.env.HOME ?? '', savePath.slice(1))
-    : savePath;
-  if (!isAbsolute(expanded)) {
-    throw new Error('savePath must be an absolute path (or start with ~)');
-  }
-  const info = await stat(expanded).catch(() => undefined);
-  const target =
-    info?.isDirectory() || expanded.endsWith(sep) || expanded.endsWith('/')
-      ? join(expanded, generatedName)
-      : expanded;
-  await mkdir(dirname(target), { recursive: true });
-  try {
-    // 'wx' fails instead of replacing a file that is already there.
-    await writeFile(target, source, { flag: 'wx' });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new Error(`Refusing to overwrite existing file: ${target}`);
-    }
-    throw err;
-  }
-  return target;
+  return saveNewFile(savePath, generatedName, source);
 }
 
 export default function registerExportTools(server: McpServer, imapService: ImapService): void {
