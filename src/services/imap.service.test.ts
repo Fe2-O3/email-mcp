@@ -642,6 +642,9 @@ describe('ImapService', () => {
     it('surfaces rejection reasons for rename and delete too', async () => {
       client.mailboxRename = vi.fn().mockRejectedValue(serverRejection('7 NO cannot rename'));
       client.mailboxDelete = vi.fn().mockRejectedValue(serverRejection('8 NO cannot delete'));
+      // An empty, listed folder: the delete reaches the server, which refuses it.
+      client.list = vi.fn().mockResolvedValue([{ path: 'a', delimiter: '/', flags: new Set() }]);
+      client.status = vi.fn().mockResolvedValue({ messages: 0 });
 
       await expect(service.renameMailbox('test', 'a', 'b')).rejects.toThrow(/cannot rename/);
       await expect(service.deleteMailbox('test', 'a')).rejects.toThrow(/cannot delete/);
@@ -661,7 +664,7 @@ describe('ImapService', () => {
               );
             }),
         ) as never;
-        const result = service.deleteDraft('test', 1, 'Drafts').catch((e: Error) => e);
+        const result = service.trashDraft('test', 1, 'Drafts').catch((e: Error) => e);
         await vi.advanceTimersByTimeAsync(60_000);
         expect(((await result) as Error).message).toMatch(/stayed busy/);
         expect(closeFn).toHaveBeenCalledTimes(1);
@@ -702,6 +705,7 @@ describe('ImapService', () => {
       });
 
       it('still deletes and renames ordinary folders, including a nested one named Archive', async () => {
+        client.status.mockResolvedValue({ messages: 0 });
         await service.deleteMailbox('test', 'Receipts');
         await service.renameMailbox('test', 'Projects/Archive', 'Projects/Done');
         expect(client.mailboxDelete).toHaveBeenCalledWith('Receipts');

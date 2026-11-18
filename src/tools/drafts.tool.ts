@@ -76,7 +76,10 @@ export default function registerDraftTools(
           content: [
             {
               type: 'text' as const,
-              text: `📝 Draft saved (ID: ${result.id}, folder: ${result.mailbox}).`,
+              text:
+                result.id !== undefined
+                  ? `📝 Draft saved (ID: ${result.id}, folder: ${result.mailbox}).`
+                  : `📝 Draft saved in folder ${result.mailbox}. The server did not report its ID; find it with list_emails on ${result.mailbox}.`,
             },
           ],
         };
@@ -104,7 +107,7 @@ export default function registerDraftTools(
     {
       title: 'Send draft',
       description:
-        'Send an existing draft email and remove it from Drafts. The draft is fetched, sent via SMTP, then deleted. Use list_emails with the Drafts mailbox to find draft IDs.',
+        "Send an existing draft email, then move it to Trash. Only a message in the account's Drafts folder that is marked as a draft is sent; anything else is refused. Use list_emails with the Drafts mailbox to find draft IDs.",
       inputSchema: z.object({
         account: z.string().describe('Account name from list_accounts'),
         id: z.number().int().describe('Draft email UID (from list_emails on Drafts mailbox)'),
@@ -124,7 +127,10 @@ export default function registerDraftTools(
           content: [
             {
               type: 'text' as const,
-              text: `✅ Draft sent (Message-ID: ${result.messageId}). Draft removed from folder.`,
+              text: [
+                `✅ Draft sent (Message-ID: ${result.messageId}). Draft moved to Trash.`,
+                ...(result.warnings ?? []).map((w) => `⚠️ ${w}`),
+              ].join('\n'),
             },
           ],
         };

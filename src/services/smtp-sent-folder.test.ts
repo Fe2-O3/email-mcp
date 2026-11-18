@@ -32,7 +32,7 @@ function buildService(appendSent: ReturnType<typeof vi.fn>) {
   const imapService = {
     getEmail: async () => ({ subject: '', date: '', from: {}, to: [], attachments: [] }),
     fetchDraft: async () => ({ email: { to: [], subject: '' }, mailbox: 'Drafts' }),
-    deleteDraft: async () => undefined,
+    trashDraft: async () => [],
     appendSent,
   };
   const service = new SmtpService(

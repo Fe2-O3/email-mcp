@@ -78,8 +78,13 @@ export default class SchedulerService {
         cc: options.cc,
         html: options.html,
       });
-      scheduled.draftMessageId = String(draftResult.id);
-      scheduled.draftMailbox = draftResult.mailbox;
+      // A server that does not report the draft's UID gives no id: keep none
+      // rather than a number that could later name some other message.
+      if (draftResult.id !== undefined) {
+        scheduled.draftMessageId = String(draftResult.id);
+        scheduled.draftMailbox = draftResult.mailbox;
+        scheduled.draftUidValidity = draftResult.uidValidity;
+      }
     } catch {
       // Draft mirror is best-effort
     }
@@ -141,10 +146,11 @@ export default class SchedulerService {
       // Delete IMAP draft (best-effort)
       if (scheduled.draftMessageId && scheduled.draftMailbox) {
         try {
-          await this.imapService.deleteEmail(
+          await this.imapService.trashDraft(
             scheduled.account,
-            scheduled.draftMessageId,
+            Number(scheduled.draftMessageId),
             scheduled.draftMailbox,
+            scheduled.draftUidValidity,
           );
           draftDeleted = true;
         } catch {
@@ -270,10 +276,11 @@ export default class SchedulerService {
         // Delete draft (best-effort)
         if (scheduled.draftMessageId && scheduled.draftMailbox) {
           try {
-            await this.imapService.deleteEmail(
+            await this.imapService.trashDraft(
               scheduled.account,
-              scheduled.draftMessageId,
+              Number(scheduled.draftMessageId),
               scheduled.draftMailbox,
+              scheduled.draftUidValidity,
             );
           } catch {
             // Best-effort

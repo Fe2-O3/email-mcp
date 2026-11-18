@@ -13,6 +13,7 @@ import type { LabelInfo, LabelStrategyType } from '../types/index.js';
 import { imapCommand } from '../utils/imap-error.js';
 import { assertUidPresent, parseUid } from '../utils/uid.js';
 import lockMailboxBounded from './mailbox-lock.js';
+import assertMailboxRemovable from './protected-mailboxes.js';
 
 // ---------------------------------------------------------------------------
 // Strategy interface
@@ -131,9 +132,10 @@ function createProtonMailStrategy(): LabelStrategy {
     },
 
     deleteLabel: async (client, name) => {
-      await imapCommand(`Deleting label "${name}"`, () =>
-        client.mailboxDelete(`${LABELS_PREFIX}${name}`),
-      );
+      const path = `${LABELS_PREFIX}${validateLabelName(name)}`;
+      // A label is a folder here, so it gets the same protection as delete_mailbox.
+      await assertMailboxRemovable(client, path, 'delete');
+      await imapCommand(`Deleting label "${name}"`, () => client.mailboxDelete(path));
     },
   };
 }
@@ -162,9 +164,12 @@ function createGmailStrategy(): LabelStrategy {
           !mb.path.startsWith('[Gmail]')
         );
       }
+      // The full path is the label's name: "Work/Urgent", not "Urgent". The
+      // last segment alone made previews and deletes act on a different,
+      // top-level label of that name.
       return mailboxes
         .filter(isUserLabel)
-        .map((mb) => ({ name: mb.name, path: mb.path, strategy: type }));
+        .map((mb) => ({ name: mb.path, path: mb.path, strategy: type }));
     },
 
     addLabel: async (client, emailId, mailbox, rawLabel) => {
@@ -209,7 +214,10 @@ function createGmailStrategy(): LabelStrategy {
     },
 
     deleteLabel: async (client, name) => {
-      await imapCommand(`Deleting label "${name}"`, () => client.mailboxDelete(name));
+      const label = validateLabelName(name);
+      // A Gmail label is a folder: INBOX, [Gmail]/* and special-use labels stay.
+      await assertMailboxRemovable(client, label, 'delete');
+      await imapCommand(`Deleting label "${name}"`, () => client.mailboxDelete(label));
     },
   };
 }

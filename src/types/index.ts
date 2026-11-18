@@ -289,6 +289,8 @@ export interface DryRunPlan {
 export interface SendResult {
   messageId: string;
   status: 'sent' | 'failed';
+  /** Things the caller should be told about a send that did go out. */
+  warnings?: string[];
 }
 
 export interface PaginatedResult<T> {
@@ -308,6 +310,8 @@ export interface BulkResult {
   succeeded: number;
   failed: number;
   errors?: string[];
+  /** Side effects of a command that did run, such as a plain EXPUNGE. */
+  warnings?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +472,8 @@ export interface ScheduledEmail {
   lastError?: string;
   draftMessageId?: string;
   draftMailbox?: string;
+  /** UIDVALIDITY of draftMailbox when the draft was saved; cleanup is skipped if it changed. */
+  draftUidValidity?: string;
   inReplyTo?: string;
   references?: string[];
   sentAt?: string;

@@ -133,7 +133,10 @@ export function registerTemplateWriteTools(
             content: [
               {
                 type: 'text' as const,
-                text: `✅ Draft saved from template "${template}" (ID: ${draftResult.id} in ${draftResult.mailbox})`,
+                text:
+                  draftResult.id !== undefined
+                    ? `✅ Draft saved from template "${template}" (ID: ${draftResult.id} in ${draftResult.mailbox})`
+                    : `✅ Draft saved from template "${template}" in ${draftResult.mailbox}. The server did not report its ID; find it with list_emails on ${draftResult.mailbox}.`,
               },
             ],
           };

@@ -42,7 +42,7 @@ export default function registerManageTools(server: McpServer, imapService: Imap
         }
         const cleanSource = sanitizeMailboxName(sourceMailbox);
         const cleanDest = sanitizeMailboxName(destinationMailbox);
-        await imapService.moveEmail(account, emailId, cleanSource, cleanDest);
+        const warnings = await imapService.moveEmail(account, emailId, cleanSource, cleanDest);
         await audit.log(
           'move_email',
           account,
@@ -53,7 +53,10 @@ export default function registerManageTools(server: McpServer, imapService: Imap
           content: [
             {
               type: 'text' as const,
-              text: `✅ Email moved from "${sourceMailbox}" to "${destinationMailbox}".`,
+              text: [
+                `✅ Email moved from "${sourceMailbox}" to "${destinationMailbox}".`,
+                ...warnings.map((w) => `⚠️ ${w}`),
+              ].join('\n'),
             },
           ],
         };
@@ -107,13 +110,16 @@ export default function registerManageTools(server: McpServer, imapService: Imap
           );
         }
         const cleanMailbox = sanitizeMailboxName(mailbox);
-        await imapService.deleteEmail(account, emailId, cleanMailbox, permanent);
+        const warnings = await imapService.deleteEmail(account, emailId, cleanMailbox, permanent);
         await audit.log('delete_email', account, { emailId, mailbox, permanent }, 'ok');
         return {
           content: [
             {
               type: 'text' as const,
-              text: permanent ? `⚠️ Email permanently deleted.` : `🗑️ Email moved to Trash.`,
+              text: [
+                permanent ? `⚠️ Email permanently deleted.` : `🗑️ Email moved to Trash.`,
+                ...warnings.map((w) => `⚠️ ${w}`),
+              ].join('\n'),
             },
           ],
         };

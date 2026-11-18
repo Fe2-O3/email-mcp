@@ -123,7 +123,7 @@ export default function registerFolderTools(server: McpServer, imapService: Imap
     {
       title: 'Delete mailbox',
       description:
-        '⚠️ DESTRUCTIVE: Permanently delete a mailbox and ALL its contents. This cannot be undone. Use list_mailboxes to verify the folder path.',
+        '⚠️ DESTRUCTIVE: Permanently delete an empty mailbox. A folder that still holds mail or has subfolders is refused with its message count: move the mail out first (delete_email moves to Trash). Special-use folders and their parents are refused. Use list_mailboxes to verify the folder path.',
       inputSchema: z.object({
         account: z.string().describe('Account name from list_accounts'),
         path: z

@@ -64,10 +64,11 @@ describe('Email Draft Operations', () => {
         body: 'This draft will be sent.',
       });
 
-      // Send the draft
+      // Send the draft (the test server reports APPENDUID, so the id is known)
+      expect(draft.id).toBeDefined();
       const result = await services.smtpService.sendDraft(
         TEST_ACCOUNT_NAME,
-        draft.id,
+        draft.id as number,
         draft.mailbox,
       );
 

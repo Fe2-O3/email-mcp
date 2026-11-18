@@ -99,7 +99,7 @@ function setup() {
     }),
   } as never);
   const appendSent = vi.fn();
-  const deleteDraft = vi.fn();
+  const trashDraft = vi.fn();
   const original = {
     subject: 'Hello',
     date: '2026-08-01T10:00:00Z',
@@ -116,7 +116,7 @@ function setup() {
       mailbox: 'Drafts',
     })),
     appendSent,
-    deleteDraft,
+    trashDraft,
   };
   const smtpParts = buildSmtp(imapForSmtp);
 
@@ -143,9 +143,9 @@ function setup() {
     expect(smtpParts.getSmtpTransport).not.toHaveBeenCalled();
     expect(smtpParts.tryConsume).not.toHaveBeenCalled();
     expect(appendSent).not.toHaveBeenCalled();
-    expect(deleteDraft).not.toHaveBeenCalled();
+    expect(trashDraft).not.toHaveBeenCalled();
   };
-  return { call, writes, expectNothingWritten, ...smtpParts, imapForSmtp };
+  return { call, writes, expectNothingWritten, ...smtpParts, imapForSmtp, client };
 }
 
 const text = (r: Result) => r.content[0].text;
@@ -305,9 +305,13 @@ describe('dryRun: folders and labels', () => {
     }
     const missing = await t.call('delete_mailbox', { account: 'a', path: 'Nope', dryRun: true });
     expect(text(missing)).toMatch(/does not exist/);
+    // A folder that still holds mail is refused, with its count, in the dry run as in the real call.
+    const full = await t.call('delete_mailbox', { account: 'a', path: 'Projects', dryRun: true });
+    expect(full.isError).toBe(true);
+    expect(text(full)).toMatch(/still holds 5 message/);
+    t.client.status.mockResolvedValueOnce({ messages: 0 });
     const del = await t.call('delete_mailbox', { account: 'a', path: 'Projects', dryRun: true });
-    expect(text(del)).toMatch(/Would permanently delete mailbox "Projects"/);
-    expect(text(del)).toMatch(/5 message/);
+    expect(text(del)).toMatch(/Would delete the empty mailbox "Projects"/);
     t.expectNothingWritten();
   });
 
@@ -404,7 +408,7 @@ describe('dryRun: sending', () => {
     const r = await t.call('send_draft', { account: 'a', id: 5, dryRun: true });
     expect(text(r)).toMatch(/Would send this draft/);
     expect(text(r)).toContain('To: bob@example.test');
-    expect(text(r)).toMatch(/removed from "Drafts"/);
+    expect(text(r)).toMatch(/moved from "Drafts" to Trash/);
     t.expectNothingWritten();
   });
 

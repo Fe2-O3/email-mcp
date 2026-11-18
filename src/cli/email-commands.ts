@@ -279,8 +279,9 @@ async function runCommand(command: string, svc: CliServices, argv: string[]): Pr
           return;
         }
       }
-      await svc.imap.deleteEmail(account.name, id, values.mailbox);
+      const warnings = await svc.imap.deleteEmail(account.name, id, values.mailbox);
       console.log(`Deleted ${id}.`);
+      for (const warning of warnings ?? []) console.log(`Warning: ${warning}`);
       return;
     }
     case 'attach': {

@@ -1254,11 +1254,37 @@ export default class ImapService {
   // Virtual-folder detection
   // -------------------------------------------------------------------------
 
-  private static readonly VIRTUAL_SPECIAL_USE = new Set(['\\All', '\\Flagged']);
+  private static readonly VIRTUAL_SPECIAL_USE = new Set(['\\All', '\\Flagged', '\\Important']);
+
+  /**
+   * The listed mailbox a write names, resolved the way the server resolves it:
+   * exactly, INBOX in any case, with the personal namespace prefix added, or
+   * (when only one folder matches) in another case. An exact-only match let a
+   * differently spelled virtual folder skip the check below.
+   */
+  private static resolveListed(
+    mailboxes: ListResponse[],
+    requested: string,
+    prefix: string | undefined,
+  ): ListResponse | undefined {
+    const exact =
+      mailboxes.find((m) => m.path === requested) ??
+      (requested.toUpperCase() === 'INBOX'
+        ? mailboxes.find((m) => m.path.toUpperCase() === 'INBOX')
+        : undefined) ??
+      (prefix ? mailboxes.find((m) => m.path === `${prefix}${requested}`) : undefined);
+    if (exact) return exact;
+    const lower = requested.toLowerCase();
+    const prefixed = prefix ? `${prefix}${requested}`.toLowerCase() : undefined;
+    const loose = mailboxes.filter(
+      (m) => m.path.toLowerCase() === lower || m.path.toLowerCase() === prefixed,
+    );
+    return loose.length === 1 ? loose[0] : undefined;
+  }
 
   private static async assertRealMailbox(client: ImapFlow, mailboxPath: string): Promise<void> {
     const mailboxes = await client.list();
-    const mb = mailboxes.find((m) => m.path === mailboxPath);
+    const mb = ImapService.resolveListed(mailboxes, mailboxPath, client.namespace?.prefix);
     if (!mb) return; // unknown — let the server reject if invalid
     const virtualFlag = [...ImapService.VIRTUAL_SPECIAL_USE].find(
       (f) => mb.specialUse === f || mb.flags?.has(f),
@@ -1389,12 +1415,65 @@ export default class ImapService {
   // Move / Delete
   // -------------------------------------------------------------------------
 
+  /**
+   * A server without UIDPLUS (for a delete) or without both MOVE and UIDPLUS
+   * (for a move) ends the command with a plain EXPUNGE, which also removes
+   * every other message any mail program has marked deleted in that folder.
+   * Owner decision: allowed, but always said. Counts the other marked messages
+   * first. Caller holds the mailbox lock.
+   */
+  private static async expungeWarnings(
+    client: ImapFlow,
+    mailbox: string,
+    kind: 'delete' | 'move',
+    uids: number[],
+    tense: 'did' | 'would' = 'did',
+  ): Promise<string[]> {
+    const has = (capability: string): boolean => Boolean(client.capabilities?.has(capability));
+    const plain = kind === 'delete' ? !has('UIDPLUS') : !has('MOVE') && !has('UIDPLUS');
+    if (!plain) return [];
+    let others: number | undefined;
+    try {
+      const marked = await client.search({ deleted: true }, { uid: true });
+      if (Array.isArray(marked)) others = marked.filter((uid) => !uids.includes(uid)).length;
+    } catch {
+      others = undefined;
+    }
+    const why =
+      kind === 'delete'
+        ? 'This server lacks UIDPLUS, so the delete'
+        : 'This server has neither MOVE nor UIDPLUS, so the move (a copy, then a delete)';
+    const ends = tense === 'did' ? 'ended' : 'would end';
+    let effect: string;
+    if (others === undefined) {
+      effect = 'which also removes any other message already marked deleted there';
+    } else if (others === 0) {
+      effect = 'which also removes any other message already marked deleted there (none were)';
+    } else {
+      effect = `which ${tense === 'did' ? 'also removed' : 'would also remove'} ${others} other message(s) another mail program had marked deleted there`;
+    }
+    return [`${why} ${ends} with a plain EXPUNGE in "${mailbox}", ${effect}.`];
+  }
+
+  /** On Gmail, EXPUNGE from a label folder follows the account's IMAP setting; by default it only removes the label. */
+  private static async gmailPermanentNote(client: ImapFlow, mailbox: string): Promise<string[]> {
+    if (!client.capabilities?.has('X-GM-EXT-1')) return [];
+    const mailboxes = await client.list();
+    const mb = ImapService.resolveListed(mailboxes, mailbox, client.namespace?.prefix);
+    if (mb && (mb.specialUse === '\\Trash' || mb.specialUse === '\\Junk')) return [];
+    return [
+      `On Gmail, a permanent delete from "${mailbox}" does what the account's IMAP expunge setting says; ` +
+        'by default it only removes this label and the message stays in All Mail. ' +
+        'To get rid of it, delete it without permanent (it goes to Trash).',
+    ];
+  }
+
   async moveEmail(
     accountName: string,
     emailId: string,
     sourceMailbox: string,
     destinationMailbox: string,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const uid = parseUid(emailId);
     const safeSource = sanitizeMailboxName(sourceMailbox);
     const safeDest = sanitizeMailboxName(destinationMailbox);
@@ -1403,6 +1482,7 @@ export default class ImapService {
     const lock = await lockMailboxBounded(client, safeSource);
     try {
       await assertUidPresent(client, uid, safeSource);
+      const warnings = await ImapService.expungeWarnings(client, safeSource, 'move', [uid]);
       const ok = await imapCommand(`Moving message to "${safeDest}"`, () =>
         client.messageMove(String(uid), safeDest, { uid: true }),
       );
@@ -1410,6 +1490,7 @@ export default class ImapService {
         throw new Error(`IMAP server rejected the move from "${safeSource}" to "${safeDest}".`);
       }
       this.forgetBodies(accountName, safeSource, [uid]);
+      return warnings;
     } finally {
       lock.release();
     }
@@ -1420,25 +1501,30 @@ export default class ImapService {
     emailId: string,
     mailbox = 'INBOX',
     permanent = false,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const uid = parseUid(emailId);
     const safeMailbox = sanitizeMailboxName(mailbox);
     const client = await this.connections.getImapClient(accountName);
+    // Both branches: a virtual folder such as All Mail is refused for a
+    // permanent delete exactly as it is for a move to Trash.
+    await ImapService.assertRealMailbox(client, safeMailbox);
 
     if (permanent) {
+      const gmail = await ImapService.gmailPermanentNote(client, safeMailbox);
       const lock = await lockMailboxBounded(client, safeMailbox);
       try {
         await assertUidPresent(client, uid, safeMailbox);
+        const warnings = await ImapService.expungeWarnings(client, safeMailbox, 'delete', [uid]);
         const ok = await client.messageDelete(String(uid), { uid: true });
         if (!ok) {
           throw new Error('IMAP server rejected the delete operation.');
         }
         this.forgetBodies(accountName, safeMailbox, [uid]);
+        return [...gmail, ...warnings];
       } finally {
         lock.release();
       }
     } else {
-      await ImapService.assertRealMailbox(client, safeMailbox);
       const mailboxes = await client.list();
       const trash = mailboxes.find((mb) => mb.specialUse === '\\Trash');
       const trashPath = trash?.path ?? 'Trash';
@@ -1446,6 +1532,7 @@ export default class ImapService {
       const lock = await lockMailboxBounded(client, safeMailbox);
       try {
         await assertUidPresent(client, uid, safeMailbox);
+        const warnings = await ImapService.expungeWarnings(client, safeMailbox, 'move', [uid]);
         const ok = await imapCommand(`Moving message to "${trashPath}"`, () =>
           client.messageMove(String(uid), trashPath, { uid: true }),
         );
@@ -1453,6 +1540,7 @@ export default class ImapService {
           throw new Error('IMAP server rejected the move to Trash.');
         }
         this.forgetBodies(accountName, safeMailbox, [uid]);
+        return warnings;
       } finally {
         lock.release();
       }
@@ -1595,6 +1683,7 @@ export default class ImapService {
     try {
       const present = await this.splitPresent(client, ids, mailbox, result);
       if (present.length > 0) {
+        result.warnings = await ImapService.expungeWarnings(client, mailbox, 'move', present);
         const range = present.join(',');
         const ok = await imapCommand(`Moving messages to "${safeDestination}"`, () =>
           client.messageMove(range, safeDestination, { uid: true }),
@@ -1630,12 +1719,14 @@ export default class ImapService {
       failed: 0,
       errors: [],
     };
+    await ImapService.assertRealMailbox(client, mailbox);
 
     if (permanent) {
       const lock = await ImapService.lockMailbox(client, mailbox);
       try {
         const present = await this.splitPresent(client, ids, mailbox, result);
         if (present.length > 0) {
+          result.warnings = await ImapService.expungeWarnings(client, mailbox, 'delete', present);
           const ok = await client.messageDelete(present.join(','), { uid: true });
           if (ok) {
             result.succeeded = present.length;
@@ -1652,7 +1743,6 @@ export default class ImapService {
         lock.release();
       }
     } else {
-      await ImapService.assertRealMailbox(client, mailbox);
       const mailboxes = await client.list();
       const trash = mailboxes.find((mb) => mb.specialUse === '\\Trash');
       const trashPath = trash?.path ?? 'Trash';
@@ -1661,6 +1751,7 @@ export default class ImapService {
       try {
         const present = await this.splitPresent(client, ids, mailbox, result);
         if (present.length > 0) {
+          result.warnings = await ImapService.expungeWarnings(client, mailbox, 'move', present);
           const ok = await imapCommand(`Moving messages to "${trashPath}"`, () =>
             client.messageMove(present.join(','), trashPath, { uid: true }),
           );
@@ -1701,7 +1792,7 @@ export default class ImapService {
       /** Inline base64 `content` or a local file `path` (checked by the read guard). */
       attachments?: OutgoingAttachmentInput[];
     },
-  ): Promise<{ id: number; mailbox: string }> {
+  ): Promise<{ id?: number; mailbox: string; uidValidity?: string }> {
     const account = this.connections.getAccount(accountName);
     // Read and check files before touching the server.
     const attachments = options.attachments?.length
@@ -1751,10 +1842,32 @@ export default class ImapService {
       client.append(draftsPath, toCrlf(rawMessage), ['\\Draft', '\\Seen']),
     );
 
+    // A server without APPENDUID does not say which UID the draft got. No id is
+    // better than a made-up 0, which reads as a real UID to every later caller.
+    const appended = appendResult as unknown as { uid?: number; uidValidity?: bigint | number };
     return {
-      id: (appendResult as unknown as { uid?: number }).uid ?? 0,
+      ...(typeof appended.uid === 'number' && appended.uid > 0 ? { id: appended.uid } : {}),
       mailbox: draftsPath,
+      ...(appended.uidValidity !== undefined
+        ? { uidValidity: appended.uidValidity.toString() }
+        : {}),
     };
+  }
+
+  /** The account's Drafts folder: the \\Drafts special-use folder, else one named "Drafts". */
+  private static findDraftsFolder(mailboxes: ListResponse[]): ListResponse | undefined {
+    return (
+      mailboxes.find((mb) => mb.specialUse === '\\Drafts' || mb.flags?.has('\\Drafts')) ??
+      mailboxes.find(
+        (mb) => (mb.path.split(mb.delimiter || '/').pop() ?? '').toLowerCase() === 'drafts',
+      )
+    );
+  }
+
+  /** Whether a fetched message carries the \\Draft flag. */
+  private static isDraftMessage(msg: unknown): boolean {
+    const flags = (msg as { flags?: Iterable<string> } | null | undefined)?.flags;
+    return Boolean(flags && new Set(flags).has('\\Draft'));
   }
 
   /**
@@ -1769,14 +1882,45 @@ export default class ImapService {
     email: Email;
     mailbox: string;
   }> {
+    assertUid(emailId);
     const client = await this.connections.getImapClient(accountName);
 
-    // Find drafts folder if not specified
-    let draftsPath = mailbox;
-    if (!draftsPath) {
-      const mailboxes = await client.list();
-      const draftsFolder = mailboxes.find((mb) => mb.specialUse === '\\Drafts');
-      draftsPath = draftsFolder?.path ?? 'Drafts';
+    // Only a real draft is ever sent: a message in the account's Drafts folder
+    // that carries \\Draft. Anything else (a received mail in INBOX, say) would
+    // go out from the owner's address with someone else's words and recipients.
+    const mailboxes = await client.list();
+    const drafts = ImapService.findDraftsFolder(mailboxes);
+    if (!drafts) {
+      throw new Error('This account has no Drafts folder, so there is no draft to send.');
+    }
+    if (mailbox !== undefined && mailbox.trim() !== '') {
+      const requested = ImapService.resolveListed(
+        mailboxes,
+        sanitizeMailboxName(mailbox),
+        client.namespace?.prefix,
+      );
+      if (!requested || requested.path !== drafts.path) {
+        throw new Error(
+          `send_draft only sends from the Drafts folder ("${drafts.path}"), not "${mailbox}". ` +
+            'It never sends a received email.',
+        );
+      }
+    }
+    const draftsPath = drafts.path;
+
+    const lock = await ImapService.lockMailbox(client, draftsPath);
+    try {
+      const msg = await client.fetchOne(String(emailId), { uid: true, flags: true }, { uid: true });
+      if (!msg) {
+        throw new Error(`Draft ${emailId} not found in "${draftsPath}".`);
+      }
+      if (!ImapService.isDraftMessage(msg)) {
+        throw new Error(
+          `Message ${emailId} in "${draftsPath}" is not marked as a draft (\\Draft), so it was not sent.`,
+        );
+      }
+    } finally {
+      lock.release();
     }
 
     const email = await this.getEmail(accountName, String(emailId), draftsPath);
@@ -1887,13 +2031,58 @@ export default class ImapService {
     }
   }
 
-  /** Delete a draft after it has been sent. */
-  async deleteDraft(accountName: string, emailId: number, mailbox: string): Promise<void> {
+  /**
+   * Move a sent (or cancelled) draft to Trash. Only a message that still
+   * carries \\Draft is touched, and when `expectedUidValidity` is given (a
+   * draft number kept for days by the scheduler) the folder must not have
+   * been renumbered since. Returns warnings to pass on.
+   */
+  async trashDraft(
+    accountName: string,
+    emailId: number,
+    mailbox: string,
+    expectedUidValidity?: string,
+  ): Promise<string[]> {
     assertUid(emailId);
+    const safe = sanitizeMailboxName(mailbox);
     const client = await this.connections.getImapClient(accountName);
-    const lock = await ImapService.lockMailbox(client, mailbox);
+    const mailboxes = await client.list();
+    const trash =
+      mailboxes.find((mb) => mb.specialUse === '\\Trash' || mb.flags?.has('\\Trash')) ??
+      mailboxes.find(
+        (mb) => (mb.path.split(mb.delimiter || '/').pop() ?? '').toLowerCase() === 'trash',
+      );
+    const lock = await lockMailboxBounded(client, safe);
     try {
-      await client.messageDelete(String(emailId), { uid: true });
+      if (expectedUidValidity !== undefined) {
+        const current = client.mailbox ? client.mailbox.uidValidity?.toString() : undefined;
+        if (current !== expectedUidValidity) {
+          throw new Error(
+            `"${safe}" was renumbered since draft ${emailId} was saved, so it was left alone: ` +
+              'that number may now be a different message.',
+          );
+        }
+      }
+      const msg = await client.fetchOne(String(emailId), { uid: true, flags: true }, { uid: true });
+      if (!msg) throw new Error(`Draft ${emailId} not found in "${safe}".`);
+      if (!ImapService.isDraftMessage(msg)) {
+        throw new Error(`Message ${emailId} in "${safe}" is not a draft, so it was left alone.`);
+      }
+      if (trash) {
+        const warnings = await ImapService.expungeWarnings(client, safe, 'move', [emailId]);
+        const ok = await imapCommand(`Moving the draft to "${trash.path}"`, () =>
+          client.messageMove(String(emailId), trash.path, { uid: true }),
+        );
+        if (!ok) throw new Error(`IMAP server rejected moving the draft to "${trash.path}".`);
+        this.forgetBodies(accountName, safe, [emailId]);
+        return warnings;
+      }
+      // No Trash folder at all: remove it as before, and say so.
+      const warnings = await ImapService.expungeWarnings(client, safe, 'delete', [emailId]);
+      const ok = await client.messageDelete(String(emailId), { uid: true });
+      if (!ok) throw new Error('IMAP server rejected removing the draft.');
+      this.forgetBodies(accountName, safe, [emailId]);
+      return ['No Trash folder was found, so the draft was deleted for good.', ...warnings];
     } finally {
       lock.release();
     }
@@ -1904,22 +2093,71 @@ export default class ImapService {
   // -------------------------------------------------------------------------
 
   async createMailbox(accountName: string, folderPath: string): Promise<void> {
+    const safe = sanitizeMailboxName(folderPath);
     const client = await this.connections.getImapClient(accountName);
-    await imapCommand(`Creating mailbox "${folderPath}"`, () => client.mailboxCreate(folderPath));
+    await imapCommand(`Creating mailbox "${safe}"`, () => client.mailboxCreate(safe));
   }
 
   async renameMailbox(accountName: string, folderPath: string, newPath: string): Promise<void> {
+    const from = sanitizeMailboxName(folderPath);
+    const to = sanitizeMailboxName(newPath);
     const client = await this.connections.getImapClient(accountName);
-    await assertMailboxRemovable(client, folderPath, 'rename');
-    await imapCommand(`Renaming mailbox "${folderPath}" to "${newPath}"`, () =>
-      client.mailboxRename(folderPath, newPath),
+    const { listed } = await assertMailboxRemovable(client, from, 'rename');
+    // Act on the folder the check examined, not on a padded spelling of it.
+    const source = listed?.path ?? from;
+    await imapCommand(`Renaming mailbox "${source}" to "${to}"`, () =>
+      client.mailboxRename(source, to),
     );
   }
 
+  /**
+   * Deleting a folder erases its mail for good, with no Trash. So only an empty
+   * folder with no subfolders is deleted; anything else is refused with what it
+   * holds, and the mail has to be moved out first (a move or delete_email,
+   * which goes to Trash).
+   */
+  private static async assertMailboxDeletable(
+    client: ImapFlow,
+    safe: string,
+  ): Promise<ListResponse> {
+    const { listed, children } = await assertMailboxRemovable(client, safe, 'delete');
+    if (!listed) {
+      throw new Error(`Mailbox "${safe}" does not exist. Use list_mailboxes to see options.`);
+    }
+    if (children.length > 0) {
+      const names = children.slice(0, 10).map((c) => `"${c.path}"`);
+      throw new Error(
+        `"${safe}" has ${children.length} subfolder(s) (${names.join(', ')}${children.length > 10 ? ', ...' : ''}). ` +
+          'Deleting it could take their mail with it. Delete or move the subfolders first.',
+      );
+    }
+    if (listed.flags?.has('\\Noselect')) return listed;
+    let messages: number | undefined;
+    try {
+      const status = await client.status(listed.path, { messages: true });
+      messages = status && typeof status.messages === 'number' ? status.messages : undefined;
+    } catch {
+      messages = undefined;
+    }
+    if (messages === undefined) {
+      throw new Error(
+        `Could not read how many messages "${safe}" holds, so it was not deleted. Deleting a folder erases its mail for good.`,
+      );
+    }
+    if (messages > 0) {
+      throw new Error(
+        `"${safe}" still holds ${messages} message(s). Deleting it would erase them for good. ` +
+          'Move the mail out first (move_email or bulk_action move, or delete_email, which goes to Trash), then delete the empty folder.',
+      );
+    }
+    return listed;
+  }
+
   async deleteMailbox(accountName: string, folderPath: string): Promise<void> {
+    const safe = sanitizeMailboxName(folderPath);
     const client = await this.connections.getImapClient(accountName);
-    await assertMailboxRemovable(client, folderPath, 'delete');
-    await imapCommand(`Deleting mailbox "${folderPath}"`, () => client.mailboxDelete(folderPath));
+    const listed = await ImapService.assertMailboxDeletable(client, safe);
+    await imapCommand(`Deleting mailbox "${listed.path}"`, () => client.mailboxDelete(listed.path));
   }
 
   // -------------------------------------------------------------------------
@@ -1965,6 +2203,25 @@ export default class ImapService {
     }
   }
 
+  /** expungeWarnings for a dry run: opens the folder read-only for the count. */
+  private static async previewExpungeNotes(
+    client: ImapFlow,
+    mailbox: string,
+    kind: 'delete' | 'move',
+    uids: number[],
+  ): Promise<string[]> {
+    const has = (capability: string): boolean => Boolean(client.capabilities?.has(capability));
+    if (kind === 'delete' ? has('UIDPLUS') : has('MOVE') || has('UIDPLUS')) return [];
+    const lock = await imapCommand(`Opening mailbox "${mailbox}"`, () =>
+      lockMailboxBounded(client, mailbox, { readOnly: true }),
+    );
+    try {
+      return await ImapService.expungeWarnings(client, mailbox, kind, uids, 'would');
+    } finally {
+      lock.release();
+    }
+  }
+
   private static parseUid(emailId: string): number {
     return parseUid(emailId);
   }
@@ -1987,6 +2244,7 @@ export default class ImapService {
     const notes: string[] = [];
     if (src.mailbox.path === dst.mailbox.path)
       notes.push('Source and destination are the same folder.');
+    notes.push(...(await ImapService.previewExpungeNotes(client, src.mailbox.path, 'move', [uid])));
     return {
       summary: `Would move email ${emailId} from "${source}" to "${dest}".`,
       notes,
@@ -2005,17 +2263,21 @@ export default class ImapService {
     const { mailbox: listed, all } = await ImapService.findListedMailbox(client, safeMailbox);
     const present = await this.existingUids(client, listed.path, [uid]);
     if (!present.has(uid)) throw new Error(`Email ${emailId} not found in "${safeMailbox}".`);
+    await ImapService.assertRealMailbox(client, listed.path);
     if (permanent) {
       return {
         summary: `Would permanently delete email ${emailId} from "${safeMailbox}". This cannot be undone.`,
-        notes: [],
+        notes: [
+          ...(await ImapService.gmailPermanentNote(client, listed.path)),
+          ...(await ImapService.previewExpungeNotes(client, listed.path, 'delete', [uid])),
+        ],
       };
     }
-    await ImapService.assertRealMailbox(client, listed.path);
     const trash = all.find((mb) => mb.specialUse === '\\Trash');
     const notes = trash
       ? []
       : ['No folder is marked as Trash; the server would be asked for "Trash".'];
+    notes.push(...(await ImapService.previewExpungeNotes(client, listed.path, 'move', [uid])));
     return {
       summary: `Would move email ${emailId} from "${safeMailbox}" to Trash ("${trash?.path ?? 'Trash'}").`,
       notes,
@@ -2051,6 +2313,11 @@ export default class ImapService {
       what = action.replace('_', ' as ').replace('mark as ', 'mark ');
     }
     const present = await this.existingUids(client, listed.path, ids);
+    if (action === 'move' || action === 'delete') {
+      notes.push(
+        ...(await ImapService.previewExpungeNotes(client, listed.path, 'move', [...present])),
+      );
+    }
     const missing = ids.filter((id) => !present.has(id));
     if (missing.length > 0) {
       notes.push(
@@ -2093,20 +2360,12 @@ export default class ImapService {
   }
 
   async previewDeleteMailbox(accountName: string, folderPath: string): Promise<DryRunPlan> {
-    const client = await this.connections.getImapClient(accountName);
     const safe = sanitizeMailboxName(folderPath);
-    const { mailbox } = await ImapService.findListedMailbox(client, safe);
-    await assertMailboxRemovable(client, safe, 'delete');
-    const notes: string[] = [];
-    try {
-      const status = await client.status(mailbox.path, { messages: true });
-      if (status && typeof status.messages === 'number') {
-        notes.push(`The folder holds ${status.messages} message(s); all would be lost.`);
-      }
-    } catch {
-      notes.push('The message count could not be read.');
-    }
-    return { summary: `Would permanently delete mailbox "${safe}" and its contents.`, notes };
+    const client = await this.connections.getImapClient(accountName);
+    await ImapService.findListedMailbox(client, safe);
+    // The same refusals as the real call: a dry run never promises a delete it would refuse.
+    await ImapService.assertMailboxDeletable(client, safe);
+    return { summary: `Would delete the empty mailbox "${safe}".`, notes: [] };
   }
 
   async previewDeleteLabel(accountName: string, name: string): Promise<DryRunPlan> {

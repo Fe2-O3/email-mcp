@@ -521,14 +521,15 @@ export default class SmtpService {
 
     const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
-    // Delete the draft after successful send
-    await this.imapService.deleteDraft(accountName, draftId, draftsPath);
+    // The sent draft goes to Trash, never a plain permanent delete.
+    const warnings = await this.imapService.trashDraft(accountName, draftId, draftsPath);
 
     this.fileToSent(accountName, mailOptions);
 
     return {
       messageId: result.messageId ?? '',
       status: 'sent',
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
 
@@ -544,7 +545,7 @@ export default class SmtpService {
       throw new Error(`Draft ${draftId} has no recipients. Add some before sending it.`);
     }
     const plan = SmtpService.describeMail('send this draft', mailOptions);
-    plan.notes.push(`The draft would then be removed from "${draftsPath}".`);
+    plan.notes.push(`The draft would then be moved from "${draftsPath}" to Trash.`);
     return plan;
   }
 
