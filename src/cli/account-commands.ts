@@ -537,6 +537,7 @@ async function addAccount(): Promise<void> {
           send: { max_attachment_mb: 25 },
           idle_exit: 0,
           read_only: false,
+          toolset: 'full',
           cache: {
             enabled: true,
             mailboxes: ['INBOX'],

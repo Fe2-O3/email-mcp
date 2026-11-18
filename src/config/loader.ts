@@ -59,6 +59,7 @@ function loadFromEnv(): RawAppConfig | null {
       },
       idle_exit: parseInt(process.env.MCP_EMAIL_IDLE_EXIT ?? '0', 10),
       read_only: process.env.MCP_EMAIL_READ_ONLY === 'true',
+      toolset: (process.env.MCP_EMAIL_TOOLSET ?? 'full') as 'full' | 'core' | 'minimal',
       cache: {
         // Opt-out rather than opt-in: the mirror is a pure win for reads and
         // degrades to live behaviour if anything goes wrong.
@@ -258,6 +259,7 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
       },
       idleExit: raw.settings.idle_exit,
       readOnly: raw.settings.read_only,
+      toolset: raw.settings.toolset,
       cache: {
         enabled: raw.settings.cache.enabled,
         mailboxes: raw.settings.cache.mailboxes,
@@ -444,6 +446,7 @@ export function generateTemplate(): string {
 rate_limit = 10  # max emails per minute per account
 idle_exit = 0  # seconds without MCP requests before the stdio server exits (0 = never)
 read_only = false  # set to true to disable all write operations
+toolset = "full"  # "full" (all tools), "core" (everyday mail work) or "minimal" (triage and read)
 
 [settings.send]
 max_attachment_mb = 25  # base64-encoded attachment total per message, MB

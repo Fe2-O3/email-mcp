@@ -3394,5 +3394,2349 @@
         }
       }
     ]
+  },
+  "core": {
+    "prompts": [
+      {
+        "arguments": [
+          {
+            "description": "Account name to clean up",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Only consider emails older than N days (default: 30)",
+            "name": "older_than_days",
+            "required": false
+          },
+          {
+            "description": "'true' = suggest only, 'false' = execute actions (default: true)",
+            "name": "dry_run",
+            "required": false
+          }
+        ],
+        "name": "cleanup_inbox"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Email ID to reply to (from list_emails)",
+            "name": "email_id",
+            "required": true
+          },
+          {
+            "description": "Mailbox path (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          },
+          {
+            "description": "What you want to communicate, e.g., \"accept the meeting\", \"decline politely\", \"request more details\"",
+            "name": "intent",
+            "required": true
+          },
+          {
+            "description": "Tone of the reply",
+            "name": "tone",
+            "required": false
+          }
+        ],
+        "name": "compose_reply"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Topic or purpose of the email, e.g., \"project status update\", \"schedule a meeting\"",
+            "name": "topic",
+            "required": true
+          },
+          {
+            "description": "Recipient email address(es), comma-separated",
+            "name": "to",
+            "required": true
+          },
+          {
+            "description": "Tone of the email",
+            "name": "tone",
+            "required": false
+          }
+        ],
+        "name": "draft_from_context"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Mailbox to scan (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          },
+          {
+            "description": "Number of recent emails to scan (default: 20)",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "name": "extract_action_items"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name to scan",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Number of days to look back (default: 7)",
+            "name": "days",
+            "required": false
+          }
+        ],
+        "name": "summarize_meetings"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Message-ID of any email in the thread (from get_email)",
+            "name": "message_id",
+            "required": true
+          },
+          {
+            "description": "Mailbox to search (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          }
+        ],
+        "name": "summarize_thread"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name to triage",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Mailbox to triage (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          },
+          {
+            "description": "Maximum number of unread emails to analyze (default: 20)",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "name": "triage_inbox"
+      }
+    ],
+    "resources": [
+      {
+        "name": "accounts",
+        "uri": "email://accounts",
+        "uriTemplate": null
+      },
+      {
+        "name": "mailboxes",
+        "uri": null,
+        "uriTemplate": "email://{account}/mailboxes"
+      },
+      {
+        "name": "scheduled",
+        "uri": "email://scheduled",
+        "uriTemplate": null
+      },
+      {
+        "name": "stats",
+        "uri": null,
+        "uriTemplate": "email://{account}/stats"
+      },
+      {
+        "name": "templates",
+        "uri": null,
+        "uriTemplate": "email://templates/{name}"
+      },
+      {
+        "name": "unread",
+        "uri": null,
+        "uriTemplate": "email://{account}/unread"
+      }
+    ],
+    "tools": [
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID (UID) from list_emails",
+              "type": "string"
+            },
+            "label": {
+              "description": "Label name to add (e.g., \"Important\", \"Project-X\")",
+              "type": "string"
+            },
+            "mailbox": {
+              "description": "Mailbox containing the email (must be a real folder)",
+              "type": "string"
+            }
+          },
+          "required": ["account", "emailId", "mailbox", "label"],
+          "type": "object"
+        },
+        "name": "add_label",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "name": {
+              "description": "Label name (e.g., \"Project-X\"). For nested labels use \"/\" separator (e.g., \"Work/Urgent\").",
+              "type": "string"
+            }
+          },
+          "required": ["account", "name"],
+          "type": "object"
+        },
+        "name": "create_label",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID to delete (from list_emails)",
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox containing the email",
+              "type": "string"
+            },
+            "permanent": {
+              "default": false,
+              "description": "⚠️ Permanently delete (skip Trash)",
+              "type": "boolean"
+            }
+          },
+          "required": ["account", "emailId"],
+          "type": "object"
+        },
+        "name": "delete_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "filename": {
+              "description": "Exact attachment filename (from get_email metadata)",
+              "type": "string"
+            },
+            "id": {
+              "description": "Email ID (UID) from list_emails or get_email",
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox containing the email",
+              "type": "string"
+            },
+            "savePath": {
+              "description": "Absolute path to save the file to (e.g. ~/Downloads/report.pdf). Parent directories are created automatically. When provided, returns path + size + sha256 instead of base64 content.",
+              "type": "string"
+            }
+          },
+          "required": ["account", "id", "filename"],
+          "type": "object"
+        },
+        "name": "download_attachment",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "body": {
+              "description": "Additional message above the forwarded content",
+              "maxLength": 5000000,
+              "type": "string"
+            },
+            "cc": {
+              "description": "CC recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "emailId": {
+              "description": "Email ID to forward (from list_emails or get_email)",
+              "type": "string"
+            },
+            "html": {
+              "default": false,
+              "description": "Send as HTML (default: plain text)",
+              "type": "boolean"
+            },
+            "include_attachments": {
+              "default": true,
+              "description": "Reattach the original email’s attachments (default: true)",
+              "type": "boolean"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox where the original email is",
+              "type": "string"
+            },
+            "to": {
+              "description": "Forward to these recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": ["account", "emailId", "to"],
+          "type": "object"
+        },
+        "name": "forward_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID from list_emails or search_emails",
+              "type": "string"
+            },
+            "format": {
+              "default": "full",
+              "description": "Body format: full=raw (default), text=plain text (strips HTML), stripped=plain text without quoted replies or signatures",
+              "enum": ["full", "text", "stripped"],
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            },
+            "markRead": {
+              "default": false,
+              "description": "Explicitly mark the email as read after fetching (default: false — reading is non-destructive by default)",
+              "type": "boolean"
+            },
+            "maxLength": {
+              "description": "Truncate body at this many characters. A hint shows how many characters remain.",
+              "maximum": 9007199254740991,
+              "minimum": 100,
+              "type": "integer"
+            }
+          },
+          "required": ["account", "emailId"],
+          "type": "object"
+        },
+        "name": "get_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "format": {
+              "default": "text",
+              "description": "Body format (default: text — strips HTML for efficient AI reading). Use stripped to also remove quoted replies.",
+              "enum": ["full", "text", "stripped"],
+              "type": "string"
+            },
+            "ids": {
+              "description": "Email IDs to fetch (max 20). Obtain IDs from list_emails or search_emails.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 20,
+              "minItems": 1,
+              "type": "array"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            },
+            "maxLength": {
+              "description": "Truncate each email body at this many characters.",
+              "maximum": 9007199254740991,
+              "minimum": 100,
+              "type": "integer"
+            }
+          },
+          "required": ["account", "ids"],
+          "type": "object"
+        },
+        "name": "get_emails",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "format": {
+              "default": "full",
+              "description": "Body format: full=raw (default), text=plain text (strips HTML), stripped=plain text without quoted replies or signatures",
+              "enum": ["full", "text", "stripped"],
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox to search (default: INBOX)",
+              "type": "string"
+            },
+            "maxLength": {
+              "description": "Truncate each message body at this many characters. A hint shows how many characters remain.",
+              "maximum": 9007199254740991,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "message_id": {
+              "description": "Message-ID header value (from get_email)",
+              "type": "string"
+            },
+            "newestFirst": {
+              "default": false,
+              "description": "When true, shows the newest message in full and older messages as header-only summaries. Ideal for AI triage of long threads where only the latest reply matters.",
+              "type": "boolean"
+            }
+          },
+          "required": ["account", "message_id"],
+          "type": "object"
+        },
+        "name": "get_thread",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name; omit to scan all configured accounts",
+              "type": "string"
+            },
+            "copy_to_clipboard": {
+              "default": false,
+              "description": "Explicitly copy the found code or link to the system clipboard",
+              "type": "boolean"
+            },
+            "lookback_minutes": {
+              "default": 15,
+              "description": "Only search messages from the last 1 to 240 minutes",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox to scan",
+              "type": "string"
+            },
+            "max_messages": {
+              "default": 20,
+              "description": "Maximum recent messages to inspect per account",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "get_verification_code",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "confidence": {
+              "enum": ["high", "medium", "low"],
+              "type": "string"
+            },
+            "copied": {
+              "type": "boolean"
+            },
+            "copy_error": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "found": {
+              "type": "boolean"
+            },
+            "from": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": ["code", "link"],
+              "type": "string"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "service": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": ["found", "copied"],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "list_accounts",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "answered": {
+              "description": "Filter: true=replied, false=not yet replied",
+              "type": "boolean"
+            },
+            "before": {
+              "description": "Show emails before this date (ISO 8601)",
+              "type": "string"
+            },
+            "flagged": {
+              "description": "Filter: true=flagged only, false=unflagged only",
+              "type": "boolean"
+            },
+            "from": {
+              "description": "Filter by sender address or name",
+              "type": "string"
+            },
+            "has_attachment": {
+              "description": "Filter: true=has attachments, false=no attachments",
+              "type": "boolean"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            },
+            "page": {
+              "default": 1,
+              "description": "Page number",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pageSize": {
+              "default": 20,
+              "description": "Results per page",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "seen": {
+              "description": "Filter: true=read only, false=unread only",
+              "type": "boolean"
+            },
+            "since": {
+              "description": "Show emails after this date (ISO 8601)",
+              "type": "string"
+            },
+            "sort": {
+              "default": "date",
+              "description": "Order newest-first by date (spans pages) or by UID",
+              "enum": ["date", "uid"],
+              "type": "string"
+            },
+            "subject": {
+              "description": "Filter by subject keyword",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "list_emails",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "emails": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "hasAttachments": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "hasAttachments",
+                  "labels"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "hasMore": {
+              "type": "boolean"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "page": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "pageSize": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "total": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "total",
+            "page",
+            "pageSize",
+            "hasMore",
+            "count",
+            "emails"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "list_labels",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "list_mailboxes",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "mailboxes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "specialUse": {
+                    "type": "string"
+                  },
+                  "totalMessages": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  "unseenMessages": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": ["name", "path"],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["account", "count", "mailboxes"],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "action": {
+              "description": "Action: read, unread, flag (star), or unflag (unstar)",
+              "enum": ["read", "unread", "flag", "unflag"],
+              "type": "string"
+            },
+            "id": {
+              "description": "Email ID (UID) from list_emails or search_emails",
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox containing the email",
+              "type": "string"
+            }
+          },
+          "required": ["account", "id", "action"],
+          "type": "object"
+        },
+        "name": "mark_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "destinationMailbox": {
+              "description": "Target mailbox (e.g., Archive). Use list_mailboxes to see options.",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID to move (from list_emails)",
+              "type": "string"
+            },
+            "sourceMailbox": {
+              "description": "Current mailbox (e.g., INBOX)",
+              "type": "string"
+            }
+          },
+          "required": ["account", "emailId", "sourceMailbox", "destinationMailbox"],
+          "type": "object"
+        },
+        "name": "move_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID (UID) from list_emails",
+              "type": "string"
+            },
+            "label": {
+              "description": "Label name to remove",
+              "type": "string"
+            },
+            "mailbox": {
+              "description": "Mailbox containing the email (must be a real folder)",
+              "type": "string"
+            }
+          },
+          "required": ["account", "emailId", "mailbox", "label"],
+          "type": "object"
+        },
+        "name": "remove_label",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "body": {
+              "description": "Reply body content",
+              "maxLength": 5000000,
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID to reply to (from list_emails or get_email)",
+              "type": "string"
+            },
+            "html": {
+              "default": false,
+              "description": "Send as HTML",
+              "type": "boolean"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox where the original email is",
+              "type": "string"
+            },
+            "replyAll": {
+              "default": false,
+              "description": "Reply to all recipients",
+              "type": "boolean"
+            }
+          },
+          "required": ["account", "emailId", "body"],
+          "type": "object"
+        },
+        "name": "reply_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "bcc": {
+              "description": "CC recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "body": {
+              "description": "Email body content",
+              "maxLength": 5000000,
+              "type": "string"
+            },
+            "cc": {
+              "description": "CC recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "html": {
+              "default": false,
+              "description": "Send as HTML (default: plain text)",
+              "type": "boolean"
+            },
+            "in_reply_to": {
+              "description": "Message-ID for threading (from get_email)",
+              "type": "string"
+            },
+            "subject": {
+              "description": "Email subject",
+              "type": "string"
+            },
+            "to": {
+              "default": [],
+              "description": "Recipient email addresses (can be empty for drafts)",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["account", "subject", "body"],
+          "type": "object"
+        },
+        "name": "save_draft",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "answered": {
+              "description": "Filter: true=replied, false=not replied",
+              "type": "boolean"
+            },
+            "has_attachment": {
+              "description": "Filter: true=has attachments, false=no attachments",
+              "type": "boolean"
+            },
+            "larger_than": {
+              "description": "Minimum email size in KB",
+              "type": "number"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            },
+            "page": {
+              "default": 1,
+              "description": "Page number",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pageSize": {
+              "default": 20,
+              "description": "Results per page",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "default": "",
+              "description": "Search keyword (omit or leave empty to use filters only)",
+              "type": "string"
+            },
+            "smaller_than": {
+              "description": "Maximum email size in KB",
+              "type": "number"
+            },
+            "sort": {
+              "default": "date",
+              "description": "Order newest-first by date (spans pages) or by UID",
+              "enum": ["date", "uid"],
+              "type": "string"
+            },
+            "to": {
+              "description": "Filter by recipient address",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "search_emails",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "emails": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "hasAttachments": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "hasAttachments",
+                  "labels"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "hasMore": {
+              "type": "boolean"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "page": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "pageSize": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "total": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "total",
+            "page",
+            "pageSize",
+            "hasMore",
+            "count",
+            "emails"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "id": {
+              "description": "Draft email UID (from list_emails on Drafts mailbox)",
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "mailbox": {
+              "description": "Drafts folder path (auto-detected if omitted)",
+              "type": "string"
+            }
+          },
+          "required": ["account", "id"],
+          "type": "object"
+        },
+        "name": "send_draft",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately resend the same recipients+subject within one minute",
+              "type": "boolean"
+            },
+            "attachments": {
+              "description": "Files to attach, as base64 parts",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient",
+                    "type": "string"
+                  }
+                },
+                "required": ["base64"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "bcc": {
+              "description": "CC recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "body": {
+              "description": "Email body content",
+              "maxLength": 5000000,
+              "type": "string"
+            },
+            "cc": {
+              "description": "CC recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "html": {
+              "default": false,
+              "description": "Send as HTML (default: plain text)",
+              "type": "boolean"
+            },
+            "message_id": {
+              "description": "Explicit Message-ID for retries. Use it so a retried send deduplicates instead of delivering twice.",
+              "type": "string"
+            },
+            "subject": {
+              "description": "Email subject",
+              "type": "string"
+            },
+            "to": {
+              "description": "Recipient email addresses",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": ["account", "to", "subject", "body"],
+          "type": "object"
+        },
+        "name": "send_email",
+        "outputSchema": null
+      }
+    ]
+  },
+  "minimal": {
+    "prompts": [
+      {
+        "arguments": [
+          {
+            "description": "Account name to clean up",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Only consider emails older than N days (default: 30)",
+            "name": "older_than_days",
+            "required": false
+          },
+          {
+            "description": "'true' = suggest only, 'false' = execute actions (default: true)",
+            "name": "dry_run",
+            "required": false
+          }
+        ],
+        "name": "cleanup_inbox"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Email ID to reply to (from list_emails)",
+            "name": "email_id",
+            "required": true
+          },
+          {
+            "description": "Mailbox path (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          },
+          {
+            "description": "What you want to communicate, e.g., \"accept the meeting\", \"decline politely\", \"request more details\"",
+            "name": "intent",
+            "required": true
+          },
+          {
+            "description": "Tone of the reply",
+            "name": "tone",
+            "required": false
+          }
+        ],
+        "name": "compose_reply"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Topic or purpose of the email, e.g., \"project status update\", \"schedule a meeting\"",
+            "name": "topic",
+            "required": true
+          },
+          {
+            "description": "Recipient email address(es), comma-separated",
+            "name": "to",
+            "required": true
+          },
+          {
+            "description": "Tone of the email",
+            "name": "tone",
+            "required": false
+          }
+        ],
+        "name": "draft_from_context"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Mailbox to scan (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          },
+          {
+            "description": "Number of recent emails to scan (default: 20)",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "name": "extract_action_items"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name to scan",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Number of days to look back (default: 7)",
+            "name": "days",
+            "required": false
+          }
+        ],
+        "name": "summarize_meetings"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Message-ID of any email in the thread (from get_email)",
+            "name": "message_id",
+            "required": true
+          },
+          {
+            "description": "Mailbox to search (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          }
+        ],
+        "name": "summarize_thread"
+      },
+      {
+        "arguments": [
+          {
+            "description": "Account name to triage",
+            "name": "account",
+            "required": true
+          },
+          {
+            "description": "Mailbox to triage (default: INBOX)",
+            "name": "mailbox",
+            "required": false
+          },
+          {
+            "description": "Maximum number of unread emails to analyze (default: 20)",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "name": "triage_inbox"
+      }
+    ],
+    "resources": [
+      {
+        "name": "accounts",
+        "uri": "email://accounts",
+        "uriTemplate": null
+      },
+      {
+        "name": "mailboxes",
+        "uri": null,
+        "uriTemplate": "email://{account}/mailboxes"
+      },
+      {
+        "name": "scheduled",
+        "uri": "email://scheduled",
+        "uriTemplate": null
+      },
+      {
+        "name": "stats",
+        "uri": null,
+        "uriTemplate": "email://{account}/stats"
+      },
+      {
+        "name": "templates",
+        "uri": null,
+        "uriTemplate": "email://templates/{name}"
+      },
+      {
+        "name": "unread",
+        "uri": null,
+        "uriTemplate": "email://{account}/unread"
+      }
+    ],
+    "tools": [
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID from list_emails or search_emails",
+              "type": "string"
+            },
+            "format": {
+              "default": "full",
+              "description": "Body format: full=raw (default), text=plain text (strips HTML), stripped=plain text without quoted replies or signatures",
+              "enum": ["full", "text", "stripped"],
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            },
+            "markRead": {
+              "default": false,
+              "description": "Explicitly mark the email as read after fetching (default: false — reading is non-destructive by default)",
+              "type": "boolean"
+            },
+            "maxLength": {
+              "description": "Truncate body at this many characters. A hint shows how many characters remain.",
+              "maximum": 9007199254740991,
+              "minimum": 100,
+              "type": "integer"
+            }
+          },
+          "required": ["account", "emailId"],
+          "type": "object"
+        },
+        "name": "get_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "format": {
+              "default": "full",
+              "description": "Body format: full=raw (default), text=plain text (strips HTML), stripped=plain text without quoted replies or signatures",
+              "enum": ["full", "text", "stripped"],
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox to search (default: INBOX)",
+              "type": "string"
+            },
+            "maxLength": {
+              "description": "Truncate each message body at this many characters. A hint shows how many characters remain.",
+              "maximum": 9007199254740991,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "message_id": {
+              "description": "Message-ID header value (from get_email)",
+              "type": "string"
+            },
+            "newestFirst": {
+              "default": false,
+              "description": "When true, shows the newest message in full and older messages as header-only summaries. Ideal for AI triage of long threads where only the latest reply matters.",
+              "type": "boolean"
+            }
+          },
+          "required": ["account", "message_id"],
+          "type": "object"
+        },
+        "name": "get_thread",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name; omit to scan all configured accounts",
+              "type": "string"
+            },
+            "copy_to_clipboard": {
+              "default": false,
+              "description": "Explicitly copy the found code or link to the system clipboard",
+              "type": "boolean"
+            },
+            "lookback_minutes": {
+              "default": 15,
+              "description": "Only search messages from the last 1 to 240 minutes",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox to scan",
+              "type": "string"
+            },
+            "max_messages": {
+              "default": 20,
+              "description": "Maximum recent messages to inspect per account",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "get_verification_code",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "confidence": {
+              "enum": ["high", "medium", "low"],
+              "type": "string"
+            },
+            "copied": {
+              "type": "boolean"
+            },
+            "copy_error": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "found": {
+              "type": "boolean"
+            },
+            "from": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": ["code", "link"],
+              "type": "string"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "service": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": ["found", "copied"],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "list_accounts",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "answered": {
+              "description": "Filter: true=replied, false=not yet replied",
+              "type": "boolean"
+            },
+            "before": {
+              "description": "Show emails before this date (ISO 8601)",
+              "type": "string"
+            },
+            "flagged": {
+              "description": "Filter: true=flagged only, false=unflagged only",
+              "type": "boolean"
+            },
+            "from": {
+              "description": "Filter by sender address or name",
+              "type": "string"
+            },
+            "has_attachment": {
+              "description": "Filter: true=has attachments, false=no attachments",
+              "type": "boolean"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            },
+            "page": {
+              "default": 1,
+              "description": "Page number",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pageSize": {
+              "default": 20,
+              "description": "Results per page",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "seen": {
+              "description": "Filter: true=read only, false=unread only",
+              "type": "boolean"
+            },
+            "since": {
+              "description": "Show emails after this date (ISO 8601)",
+              "type": "string"
+            },
+            "sort": {
+              "default": "date",
+              "description": "Order newest-first by date (spans pages) or by UID",
+              "enum": ["date", "uid"],
+              "type": "string"
+            },
+            "subject": {
+              "description": "Filter by subject keyword",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "list_emails",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "emails": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "hasAttachments": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "hasAttachments",
+                  "labels"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "hasMore": {
+              "type": "boolean"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "page": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "pageSize": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "total": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "total",
+            "page",
+            "pageSize",
+            "hasMore",
+            "count",
+            "emails"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "list_mailboxes",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "mailboxes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "specialUse": {
+                    "type": "string"
+                  },
+                  "totalMessages": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  "unseenMessages": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": ["name", "path"],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["account", "count", "mailboxes"],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "body": {
+              "description": "Reply body content",
+              "maxLength": 5000000,
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID to reply to (from list_emails or get_email)",
+              "type": "string"
+            },
+            "html": {
+              "default": false,
+              "description": "Send as HTML",
+              "type": "boolean"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox where the original email is",
+              "type": "string"
+            },
+            "replyAll": {
+              "default": false,
+              "description": "Reply to all recipients",
+              "type": "boolean"
+            }
+          },
+          "required": ["account", "emailId", "body"],
+          "type": "object"
+        },
+        "name": "reply_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "answered": {
+              "description": "Filter: true=replied, false=not replied",
+              "type": "boolean"
+            },
+            "has_attachment": {
+              "description": "Filter: true=has attachments, false=no attachments",
+              "type": "boolean"
+            },
+            "larger_than": {
+              "description": "Minimum email size in KB",
+              "type": "number"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            },
+            "page": {
+              "default": 1,
+              "description": "Page number",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pageSize": {
+              "default": 20,
+              "description": "Results per page",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "default": "",
+              "description": "Search keyword (omit or leave empty to use filters only)",
+              "type": "string"
+            },
+            "smaller_than": {
+              "description": "Maximum email size in KB",
+              "type": "number"
+            },
+            "sort": {
+              "default": "date",
+              "description": "Order newest-first by date (spans pages) or by UID",
+              "enum": ["date", "uid"],
+              "type": "string"
+            },
+            "to": {
+              "description": "Filter by recipient address",
+              "type": "string"
+            }
+          },
+          "required": ["account"],
+          "type": "object"
+        },
+        "name": "search_emails",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "count": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "emails": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answered": {
+                    "type": "boolean"
+                  },
+                  "bulk": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": ["newsletter", "automated"],
+                        "type": "string"
+                      },
+                      "listId": {
+                        "type": "string"
+                      },
+                      "oneClick": {
+                        "type": "boolean"
+                      },
+                      "unsubscribe": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "oneClick"],
+                    "type": "object"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["address"],
+                    "type": "object"
+                  },
+                  "hasAttachments": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "seen": {
+                    "type": "boolean"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "address": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["address"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId",
+                  "subject",
+                  "from",
+                  "to",
+                  "date",
+                  "seen",
+                  "flagged",
+                  "answered",
+                  "hasAttachments",
+                  "labels"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "hasMore": {
+              "type": "boolean"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "page": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "pageSize": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "total": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "account",
+            "mailbox",
+            "total",
+            "page",
+            "pageSize",
+            "hasMore",
+            "count",
+            "emails"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "allow_duplicate": {
+              "default": false,
+              "description": "Deliberately resend the same recipients+subject within one minute",
+              "type": "boolean"
+            },
+            "attachments": {
+              "description": "Files to attach, as base64 parts",
+              "items": {
+                "properties": {
+                  "base64": {
+                    "description": "Attachment bytes as base64",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "description": "MIME type, e.g. application/pdf",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "description": "Name shown to the recipient",
+                    "type": "string"
+                  }
+                },
+                "required": ["base64"],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "bcc": {
+              "description": "CC recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "body": {
+              "description": "Email body content",
+              "maxLength": 5000000,
+              "type": "string"
+            },
+            "cc": {
+              "description": "CC recipients",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "html": {
+              "default": false,
+              "description": "Send as HTML (default: plain text)",
+              "type": "boolean"
+            },
+            "message_id": {
+              "description": "Explicit Message-ID for retries. Use it so a retried send deduplicates instead of delivering twice.",
+              "type": "string"
+            },
+            "subject": {
+              "description": "Email subject",
+              "type": "string"
+            },
+            "to": {
+              "description": "Recipient email addresses",
+              "items": {
+                "format": "email",
+                "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": ["account", "to", "subject", "body"],
+          "type": "object"
+        },
+        "name": "send_email",
+        "outputSchema": null
+      }
+    ]
   }
 }

@@ -46,6 +46,7 @@ function createConfig(): AppConfig {
       verification: { enabled: false, includeMagicLinks: false },
       idleExit: 1800,
       readOnly: false,
+      toolset: 'full',
       cache: {
         enabled: false,
         mailboxes: [],

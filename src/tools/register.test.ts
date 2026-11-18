@@ -50,6 +50,7 @@ function createConfig(readOnly: boolean, verificationEnabled = false): AppConfig
       verification: { enabled: verificationEnabled, includeMagicLinks: false },
       idleExit: 1800,
       readOnly,
+      toolset: 'full',
       cache: {
         enabled: true,
         mailboxes: ['INBOX'],

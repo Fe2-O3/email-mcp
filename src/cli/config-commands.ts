@@ -63,7 +63,8 @@ async function showConfig(): Promise<void> {
   console.log(
     `  verification.include_magic_links = ${config.settings.verification.includeMagicLinks}`,
   );
-  console.log(`  read_only  = ${config.settings.readOnly}\n`);
+  console.log(`  read_only  = ${config.settings.readOnly}`);
+  console.log(`  toolset    = ${config.settings.toolset}\n`);
 
   config.accounts.forEach((account) => {
     console.log(`[accounts.${account.name}]`);

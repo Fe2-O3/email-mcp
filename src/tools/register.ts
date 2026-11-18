@@ -36,11 +36,12 @@ import registerSecurityTools from './security.tool.js';
 import registerSendTools from './send.tool.js';
 import { registerTemplateReadTools, registerTemplateWriteTools } from './templates.tool.js';
 import registerThreadTools from './thread.tool.js';
+import { restrictToToolset } from './toolsets.js';
 import registerVerificationTool from './verification.tool.js';
 import { registerWatcherReadTools, registerWatcherWriteTools } from './watcher.tool.js';
 
 export default function registerAllTools(
-  server: McpServer,
+  fullServer: McpServer,
   connections: ConnectionManager,
   imapService: ImapService,
   smtpService: SmtpService,
@@ -53,7 +54,9 @@ export default function registerAllTools(
   watcherService: WatcherService,
   hooksService: HooksService,
 ): void {
-  const { readOnly } = config.settings;
+  const { readOnly, toolset } = config.settings;
+  // Tools outside the configured toolset are skipped at registration.
+  const server = restrictToToolset(fullServer, toolset);
 
   // Read tools — always registered
   registerAccountsTools(server, connections);
@@ -77,7 +80,8 @@ export default function registerAllTools(
   registerSecurityTools(server, imapService);
   registerWatcherReadTools(server, watcherService, hooksService);
   if (config.settings.verification.enabled) {
-    registerVerificationTool(server, imapService, config);
+    // Explicit opt-in, so it is registered in every toolset.
+    registerVerificationTool(fullServer, imapService, config);
   }
 
   // Write tools — skipped in read-only mode

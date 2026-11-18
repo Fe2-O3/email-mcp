@@ -198,6 +198,8 @@ export const CacheConfigSchema = z.object({
   sync_interval: z.number().int().min(30).default(300),
 });
 
+export const ToolsetSchema = z.enum(['full', 'core', 'minimal']);
+
 export const SettingsSchema = z.object({
   rate_limit: z.number().int().min(1).default(10),
   send: z
@@ -212,6 +214,10 @@ export const SettingsSchema = z.object({
   // as a backstop for hosts that never close it.
   idle_exit: z.number().int().min(0).max(86_400).default(0),
   read_only: z.boolean().default(false),
+  // Which tools the server registers: "full" (everything, the default),
+  // "core" (read, send and everyday mail management) or "minimal" (triage
+  // and read). read_only still removes write tools within any toolset.
+  toolset: ToolsetSchema.default('full'),
   cache: CacheConfigSchema.default(() => ({
     enabled: true,
     mailboxes: ['INBOX'],
@@ -262,6 +268,7 @@ export const AppConfigFileSchema = z.object({
       send: { max_attachment_mb: 25 },
       idle_exit: 0,
       read_only: false,
+      toolset: 'full',
       cache: {
         enabled: true,
         mailboxes: ['INBOX'],

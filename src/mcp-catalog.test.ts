@@ -24,7 +24,7 @@ import registerAllPrompts from './prompts/register.js';
 import registerAllResources from './resources/register.js';
 import createServer from './server.js';
 import registerAllTools from './tools/register.js';
-import type { AppConfig } from './types/index.js';
+import type { AppConfig, Toolset } from './types/index.js';
 
 const baselinePath = join(dirname(fileURLToPath(import.meta.url)), 'mcp-catalog.baseline.json');
 
@@ -34,14 +34,15 @@ interface Catalog {
   resources: { name: string; uri: string | null; uriTemplate: string | null }[];
 }
 
-type Baseline = Record<'full' | 'readOnly', Catalog>;
+type Mode = 'full' | 'readOnly' | 'core' | 'minimal';
+type Baseline = Record<Mode, Catalog>;
 
 /** Stands in for any service: every property is a function that returns an empty list. */
 function serviceStub(): unknown {
   return new Proxy({}, { get: () => () => [] });
 }
 
-function configFor(readOnly: boolean): AppConfig {
+function configFor(readOnly: boolean, toolset: Toolset): AppConfig {
   return {
     settings: {
       rateLimit: 10,
@@ -50,6 +51,7 @@ function configFor(readOnly: boolean): AppConfig {
       verification: { enabled: true, includeMagicLinks: false },
       idleExit: 0,
       readOnly,
+      toolset,
       cache: {
         enabled: false,
         mailboxes: [],
@@ -98,7 +100,7 @@ function canonical(value: unknown): unknown {
 const byName = (a: { name: string }, b: { name: string }): number =>
   a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 
-async function collect(readOnly: boolean): Promise<Catalog> {
+async function collect(readOnly: boolean, toolset: Toolset = 'full'): Promise<Catalog> {
   const server = createServer();
   const stub = serviceStub() as never;
   const connections = { getAccountNames: () => [], getAccount: () => undefined } as never;
@@ -107,7 +109,7 @@ async function collect(readOnly: boolean): Promise<Catalog> {
     connections,
     stub,
     stub,
-    configFor(readOnly),
+    configFor(readOnly, toolset),
     stub,
     stub,
     stub,
@@ -186,7 +188,12 @@ describe('MCP catalog baseline', () => {
   let live: Baseline;
 
   beforeAll(async () => {
-    live = { full: await collect(false), readOnly: await collect(true) };
+    live = {
+      full: await collect(false),
+      readOnly: await collect(true),
+      core: await collect(false, 'core'),
+      minimal: await collect(false, 'minimal'),
+    };
     if (process.env.UPDATE_MCP_BASELINE === '1') {
       writeFileSync(baselinePath, `${JSON.stringify(live, null, 2)}\n`);
     }
@@ -196,14 +203,17 @@ describe('MCP catalog baseline', () => {
     expect(existsSync(baselinePath), `${baselinePath} is missing. ${REMINDER}`).toBe(true);
   });
 
-  it.each(['full', 'readOnly'] as const)('should match the %s-mode baseline', (mode) => {
-    const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as Baseline;
-    const changes = describeChanges(baseline[mode], live[mode]);
-    expect(
-      live[mode],
-      `The ${mode}-mode MCP catalog changed:\n  ${changes.join('\n  ') || '(schema detail)'}\n${REMINDER}`,
-    ).toEqual(baseline[mode]);
-  });
+  it.each(['full', 'readOnly', 'core', 'minimal'] as const)(
+    'should match the %s-mode baseline',
+    (mode) => {
+      const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as Baseline;
+      const changes = describeChanges(baseline[mode], live[mode]);
+      expect(
+        live[mode],
+        `The ${mode}-mode MCP catalog changed:\n  ${changes.join('\n  ') || '(schema detail)'}\n${REMINDER}`,
+      ).toEqual(baseline[mode]);
+    },
+  );
 
   it('should register no write tool in read-only mode', () => {
     const full = new Set(live.full.tools.map((tool) => tool.name));

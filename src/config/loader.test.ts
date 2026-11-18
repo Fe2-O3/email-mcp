@@ -41,6 +41,7 @@ describe('Config Loader', () => {
       'MCP_EMAIL_VERIFICATION_ENABLED',
       'MCP_EMAIL_VERIFICATION_MAGIC_LINKS',
       'MCP_EMAIL_READ_ONLY',
+      'MCP_EMAIL_TOOLSET',
       'MCP_EMAIL_ACCOUNT_NAME',
     ]) {
       savedEnv[key] = process.env[key];
@@ -201,6 +202,22 @@ read_only = true
       const config = await loadConfig(path.join(tmpDir, 'nonexistent.toml'));
 
       expect(config.settings.readOnly).toBe(true);
+    });
+
+    it('reads the toolset from MCP_EMAIL_TOOLSET and defaults to full', async () => {
+      process.env.MCP_EMAIL_ADDRESS = 'env@example.com';
+      process.env.MCP_EMAIL_PASSWORD = 'env-pass';
+      process.env.MCP_EMAIL_IMAP_HOST = 'imap.env.com';
+      process.env.MCP_EMAIL_SMTP_HOST = 'smtp.env.com';
+
+      const missing = path.join(tmpDir, 'nonexistent.toml');
+      expect((await loadConfig(missing)).settings.toolset).toBe('full');
+
+      process.env.MCP_EMAIL_TOOLSET = 'minimal';
+      expect((await loadConfig(missing)).settings.toolset).toBe('minimal');
+
+      process.env.MCP_EMAIL_TOOLSET = 'bogus';
+      await expect(loadConfig(missing)).rejects.toThrow();
     });
   });
 

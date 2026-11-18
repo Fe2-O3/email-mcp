@@ -159,6 +159,8 @@ export interface CacheConfig {
   syncInterval: number;
 }
 
+export type Toolset = 'full' | 'core' | 'minimal';
+
 export interface AppConfig {
   settings: {
     rateLimit: number;
@@ -168,6 +170,8 @@ export interface AppConfig {
     /** Seconds without an MCP request before the stdio server exits; 0 disables. */
     idleExit: number;
     readOnly: boolean;
+    /** Which tools to register: everything, everyday mail work, or triage and read only. */
+    toolset: Toolset;
     cache: CacheConfig;
     watcher: WatcherConfig;
     verification: VerificationConfig;

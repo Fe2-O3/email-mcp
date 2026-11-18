@@ -25,6 +25,8 @@ The adapted files are:
   src/connections/credential-redaction.test.ts
   src/mcp-catalog.test.ts                    tool catalog baseline test (approach;
                                              the baseline data is original)
+  src/tools/toolsets.ts                      toolset grouping idea (tool lists
+                                             and filter are original)
 
 "Mailoo" and "Bitfloo" are names of their respective owners. They are used here
 only to attribute the code above and are not used as branding for this project.
