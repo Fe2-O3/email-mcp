@@ -6,7 +6,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/server';
-import { readAllowedRedirects } from '../config/loader.js';
+import { readAllowedPrograms, readAllowedRedirects } from '../config/loader.js';
 import type ConnectionManager from '../connections/manager.js';
 import type CalendarService from '../services/calendar.service.js';
 import type HooksService from '../services/hooks.service.js';
@@ -80,6 +80,8 @@ export default function registerAllTools(
     sieve: extras.sieveService ?? new SieveService(),
     allowlist: config.sieve?.allowedRedirects ?? [],
     readAllowlist: readAllowedRedirects,
+    allowedPrograms: config.sieve?.allowedPrograms ?? [],
+    readAllowedPrograms,
     listFolders: async (account) =>
       (await imapService.listMailboxes(account)).map((mailbox) => mailbox.path),
   });

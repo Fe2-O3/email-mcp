@@ -1,5 +1,6 @@
 import {
   decodeEncodedCharacters,
+  mailtoIsReadable,
   mailtoRecipients,
   scanSieveScript,
   scanWithIncludes,
@@ -132,6 +133,15 @@ describe('notify', () => {
     expect(blocked('notify :method "mailto" :options "me@example.org";')).toEqual([]);
   });
 
+  it('blocks a mailto with a second ? or = instead of cutting it short', () => {
+    expect(mailtoIsReadable('mailto:a@x.com?cc=b@x.com')).toBe(true);
+    expect(mailtoIsReadable('mailto:me@example.org?cc=me@example.org?bcc=evil@x.com')).toBe(false);
+    expect(mailtoIsReadable('mailto:me@example.org?cc=a=b')).toBe(false);
+    expect(
+      blocked('notify "mailto:me@example.org?cc=me@example.org?bcc=evil@x.com";').length,
+    ).toBeGreaterThan(0);
+  });
+
   it('parses mailto recipients', () => {
     expect(mailtoRecipients('mailto:a@x.com,b@x.com?to=c@x.com&subject=hi&BCC=d%40x.com')).toEqual([
       'a@x.com',
@@ -143,14 +153,62 @@ describe('notify', () => {
 });
 
 describe('other actions', () => {
-  it('flags vacation, reject, ereject, discard and filter as risky only', () => {
-    expect(actions('vacation "away"; reject "no"; EREJECT "no"; discard; filter "prog";')).toEqual([
+  it('flags vacation, reject, ereject and discard as risky only', () => {
+    expect(actions('vacation "away"; reject "no"; EREJECT "no"; discard;')).toEqual([
       'warn:vacation',
       'warn:reject',
       'warn:ereject',
       'warn:discard',
-      'warn:filter',
     ]);
+  });
+
+  it('blocks filter unless its program is on the allowed_programs list', () => {
+    expect(actions('filter "prog";')).toEqual(['block:filter']);
+    expect(actions('filter "prog" "arg";')).toEqual(['block:filter']);
+    expect(actions(`filter "${D}{p}";`)).toEqual(['block:filter']);
+    expect(actions('filter;')).toEqual(['block:filter']);
+    const allowed = (script: string) =>
+      scanSieveScript(script, ALLOW, { allowedPrograms: ['prog'] }).findings.map(
+        (f) => `${f.severity}:${f.action}`,
+      );
+    expect(allowed('filter "prog";')).toEqual(['warn:filter']);
+    expect(allowed('filter "other";')).toEqual(['block:filter']);
+  });
+
+  it('warns about an extension it does not know, and about nothing it knows', () => {
+    expect(actions('require "vnd.unknown.x"; keep;')).toEqual(['warn:require']);
+    expect(
+      actions('require ["fileinto", "copy", "variables", "vacation", "enotify"]; keep;'),
+    ).toEqual([]);
+    expect(actions('require "comparator-i;ascii-numeric"; keep;')).toEqual([]);
+    expect(actions('require "VND.Dovecot.Debug"; keep;')).toEqual([]);
+  });
+
+  it('blocks report when the address (the last string) is not allowlisted, even without an @', () => {
+    expect(blocked('report "abuse" "me@example.org" "root";')).toHaveLength(1);
+    expect(blocked('report "abuse" "text" "me@example.org";')).toHaveLength(0);
+    expect(blocked('report "abuse" "text" "thief@evil.com";')).toHaveLength(1);
+  });
+
+  it('blocks an unclosed string list instead of reading on to the end', () => {
+    const scan = scanSieveScript('redirect [ "me@example.org" ; keep;', ALLOW);
+    expect(scan.blocked).toBe(true);
+    expect(scan.findings[0]).toMatchObject({ action: 'parse' });
+  });
+
+  it('scans hostile one-megabyte scripts in well under a second', () => {
+    const size = 1024 * 1024;
+    const hostile = [
+      't '.repeat(size / 2),
+      'redirect [ '.repeat(Math.floor(size / 11)),
+      'notify [ '.repeat(Math.floor(size / 9)),
+      'text: '.repeat(Math.floor(size / 6)),
+    ];
+    hostile.forEach((script) => {
+      const started = performance.now();
+      scanSieveScript(script, ALLOW);
+      expect(performance.now() - started).toBeLessThan(1000);
+    });
   });
 
   it('blocks pipe and execute', () => {
@@ -220,17 +278,32 @@ describe('include', () => {
     expect(scan.blocked).toBe(false);
   });
 
-  it('warns about a missing include and a global include', async () => {
+  it('warns about a missing include, and blocks a global include that cannot be read', async () => {
     const scan = await scanWithIncludes(
       'main',
       'include "missing"; include :global "spam";',
       ALLOW,
       async () => null,
     );
-    expect(scan.findings.map((f) => f.message)).toEqual([
-      expect.stringMatching(/does not exist/),
-      expect.stringMatching(/global script "spam"/),
+    expect(scan.findings.map((f) => `${f.severity}: ${f.message}`)).toEqual([
+      expect.stringMatching(/^warn: .*does not exist/),
+      expect.stringMatching(/^block: .*global script "spam"/),
     ]);
+    expect(scan.blocked).toBe(true);
+  });
+
+  it('only warns about a global include when asked to just read what is live', async () => {
+    const scan = await scanWithIncludes(
+      'main',
+      'include :global "spam";',
+      ALLOW,
+      async () => null,
+      {
+        blockGlobalIncludes: false,
+      },
+    );
+    expect(scan.blocked).toBe(false);
+    expect(scan.findings[0]?.severity).toBe('warn');
   });
 });
 

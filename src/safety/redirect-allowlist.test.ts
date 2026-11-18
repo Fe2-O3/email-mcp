@@ -22,6 +22,15 @@ describe('parseAllowlistEntry', () => {
 // A Sieve variable reference, as a script would carry it.
 const VARIABLE = ['$', '{addr}'].join('');
 
+describe('lookalike characters', () => {
+  it('refuses non-ASCII text before lowercasing (the Kelvin sign is not a K)', () => {
+    expect(parsePlainAddress('me@wor\u212A.example')).toBeNull();
+    expect(isAllowedRedirect('me@wor\u212A.example', ['work.example'])).toBe(false);
+    expect(parseAllowlistEntry('wor\u212A.example')).toHaveProperty('error');
+    expect(parsePlainAddress('me@work.example')).toEqual({ local: 'me', domain: 'work.example' });
+  });
+});
+
 describe('parsePlainAddress', () => {
   it('reads a bare or angle-bracketed address', () => {
     expect(parsePlainAddress('A@B.com')).toEqual({ local: 'a', domain: 'b.com' });

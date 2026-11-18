@@ -514,6 +514,10 @@ async function command(
   name: string,
   wire: string | Buffer,
 ): Promise<SieveResponse> {
+  // Bytes left over from an earlier answer would be read as this command's reply.
+  if (conn.buf.length > 0) {
+    throw new Error(`Unexpected data from the ManageSieve server before ${name}`);
+  }
   conn.socket.write(wire);
   const response = await readResponse(conn);
   if (response.status !== 'OK') throw new SieveCommandError(name, response);
@@ -743,7 +747,12 @@ function makeSession(
     getScript: async (name) => {
       assertSieveScriptName(name);
       const resp = await command(conn, 'GETSCRIPT', `GETSCRIPT ${quoteSieve(name)}\r\n`);
-      return resp.data.flat().find((t) => t.kind === 'string')?.value ?? '';
+      // A reply with no script text is not an empty script: an empty one would scan clean.
+      const body = resp.data.flat().find((t) => t.kind === 'string');
+      if (body === undefined) {
+        throw new Error(`The server sent no script text for ${JSON.stringify(name)}`);
+      }
+      return body.value;
     },
     putScript: async (name, content) => {
       assertSieveScriptName(name);

@@ -2992,6 +2992,7 @@
             },
             "content": {
               "description": "Sieve script source to check (RFC 5228)",
+              "maxLength": 1048576,
               "type": "string"
             },
             "name": {
@@ -3081,6 +3082,7 @@
             },
             "content": {
               "description": "Sieve script source (RFC 5228)",
+              "maxLength": 1048576,
               "type": "string"
             },
             "dryRun": {
@@ -5012,6 +5014,7 @@
             },
             "content": {
               "description": "Sieve script source to check (RFC 5228)",
+              "maxLength": 1048576,
               "type": "string"
             },
             "name": {

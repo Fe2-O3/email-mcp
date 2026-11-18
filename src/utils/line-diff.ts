@@ -16,7 +16,11 @@ export function lineDiff(before: string, after: string): string[] {
   const a = splitLines(before);
   const b = splitLines(after);
   if (a.length * b.length > MAX_CELLS) {
-    return [`- (all ${a.length} old lines)`, `+ (all ${b.length} new lines)`];
+    return [
+      `- (all ${a.length} old lines)`,
+      `+ (all ${b.length} new lines)`,
+      '  (Too large to compare line by line: this does not mean every line changed.)',
+    ];
   }
 
   // Longest common subsequence table, filled from the end.

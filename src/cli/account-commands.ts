@@ -652,7 +652,7 @@ async function addAccount(): Promise<void> {
             calendar_confirm: true,
           },
         },
-        sieve: { allowed_redirects: [] },
+        sieve: { allowed_redirects: [], allowed_programs: [] },
         accounts: [newAccount],
       };
 

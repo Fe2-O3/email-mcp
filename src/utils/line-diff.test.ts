@@ -30,6 +30,7 @@ describe('lineDiff', () => {
     expect(lineDiff(big, `${big}\ny`)).toEqual([
       '- (all 2100 old lines)',
       '+ (all 2101 new lines)',
+      '  (Too large to compare line by line: this does not mean every line changed.)',
     ]);
   });
 });

@@ -9,10 +9,13 @@
  * Rules, in order of how bad a miss would be:
  *   block  redirect / notify / report to a target not on `sieve.allowed_redirects`,
  *          or to a target that cannot be read with certainty (variables, lists);
- *          pipe and execute (server programs); an include whose name is dynamic;
- *          a script that does not tokenize.
- *   warn   vacation, reject, ereject, discard, filter, allowlisted forwards,
- *          include (its target is scanned too), fileinto to a missing folder.
+ *          pipe and execute (server programs); filter unless its program is on
+ *          `sieve.allowed_programs`; an include whose name is dynamic; an include of
+ *          a server-wide (global) script, which cannot be read here; a script that
+ *          does not tokenize or has an unclosed string list.
+ *   warn   vacation, reject, ereject, discard, allowlisted forwards and filters,
+ *          include (its target is scanned too), fileinto to a missing folder,
+ *          an extension this scanner does not know.
  *
  * False alarms are acceptable; misses are not. When in doubt this blocks.
  */
@@ -124,7 +127,11 @@ export function tokenizeSieve(source: string): Token[] {
       }
       if (!closed) throw new SieveParseError('unterminated quoted string', startLine);
       tokens.push({ kind: 'string', value, line: startLine });
-    } else if ((ch === 't' || ch === 'T') && MULTILINE_START.test(headerAt(i))) {
+    } else if (
+      (ch === 't' || ch === 'T') &&
+      source.slice(i, i + 5).toLowerCase() === 'text:' &&
+      MULTILINE_START.test(headerAt(i))
+    ) {
       const startLine = line;
       const header = MULTILINE_START.exec(headerAt(i))?.[0] ?? '';
       i += header.length;
@@ -199,10 +206,31 @@ export function decodeEncodedCharacters(value: string): string {
 
 const hasVariable = (value: string): boolean => value.includes('${');
 
+/** Splits at the first `sep` only; the rest stays whole instead of being cut off. */
+function splitFirst(text: string, sep: string): [string, string] {
+  const at = text.indexOf(sep);
+  return at < 0 ? [text, ''] : [text.slice(0, at), text.slice(at + 1)];
+}
+
+/**
+ * False when a mailto: URI has a second `?`, or a query pair with a second `=`.
+ * A server reads those as part of a value, so what it does with them cannot be
+ * told from here; the caller blocks.
+ */
+export function mailtoIsReadable(uri: string): boolean {
+  const body = uri.replace(/^mailto:/i, '');
+  const [, query] = splitFirst(body, '?');
+  if (query.includes('?')) return false;
+  return query
+    .split('&')
+    .filter(Boolean)
+    .every((pair) => splitFirst(pair, '=')[1].includes('=') === false);
+}
+
 /** Every address a mailto: URI sends to: the path and the to/cc/bcc header fields. */
 export function mailtoRecipients(uri: string): string[] {
   const body = uri.replace(/^mailto:/i, '');
-  const [path = '', query = ''] = body.split('?', 2);
+  const [path, query] = splitFirst(body, '?');
   const decode = (s: string): string => {
     try {
       return decodeURIComponent(s);
@@ -218,7 +246,7 @@ export function mailtoRecipients(uri: string): string[] {
     .split('&')
     .filter(Boolean)
     .forEach((pair) => {
-      const [key = '', value = ''] = pair.split('=', 2);
+      const [key, value] = splitFirst(pair, '=');
       if (/^(to|cc|bcc)$/i.test(decode(key))) {
         recipients.push(
           ...decode(value)
@@ -281,14 +309,18 @@ function readArguments(
       const strings: string[] = [];
       const { line } = t;
       i += 1;
-      while (
-        i < tokens.length &&
-        !((tokens[i] as Token).kind === 'punct' && (tokens[i] as Token).value === ']')
-      ) {
+      // A string list holds only strings and commas. Anything else means the
+      // bracket was never closed: refuse, and never read on to the end of the file.
+      while (i < tokens.length) {
         const item = tokens[i] as Token;
+        if (item.kind === 'punct' && item.value === ']') break;
         if (item.kind === 'string') strings.push(item.value);
+        else if (!(item.kind === 'punct' && item.value === ',')) {
+          throw new SieveParseError('unclosed string list', line);
+        }
         i += 1;
       }
+      if (i >= tokens.length) throw new SieveParseError('unclosed string list', line);
       i += 1;
       args.push({ tag: pendingTag, strings, line });
       pendingTag = undefined;
@@ -324,7 +356,81 @@ const REDIRECT_KEYWORDS = new Set([
   'return',
 ]);
 
-export function scanSieveScript(source: string, allowlist: readonly string[]): SieveScan {
+export interface ScanOptions {
+  /** Programs `filter` may run: `sieve.allowed_programs` in config.toml. Default: none. */
+  allowedPrograms?: readonly string[];
+  /**
+   * Block an include of a server-wide (global) script. True by default: such a
+   * script cannot be read over ManageSieve. Off only for a read of a script that
+   * is already live and is not being changed.
+   */
+  blockGlobalIncludes?: boolean;
+}
+
+/**
+ * Extensions this scanner knows. A `require` of anything else is warned about,
+ * because a server-specific extension can add commands that send mail or run
+ * programs under a name the scanner has no rule for.
+ */
+const KNOWN_EXTENSIONS: ReadonlySet<string> = new Set([
+  'fileinto',
+  'reject',
+  'ereject',
+  'envelope',
+  'encoded-character',
+  'vacation',
+  'vacation-seconds',
+  'subaddress',
+  'relational',
+  'regex',
+  'copy',
+  'include',
+  'variables',
+  'body',
+  'environment',
+  'date',
+  'index',
+  'imap4flags',
+  'imapflags',
+  'mailbox',
+  'mboxmetadata',
+  'servermetadata',
+  'editheader',
+  'duplicate',
+  'enotify',
+  'notify',
+  'foreverypart',
+  'mime',
+  'extracttext',
+  'spamtest',
+  'spamtestplus',
+  'virustest',
+  'ihave',
+  'error',
+  'special-use',
+  'mailboxid',
+  'fcc',
+  'redirect-dsn',
+  'redirect-deliverby',
+  'vnd.dovecot.debug',
+  'vnd.dovecot.duplicate',
+  'vnd.dovecot.environment',
+  // Handled as commands below (blocked, or checked against the allowlists).
+  'vnd.dovecot.pipe',
+  'vnd.dovecot.execute',
+  'vnd.dovecot.filter',
+  'vnd.dovecot.report',
+]);
+
+const isKnownExtension = (name: string): boolean =>
+  KNOWN_EXTENSIONS.has(name) || name.startsWith('comparator-');
+
+export function scanSieveScript(
+  source: string,
+  allowlist: readonly string[],
+  options: ScanOptions = {},
+): SieveScan {
+  const allowedPrograms = options.allowedPrograms ?? [];
   const findings: SieveFinding[] = [];
   const includes: SieveInclude[] = [];
   const fileinto: { folder: string; line: number }[] = [];
@@ -376,198 +482,272 @@ export function scanSieveScript(source: string, allowlist: readonly string[]): S
     }
   };
 
-  tokens.forEach((token, index) => {
-    if (token.kind !== 'identifier') return;
-    const { line } = token;
-    switch (token.value) {
-      case 'redirect': {
-        const args = readArguments(tokens, index + 1, REDIRECT_TAGS);
-        if (args.some((a) => a.tag === 'list')) {
-          add({
-            severity: 'block',
-            action: 'redirect',
-            line,
-            message: 'Forwards to an external list (redirect :list); its members cannot be checked',
+  const scanTokens = (): void => {
+    tokens.forEach((token, index) => {
+      if (token.kind !== 'identifier') return;
+      const { line } = token;
+      switch (token.value) {
+        case 'redirect': {
+          const args = readArguments(tokens, index + 1, REDIRECT_TAGS);
+          if (args.some((a) => a.tag === 'list')) {
+            add({
+              severity: 'block',
+              action: 'redirect',
+              line,
+              message:
+                'Forwards to an external list (redirect :list); its members cannot be checked',
+            });
+          }
+          const copy = args.some((a) => a.tag === 'copy') ? ' a copy' : '';
+          const targets = args.flatMap((a) =>
+            a.tag && REDIRECT_TAGS.has(a.tag)
+              ? a.strings.filter((s) => !REDIRECT_KEYWORDS.has(s.trim().toLowerCase()))
+              : a.strings,
+          );
+          if (targets.length === 0 && !args.some((a) => a.tag === 'list')) {
+            add({
+              severity: 'block',
+              action: 'redirect',
+              line,
+              message: 'redirect without a readable target address',
+            });
+          }
+          targets.forEach((t) => {
+            checkForward('redirect', t, line, `Forwards${copy}`);
           });
+          break;
         }
-        const copy = args.some((a) => a.tag === 'copy') ? ' a copy' : '';
-        const targets = args.flatMap((a) =>
-          a.tag && REDIRECT_TAGS.has(a.tag)
-            ? a.strings.filter((s) => !REDIRECT_KEYWORDS.has(s.trim().toLowerCase()))
-            : a.strings,
-        );
-        if (targets.length === 0 && !args.some((a) => a.tag === 'list')) {
-          add({
-            severity: 'block',
-            action: 'redirect',
-            line,
-            message: 'redirect without a readable target address',
-          });
-        }
-        targets.forEach((t) => {
-          checkForward('redirect', t, line, `Forwards${copy}`);
-        });
-        break;
-      }
-      case 'notify': {
-        const args = readArguments(tokens, index + 1, NOTIFY_TAGS);
-        const methods = args
-          .filter((a) => a.tag === undefined || a.tag === 'method')
-          .flatMap((a) => a.strings);
-        // The old draft put the address in :options.
-        const legacy = args
-          .filter((a) => a.tag === 'options')
-          .flatMap((a) => a.strings)
-          .filter((s) => s.includes('@'));
-        if (methods.length === 0 && legacy.length === 0) {
-          add({
-            severity: 'block',
-            action: 'notify',
-            line,
-            message: 'notify without a readable method; where it sends cannot be checked',
-          });
-        }
-        methods.forEach((raw) => {
-          const method = decodeEncodedCharacters(raw).trim();
-          if (hasVariable(method)) {
+        case 'notify': {
+          const args = readArguments(tokens, index + 1, NOTIFY_TAGS);
+          const methods = args
+            .filter((a) => a.tag === undefined || a.tag === 'method')
+            .flatMap((a) => a.strings);
+          // The old draft put the address in :options.
+          const legacy = args
+            .filter((a) => a.tag === 'options')
+            .flatMap((a) => a.strings)
+            .filter((s) => s.includes('@'));
+          if (methods.length === 0 && legacy.length === 0) {
             add({
               severity: 'block',
               action: 'notify',
               line,
-              target: method,
-              message: `Sends a notification to a target built from variables (${method})`,
+              message: 'notify without a readable method; where it sends cannot be checked',
             });
-          } else if (/^mailto:/i.test(method)) {
-            const recipients = mailtoRecipients(method);
-            if (recipients.length === 0) {
+          }
+          methods.forEach((raw) => {
+            const method = decodeEncodedCharacters(raw).trim();
+            if (hasVariable(method)) {
               add({
                 severity: 'block',
                 action: 'notify',
                 line,
                 target: method,
-                message: `notify ${method} has no readable recipient`,
+                message: `Sends a notification to a target built from variables (${method})`,
+              });
+            } else if (/^mailto:/i.test(method)) {
+              const recipients = mailtoRecipients(method);
+              if (!mailtoIsReadable(method)) {
+                add({
+                  severity: 'block',
+                  action: 'notify',
+                  line,
+                  target: method,
+                  message: `notify ${method} has a second "?" or "=" in its fields; where it sends cannot be told`,
+                });
+              }
+              if (recipients.length === 0) {
+                add({
+                  severity: 'block',
+                  action: 'notify',
+                  line,
+                  target: method,
+                  message: `notify ${method} has no readable recipient`,
+                });
+              }
+              recipients.forEach((r) => {
+                checkForward('notify', r, line, 'Sends a notification with message details');
+              });
+            } else if (/^[a-z][a-z0-9+.-]*:/i.test(method) || legacy.length === 0) {
+              add({
+                severity: 'block',
+                action: 'notify',
+                line,
+                target: method,
+                message: `Sends a notification through ${method}; only mailto: to an allowlisted address can be checked`,
               });
             }
-            recipients.forEach((r) => {
-              checkForward('notify', r, line, 'Sends a notification with message details');
-            });
-          } else if (/^[a-z][a-z0-9+.-]*:/i.test(method) || legacy.length === 0) {
+          });
+          legacy.forEach((r) => {
+            checkForward('notify', r, line, 'Sends a notification with message details');
+          });
+          break;
+        }
+        case 'report': {
+          // vnd.dovecot.report sends a report message to an address.
+          const args = readArguments(tokens, index + 1, NO_TAG_VALUES);
+          const strings = args.flatMap((a) => a.strings);
+          // The address is the last string. It is always checked, even without an @
+          // (a bare name is a local user), along with any other string that has one.
+          const last = strings.at(-1);
+          const addresses = strings.filter(
+            (s, i) =>
+              i === strings.length - 1 ||
+              decodeEncodedCharacters(s).includes('@') ||
+              hasVariable(s),
+          );
+          if (addresses.length === 0 || last === undefined) {
             add({
               severity: 'block',
-              action: 'notify',
+              action: 'report',
               line,
-              target: method,
-              message: `Sends a notification through ${method}; only mailto: to an allowlisted address can be checked`,
+              message: 'report sends a message to an address that cannot be read',
             });
           }
-        });
-        legacy.forEach((r) => {
-          checkForward('notify', r, line, 'Sends a notification with message details');
-        });
-        break;
-      }
-      case 'report': {
-        // vnd.dovecot.report sends a report message to an address.
-        const args = readArguments(tokens, index + 1, NO_TAG_VALUES);
-        const strings = args.flatMap((a) => a.strings);
-        const addresses = strings.filter(
-          (s) => decodeEncodedCharacters(s).includes('@') || hasVariable(s),
-        );
-        if (addresses.length === 0) {
+          addresses.forEach((a) => {
+            checkForward('report', a.replace(/^mailto:/i, ''), line, 'Sends a report');
+          });
+          break;
+        }
+        case 'pipe':
+        case 'execute':
           add({
             severity: 'block',
-            action: 'report',
+            action: token.value,
             line,
-            message: 'report sends a message to an address that cannot be read',
+            message: `${token.value} hands the message to a program on the server; what it does cannot be checked`,
           });
+          break;
+        case 'filter': {
+          const args = readArguments(tokens, index + 1, NO_TAG_VALUES);
+          const program = decodeEncodedCharacters(
+            args.find((a) => a.tag === undefined && a.strings.length > 0)?.strings[0] ?? '',
+          ).trim();
+          if (program === '' || hasVariable(program)) {
+            add({
+              severity: 'block',
+              action: 'filter',
+              line,
+              target: program || undefined,
+              message:
+                'filter passes the message through a program on the server, and the program name cannot be read; what it does cannot be checked',
+            });
+          } else if (allowedPrograms.some((p) => p.trim() === program)) {
+            add({
+              severity: 'warn',
+              action: 'filter',
+              line,
+              target: program,
+              message: `filter passes the message through the server program "${program}" (allowed by sieve.allowed_programs in config.toml)`,
+            });
+          } else {
+            add({
+              severity: 'block',
+              action: 'filter',
+              line,
+              target: program,
+              message: `filter passes the message through the server program "${program}", which is not in sieve.allowed_programs. Only a person editing config.toml can allow it`,
+            });
+          }
+          break;
         }
-        addresses.forEach((a) => {
-          checkForward('report', a.replace(/^mailto:/i, ''), line, 'Sends a report');
-        });
-        break;
-      }
-      case 'pipe':
-      case 'execute':
-        add({
-          severity: 'block',
-          action: token.value,
-          line,
-          message: `${token.value} hands the message to a program on the server; what it does cannot be checked`,
-        });
-        break;
-      case 'filter':
-        add({
-          severity: 'warn',
-          action: 'filter',
-          line,
-          message: 'filter passes the message through a program on the server',
-        });
-        break;
-      case 'vacation':
-        add({
-          severity: 'warn',
-          action: 'vacation',
-          line,
-          message: 'Sends automatic replies to senders (vacation)',
-        });
-        break;
-      case 'reject':
-      case 'ereject':
-        add({
-          severity: 'warn',
-          action: token.value,
-          line,
-          message: `Bounces mail back to the sender (${token.value})`,
-        });
-        break;
-      case 'discard':
-        add({
-          severity: 'warn',
-          action: 'discard',
-          line,
-          message: 'Silently deletes matching mail (discard)',
-        });
-        break;
-      case 'fileinto': {
-        const args = readArguments(tokens, index + 1, FILEINTO_TAGS);
-        const positional = args.filter((a) => a.tag === undefined).flatMap((a) => a.strings);
-        const folder = positional.at(-1);
-        if (folder !== undefined) fileinto.push({ folder: decodeEncodedCharacters(folder), line });
-        break;
-      }
-      case 'include': {
-        const args = readArguments(tokens, index + 1, NO_TAG_VALUES);
-        const global = args.some((a) => a.tag === 'global');
-        const optional = args.some((a) => a.tag === 'optional');
-        const names = args.filter((a) => a.tag === undefined).flatMap((a) => a.strings);
-        if (names.length === 0) {
+        case 'require': {
+          const args = readArguments(tokens, index + 1, NO_TAG_VALUES);
+          args
+            .flatMap((a) => a.strings)
+            .forEach((raw) => {
+              const name = decodeEncodedCharacters(raw).trim().toLowerCase();
+              if (!isKnownExtension(name)) {
+                add({
+                  severity: 'warn',
+                  action: 'require',
+                  line,
+                  target: name,
+                  message: `Uses the extension "${name}", which this scanner does not know; commands it adds are not checked`,
+                });
+              }
+            });
+          break;
+        }
+        case 'vacation':
           add({
-            severity: 'block',
-            action: 'include',
+            severity: 'warn',
+            action: 'vacation',
             line,
-            message: 'include without a readable script name',
+            message: 'Sends automatic replies to senders (vacation)',
           });
+          break;
+        case 'reject':
+        case 'ereject':
+          add({
+            severity: 'warn',
+            action: token.value,
+            line,
+            message: `Bounces mail back to the sender (${token.value})`,
+          });
+          break;
+        case 'discard':
+          add({
+            severity: 'warn',
+            action: 'discard',
+            line,
+            message: 'Silently deletes matching mail (discard)',
+          });
+          break;
+        case 'fileinto': {
+          const args = readArguments(tokens, index + 1, FILEINTO_TAGS);
+          const positional = args.filter((a) => a.tag === undefined).flatMap((a) => a.strings);
+          const folder = positional.at(-1);
+          if (folder !== undefined)
+            fileinto.push({ folder: decodeEncodedCharacters(folder), line });
+          break;
         }
-        names.forEach((raw) => {
-          const name = decodeEncodedCharacters(raw);
-          if (hasVariable(name)) {
+        case 'include': {
+          const args = readArguments(tokens, index + 1, NO_TAG_VALUES);
+          const global = args.some((a) => a.tag === 'global');
+          const optional = args.some((a) => a.tag === 'optional');
+          const names = args.filter((a) => a.tag === undefined).flatMap((a) => a.strings);
+          if (names.length === 0) {
             add({
               severity: 'block',
               action: 'include',
               line,
-              target: name,
-              message: `Includes a script whose name is built from variables (${name}); it cannot be checked`,
+              message: 'include without a readable script name',
             });
-          } else {
-            includes.push({ name, global, optional, line });
           }
-        });
-        break;
+          names.forEach((raw) => {
+            const name = decodeEncodedCharacters(raw);
+            if (hasVariable(name)) {
+              add({
+                severity: 'block',
+                action: 'include',
+                line,
+                target: name,
+                message: `Includes a script whose name is built from variables (${name}); it cannot be checked`,
+              });
+            } else {
+              includes.push({ name, global, optional, line });
+            }
+          });
+          break;
+        }
+        default:
+          break;
       }
-      default:
-        break;
-    }
-  });
+    });
+  };
+
+  try {
+    scanTokens();
+  } catch (err) {
+    if (!(err instanceof SieveParseError)) throw err;
+    add({
+      severity: 'block',
+      action: 'parse',
+      line: err.line,
+      message: `The script could not be read, so it cannot be checked for forwarding (${err.message})`,
+    });
+  }
 
   return { findings, includes, fileinto, blocked: findings.some((f) => f.severity === 'block') };
 }
@@ -585,25 +765,29 @@ export async function scanWithIncludes(
   source: string,
   allowlist: readonly string[],
   fetch: (scriptName: string) => Promise<string | null>,
+  options: ScanOptions = {},
 ): Promise<SieveScan> {
+  const blockGlobal = options.blockGlobalIncludes ?? true;
   const all: SieveScan = { findings: [], includes: [], fileinto: [], blocked: false };
   const seen = new Set<string>();
 
   const visit = async (scriptName: string, text: string, depth: number): Promise<void> => {
     seen.add(scriptName);
-    const scan = scanSieveScript(text, allowlist);
+    const scan = scanSieveScript(text, allowlist, options);
     all.findings.push(...scan.findings.map((f) => ({ ...f, script: scriptName })));
     all.includes.push(...scan.includes);
     all.fileinto.push(...scan.fileinto);
     for (const inc of scan.includes) {
       if (inc.global) {
         all.findings.push({
-          severity: 'warn',
+          severity: blockGlobal ? 'block' : 'warn',
           action: 'include',
           line: inc.line,
           target: inc.name,
           script: scriptName,
-          message: `Includes the server's global script "${inc.name}", which cannot be read here`,
+          message: blockGlobal
+            ? `Includes the server's global script "${inc.name}". ManageSieve cannot read a global script, so what it does cannot be checked. Remove the include, or ask the server administrator`
+            : `Includes the server's global script "${inc.name}", which cannot be read here`,
         });
       } else if (!seen.has(inc.name)) {
         if (depth >= MAX_INCLUDE_DEPTH) {

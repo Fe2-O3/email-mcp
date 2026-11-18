@@ -142,6 +142,11 @@ export const SieveGlobalConfigSchema = z.object({
         }
       });
     }),
+  /**
+   * Server programs the Sieve `filter` command may run (names as the script writes
+   * them). Empty means `filter` is refused. A human edits this; no tool writes it.
+   */
+  allowed_programs: z.array(z.string()).default(() => []),
 });
 
 export const WatcherConfigSchema = z.object({
@@ -355,7 +360,7 @@ export const AppConfigFileSchema = z.object({
       },
     }),
   ),
-  sieve: SieveGlobalConfigSchema.default(() => ({ allowed_redirects: [] })),
+  sieve: SieveGlobalConfigSchema.default(() => ({ allowed_redirects: [], allowed_programs: [] })),
   accounts: z.array(AccountConfigSchema).min(1, 'At least one account is required'),
 });
 

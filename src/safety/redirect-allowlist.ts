@@ -21,10 +21,23 @@ const LOCAL_PART = /^[a-z0-9!#$%&'+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'+/=?^_`{|}~-]+
 
 export type AllowlistEntry = { kind: 'address'; value: string } | { kind: 'domain'; value: string };
 
+/**
+ * True when every character is plain ASCII. Checked BEFORE lowercasing: the Kelvin
+ * sign (U+212A) lowercases to a plain "k", so "work.example" spelled with it
+ * would otherwise pass as the allowed domain.
+ */
+function isAscii(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    if (value.charCodeAt(i) > 0x7f) return false;
+  }
+  return true;
+}
+
 /** Splits a plain `local@domain` address, lowercased; null for anything else. */
 export function parsePlainAddress(raw: string): { local: string; domain: string } | null {
   let value = raw.trim();
   if (value.startsWith('<') && value.endsWith('>')) value = value.slice(1, -1).trim();
+  if (!isAscii(value)) return null;
   value = value.toLowerCase();
   const at = value.lastIndexOf('@');
   if (at <= 0 || at === value.length - 1) return null;
@@ -36,6 +49,7 @@ export function parsePlainAddress(raw: string): { local: string; domain: string 
 
 /** Parses one allowlist entry, or returns the reason it is refused. */
 export function parseAllowlistEntry(raw: string): AllowlistEntry | { error: string } {
+  if (!isAscii(raw)) return { error: `"${raw}": only plain ASCII characters are allowed` };
   const value = raw.trim().toLowerCase();
   if (value === '') return { error: 'empty entry' };
   if (value.includes('*')) {

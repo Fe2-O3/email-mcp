@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { parse as parseTOML } from 'smol-toml';
 
-import { generateTemplate, loadConfig } from './loader.js';
+import { generateTemplate, loadConfig, readAllowedPrograms } from './loader.js';
 import { AccountConfigSchema, AppConfigFileSchema } from './schema.js';
 import { findUnknownKeys } from './validate.js';
 
@@ -61,6 +61,7 @@ describe('global sieve.allowed_redirects', () => {
   it('defaults to an empty list', () => {
     expect(AppConfigFileSchema.parse({ accounts: [base] }).sieve).toEqual({
       allowed_redirects: [],
+      allowed_programs: [],
     });
   });
 
@@ -103,6 +104,7 @@ describe('loading sieve settings', () => {
     'MCP_EMAIL_IMAP_HOST',
     'MCP_EMAIL_SMTP_HOST',
     'MCP_EMAIL_SIEVE_ALLOWED_REDIRECTS',
+    'MCP_EMAIL_SIEVE_ALLOWED_PROGRAMS',
     'MCP_EMAIL_SIEVE_ENABLED',
     'MCP_EMAIL_SIEVE_HOST',
     'MCP_EMAIL_SIEVE_PORT',
@@ -129,6 +131,26 @@ describe('loading sieve settings', () => {
     });
   });
 
+  it('reads the filter program allowlist from config.toml, fresh each time', async () => {
+    const file = path.join(tmpDir, 'config.toml');
+    const body = `
+[[accounts]]
+name = "a"
+email = "a@example.com"
+password = "x"
+[accounts.imap]
+host = "imap.example.com"
+[accounts.smtp]
+host = "smtp.example.com"
+`;
+    await fs.writeFile(file, `[sieve]\nallowed_programs = ["prog"]\n${body}`);
+    expect((await loadConfig(file)).sieve?.allowedPrograms).toEqual(['prog']);
+    expect(await readAllowedPrograms(file)).toEqual(['prog']);
+    await fs.writeFile(file, body);
+    expect(await readAllowedPrograms(file)).toEqual([]);
+    expect(await readAllowedPrograms(path.join(tmpDir, 'missing.toml'))).toEqual([]);
+  });
+
   it('normalizes the TOML blocks', async () => {
     const file = path.join(tmpDir, 'config.toml');
     await fs.writeFile(
@@ -151,7 +173,7 @@ tls = true
 `,
     );
     const config = await loadConfig(file);
-    expect(config.sieve).toEqual({ allowedRedirects: ['me@example.org'] });
+    expect(config.sieve).toEqual({ allowedRedirects: ['me@example.org'], allowedPrograms: [] });
     expect(config.accounts[0]?.sieve).toEqual({
       enabled: true,
       host: 'sieve.example.com',
@@ -169,7 +191,7 @@ tls = true
 
     const missing = path.join(tmpDir, 'none.toml');
     const plain = await loadConfig(missing);
-    expect(plain.sieve).toEqual({ allowedRedirects: [] });
+    expect(plain.sieve).toEqual({ allowedRedirects: [], allowedPrograms: [] });
     expect(plain.accounts[0]?.sieve).toBeUndefined();
 
     process.env.MCP_EMAIL_SIEVE_ALLOWED_REDIRECTS = 'me@example.org, example.net';

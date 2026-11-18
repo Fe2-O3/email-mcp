@@ -58,6 +58,10 @@ function loadFromEnv(): RawAppConfig | null {
         .split(',')
         .map((a) => a.trim())
         .filter(Boolean),
+      allowed_programs: (process.env.MCP_EMAIL_SIEVE_ALLOWED_PROGRAMS ?? '')
+        .split(',')
+        .map((a) => a.trim())
+        .filter(Boolean),
     },
     settings: {
       rate_limit: parseInt(process.env.MCP_EMAIL_RATE_LIMIT ?? '10', 10),
@@ -357,7 +361,10 @@ async function normalizeConfig(raw: RawAppConfig): Promise<AppConfig> {
         calendarConfirm: raw.settings.hooks.calendar_confirm ?? true,
       },
     },
-    sieve: { allowedRedirects: [...(raw.sieve?.allowed_redirects ?? [])] },
+    sieve: {
+      allowedRedirects: [...(raw.sieve?.allowed_redirects ?? [])],
+      allowedPrograms: [...(raw.sieve?.allowed_programs ?? [])],
+    },
     accounts: await Promise.all(raw.accounts.map(normalizeAccount)),
   };
 }
@@ -454,11 +461,25 @@ export async function loadConfig(configPath?: string): Promise<AppConfig> {
  * read with certainty gives an empty list, which allows nothing.
  */
 export async function readAllowedRedirects(configPath?: string): Promise<string[]> {
+  return readSieveList('allowed_redirects', configPath);
+}
+
+/**
+ * The Sieve `filter` program allowlist (`[sieve] allowed_programs`), read fresh
+ * like the redirect list. An unreadable file gives an empty list: `filter` is refused.
+ */
+export async function readAllowedPrograms(configPath?: string): Promise<string[]> {
+  return readSieveList('allowed_programs', configPath);
+}
+
+async function readSieveList(
+  key: 'allowed_redirects' | 'allowed_programs',
+  configPath?: string,
+): Promise<string[]> {
   try {
     const fromEnv = loadFromEnv();
     const raw = fromEnv ?? (await loadFromFile(configPath));
-    const list = (raw as { sieve?: { allowed_redirects?: unknown } } | null)?.sieve
-      ?.allowed_redirects;
+    const list = (raw as { sieve?: Record<string, unknown> } | null)?.sieve?.[key];
     return Array.isArray(list) ? list.filter((a): a is string => typeof a === 'string') : [];
   } catch {
     return [];
@@ -625,8 +646,11 @@ max_attachment_mb = 25  # base64-encoded attachment total per message, MB
 # rule forward action) is allowed ONLY to the addresses or domains listed here.
 # Edit this list yourself: no IMAP Wizard tool can change it, and no tool
 # argument can get around it. A domain does not cover its subdomains.
+# The Sieve filter command hands mail to a program on the server. It is refused
+# unless the program is named here (also edited by you only).
 # [sieve]
 # allowed_redirects = ["me@example.org", "example.net"]
+# allowed_programs = ["my-filter-program"]
 
 [[accounts]]
 name = "personal"

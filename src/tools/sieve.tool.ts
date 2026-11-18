@@ -13,7 +13,8 @@ import { z } from 'zod';
 
 import type ConnectionManager from '../connections/manager.js';
 import audit from '../safety/audit.js';
-import { delimitUntrusted } from '../safety/untrusted-content.js';
+import { delimitUntrusted, SERVER_TEXT_NOTICE } from '../safety/untrusted-content.js';
+import { MAX_SIEVE_SCRIPT_BYTES } from '../services/sieve.service.js';
 import type SieveManager from '../services/sieve-manager.service.js';
 import type { CheckReport } from '../services/sieve-manager.service.js';
 import { describeFindings } from '../services/sieve-scan.js';
@@ -31,23 +32,41 @@ const text = (body: string, isError = false): TextResult => ({
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** Text that came from the mail server or was copied out of a script: marked as data. */
+const fenced = (body: string): string => delimitUntrusted(body, SERVER_TEXT_NOTICE);
+
+/** An error message for a tool reply: the server's own words are marked as data. */
+const failure = (prefix: string, err: unknown): TextResult =>
+  text(`${prefix}\n${fenced(errorText(err))}`, true);
+
+/** Scan findings quote addresses, folders and script names from the script, so they are fenced. */
+function riskLines(findings: Parameters<typeof describeFindings>[0]): string[] {
+  return findings.length === 0
+    ? ['Risky actions: none found.']
+    : [
+        'Risky actions:',
+        fenced(
+          describeFindings(findings)
+            .map((l) => `- ${l}`)
+            .join('\n'),
+        ),
+      ];
+}
+
 function checkLines(report: CheckReport): string[] {
   const lines: string[] = [];
   if (!report.server.supported) {
     lines.push('Server syntax check: not offered by this server (CHECKSCRIPT).');
   } else if (report.server.ok) {
     lines.push(
-      `Server syntax check: OK${report.server.warnings ? ` with warnings: ${report.server.warnings}` : ''}`,
+      report.server.warnings
+        ? `Server syntax check: OK with warnings:\n${fenced(report.server.warnings)}`
+        : 'Server syntax check: OK',
     );
   } else {
-    lines.push('Server syntax check: FAILED', delimitUntrusted(report.server.message));
+    lines.push('Server syntax check: FAILED', fenced(report.server.message));
   }
-  const findings = [...report.scan.findings, ...report.folderFindings];
-  if (findings.length === 0) {
-    lines.push('Risky actions: none found.');
-  } else {
-    lines.push('Risky actions:', ...describeFindings(findings).map((l) => `- ${l}`));
-  }
+  lines.push(...riskLines([...report.scan.findings, ...report.folderFindings]));
   return lines;
 }
 
@@ -71,22 +90,29 @@ export function registerSieveReadTools(
       try {
         const status = await manager.status(connections.getAccount(account));
         const summary = status.available
-          ? `Server-side rules are available on ${status.host}:${status.port}. Active script: ${status.active ?? 'none'}.`
-          : `Server-side rules are not available. ${status.reason ?? ''}`.trim();
+          ? 'Server-side rules are available.'
+          : 'Server-side rules are not available.';
         return text(
-          `${summary}\n${JSON.stringify(
-            {
-              ...status,
-              allowedRedirects: await manager.allowedRedirects(),
-              allowedRedirectsNote:
-                'Forwarding is allowed only to these addresses or domains. Only a person editing config.toml ([sieve] allowed_redirects) can change them.',
-            },
-            null,
-            2,
-          )}`,
+          [
+            summary,
+            'From the server:',
+            fenced(JSON.stringify(status, null, 2)),
+            JSON.stringify(
+              {
+                allowedRedirects: await manager.allowedRedirects(),
+                allowedRedirectsNote:
+                  'Forwarding is allowed only to these addresses or domains. Only a person editing config.toml ([sieve] allowed_redirects) can change them.',
+                allowedPrograms: await manager.allowedPrograms(),
+                allowedProgramsNote:
+                  'The filter command may run only these server programs. Only a person editing config.toml ([sieve] allowed_programs) can change them.',
+              },
+              null,
+              2,
+            ),
+          ].join('\n'),
         );
       } catch (err) {
-        return text(`Sieve status failed: ${errorText(err)}`, true);
+        return failure('Sieve status failed:', err);
       }
     },
   );
@@ -104,12 +130,14 @@ export function registerSieveReadTools(
         const scripts = await manager.listScripts(connections.getAccount(account));
         if (scripts.length === 0) return text('No Sieve scripts on this account.');
         return text(
-          scripts
-            .map((s) => `${s.active ? '● (active)' : '○'} ${JSON.stringify(s.name)}`)
-            .join('\n'),
+          fenced(
+            scripts
+              .map((s) => `${s.active ? '● (active)' : '○'} ${JSON.stringify(s.name)}`)
+              .join('\n'),
+          ),
         );
       } catch (err) {
-        return text(`Listing Sieve scripts failed: ${errorText(err)}`, true);
+        return failure('Listing Sieve scripts failed:', err);
       }
     },
   );
@@ -130,7 +158,7 @@ export function registerSieveReadTools(
           `Script ${JSON.stringify(name)}${script.active ? ' (active)' : ''}:\n${delimitUntrusted(script.content)}`,
         );
       } catch (err) {
-        return text(`Getting the Sieve script failed: ${errorText(err)}`, true);
+        return failure('Getting the Sieve script failed:', err);
       }
     },
   );
@@ -150,7 +178,11 @@ export function registerSieveReadTools(
           .min(1)
           .optional()
           .describe('Stored script to check (or its name, with content)'),
-        content: z.string().optional().describe('Sieve script source to check (RFC 5228)'),
+        content: z
+          .string()
+          .max(MAX_SIEVE_SCRIPT_BYTES)
+          .optional()
+          .describe('Sieve script source to check (RFC 5228)'),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
@@ -168,7 +200,7 @@ export function registerSieveReadTools(
           : 'This script can be saved.';
         return text([verdict, ...checkLines(report)].join('\n'));
       } catch (err) {
-        return text(`Checking the Sieve script failed: ${errorText(err)}`, true);
+        return failure('Checking the Sieve script failed:', err);
       }
     },
   );
@@ -188,11 +220,13 @@ export function registerSieveWriteTools(
         'server check and risky actions, and changes nothing. Pass apply: true to save. Replacing ' +
         'a script first saves a backup copy (imapwiz-backup-<timestamp>-<name>). Saving over the ' +
         'ACTIVE script changes live mail filtering immediately. Forwarding (redirect) is refused ' +
-        'unless the target is in the allowlist a person keeps in config.toml; no argument changes that.',
+        'unless the target is in the allowlist a person keeps in config.toml; no argument changes that. ' +
+        'A script that includes a server-wide (global) script, or uses the filter command with a program ' +
+        'not on the config.toml list, is refused too.',
       inputSchema: z.object({
         account: accountParam,
         name: z.string().min(1).describe('Script name'),
-        content: z.string().describe('Sieve script source (RFC 5228)'),
+        content: z.string().max(MAX_SIEVE_SCRIPT_BYTES).describe('Sieve script source (RFC 5228)'),
         apply: z
           .boolean()
           .default(false)
@@ -239,7 +273,10 @@ export function registerSieveWriteTools(
               report.refused,
             );
           }
-          return text([`REFUSED: ${report.refused} Nothing was saved.`, ...body].join('\n'), true);
+          return text(
+            [`REFUSED: ${fenced(report.refused)}`, 'Nothing was saved.', ...body].join('\n'),
+            true,
+          );
         }
         if (!write) {
           const mode = dryRun ? '[DRY RUN]' : '[PREVIEW]';
@@ -261,14 +298,14 @@ export function registerSieveWriteTools(
             : report.live
               ? 'It is the active script, so it is live now.'
               : 'It is not active. Use sieve_activate_script to turn it on.',
-          report.serverWarnings ? `Server warnings: ${report.serverWarnings}` : '',
+          report.serverWarnings ? `Server warnings:\n${fenced(report.serverWarnings)}` : '',
         ].filter(Boolean);
         return text([...saved, ...body.slice(2)].join('\n'));
       } catch (err) {
         if (write) {
           await audit.log('sieve_put_script', account, { name }, 'error', errorText(err));
         }
-        return text(`Saving the Sieve script failed: ${errorText(err)}`, true);
+        return failure('Saving the Sieve script failed:', err);
       }
     },
   );
@@ -302,11 +339,7 @@ export function registerSieveWriteTools(
       try {
         const cfg = connections.getAccount(account);
         const report = await manager.activateScript(cfg, name, disableAll, !dryRun);
-        const scanLines = report.scan
-          ? report.scan.findings.length > 0
-            ? ['Risky actions:', ...describeFindings(report.scan.findings).map((l) => `- ${l}`)]
-            : ['Risky actions: none found.']
-          : [];
+        const scanLines = report.scan ? riskLines(report.scan.findings) : [];
         const previous = `Previously active: ${report.previous === null ? 'none' : JSON.stringify(report.previous)}.`;
         if (report.refused) {
           if (!dryRun) {
@@ -318,7 +351,10 @@ export function registerSieveWriteTools(
               report.refused,
             );
           }
-          return text([`REFUSED: ${report.refused}`, previous, ...scanLines].join('\n'), true);
+          return text(
+            [`REFUSED: ${fenced(report.refused)}`, previous, ...scanLines].join('\n'),
+            true,
+          );
         }
         const what =
           name === '' ? 'deactivate every Sieve script' : `activate ${JSON.stringify(name)}`;
@@ -357,7 +393,7 @@ export function registerSieveWriteTools(
             errorText(err),
           );
         }
-        return text(`Activating the Sieve script failed: ${errorText(err)}`, true);
+        return failure('Activating the Sieve script failed:', err);
       }
     },
   );
@@ -368,7 +404,9 @@ export function registerSieveWriteTools(
       title: 'Delete Sieve script',
       description:
         'Delete a server-side filter script. The active script is refused (activate another one ' +
-        'first). A backup copy (imapwiz-backup-<timestamp>-<name>) is saved before deleting.',
+        'first), and so is a script the active script includes. A backup copy ' +
+        '(imapwiz-backup-<timestamp>-<name>) is saved before deleting; a backup that is the only ' +
+        'copy of a deleted script cannot itself be deleted.',
       inputSchema: z.object({ account: accountParam, name: nameParam, dryRun: dryRunParam }),
       annotations: {
         readOnlyHint: false,
@@ -385,7 +423,7 @@ export function registerSieveWriteTools(
           if (!dryRun) {
             await audit.log('sieve_delete_script', cfg.name, { name }, 'error', report.refused);
           }
-          return text(`REFUSED: ${report.refused} Nothing was deleted.`, true);
+          return text(`REFUSED: ${fenced(report.refused)}\nNothing was deleted.`, true);
         }
         if (dryRun) {
           return text(
@@ -402,7 +440,7 @@ export function registerSieveWriteTools(
         if (!dryRun) {
           await audit.log('sieve_delete_script', account, { name }, 'error', errorText(err));
         }
-        return text(`Deleting the Sieve script failed: ${errorText(err)}`, true);
+        return failure('Deleting the Sieve script failed:', err);
       }
     },
   );

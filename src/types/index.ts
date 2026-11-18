@@ -96,6 +96,8 @@ export interface SieveAccountConfig {
 export interface SieveGlobalConfig {
   /** Addresses (`a@example.com`) or domains (`example.com`) mail may be forwarded to. */
   allowedRedirects: string[];
+  /** Server programs the Sieve `filter` command may run. Empty: `filter` is refused. */
+  allowedPrograms?: string[];
 }
 
 export interface WatcherConfig {

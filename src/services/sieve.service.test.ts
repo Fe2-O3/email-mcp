@@ -213,6 +213,29 @@ describe('ManageSieve commands over a real socket', () => {
   });
 });
 
+describe('misbehaving servers', () => {
+  it('rejects a GETSCRIPT answer with no script text instead of reading an empty script', async () => {
+    server = await startFakeSieveServer((cmd) =>
+      cmd.line.startsWith('GETSCRIPT') ? 'OK\r\n' : undefined,
+    );
+    await expect(
+      service.withSession(loopbackSieveAccount(server.port), (s) => s.getScript('a')),
+    ).rejects.toThrow(/no script text/);
+  });
+
+  it('rejects the next command when a stray extra OK was left over from the last one', async () => {
+    server = await startFakeSieveServer((cmd) =>
+      cmd.line.startsWith('LISTSCRIPTS') ? '"a"\r\nOK\r\nOK\r\n' : 'OK\r\n',
+    );
+    await expect(
+      service.withSession(loopbackSieveAccount(server.port), async (s) => {
+        await s.listScripts();
+        return s.getScript('a');
+      }),
+    ).rejects.toThrow(/Unexpected data/);
+  });
+});
+
 describe('transport safety', () => {
   it('refuses plain text to a remote host before connecting', async () => {
     const account: AccountConfig = {
