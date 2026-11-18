@@ -46,7 +46,7 @@ export default function registerDraftTools(
         bcc: z
           .array(z.email({ pattern: z.regexes.html5Email }))
           .optional()
-          .describe('CC recipients'),
+          .describe('BCC recipients'),
         html: z.boolean().default(false).describe('Send as HTML (default: plain text)'),
         in_reply_to: z.string().optional().describe('Message-ID for threading (from get_email)'),
         attachments: z

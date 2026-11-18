@@ -2378,7 +2378,7 @@
               "type": "array"
             },
             "bcc": {
-              "description": "CC recipients",
+              "description": "BCC recipients",
               "items": {
                 "format": "email",
                 "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
@@ -2776,7 +2776,7 @@
               "type": "array"
             },
             "bcc": {
-              "description": "CC recipients",
+              "description": "BCC recipients",
               "items": {
                 "format": "email",
                 "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
@@ -4934,6 +4934,51 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "action": {
+              "description": "Bulk action to perform",
+              "enum": ["mark_read", "mark_unread", "flag", "unflag", "move", "delete"],
+              "type": "string"
+            },
+            "destination": {
+              "description": "Destination mailbox — required when action is 'move'",
+              "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
+            "ids": {
+              "description": "Array of email UIDs (max 100). Get UIDs from list_emails or search_emails.",
+              "items": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Source mailbox containing the emails",
+              "type": "string"
+            }
+          },
+          "required": ["account", "action", "ids"],
+          "type": "object"
+        },
+        "name": "bulk_action",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
             "name": {
               "description": "Label name (e.g., \"Project-X\"). For nested labels use \"/\" separator (e.g., \"Work/Urgent\").",
               "type": "string"
@@ -4977,6 +5022,30 @@
           "type": "object"
         },
         "name": "delete_email",
+        "outputSchema": null
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
+            "name": {
+              "description": "Label name to delete",
+              "type": "string"
+            }
+          },
+          "required": ["account", "name"],
+          "type": "object"
+        },
+        "name": "delete_label",
         "outputSchema": null
       },
       {
@@ -5320,6 +5389,77 @@
             "attachments",
             "account",
             "mailbox"
+          ],
+          "type": "object"
+        }
+      },
+      {
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties": {
+            "account": {
+              "description": "Account name from list_accounts",
+              "type": "string"
+            },
+            "emailId": {
+              "description": "Email ID from list_emails or search_emails",
+              "type": "string"
+            },
+            "mailbox": {
+              "default": "INBOX",
+              "description": "Mailbox path (default: INBOX)",
+              "type": "string"
+            }
+          },
+          "required": ["account", "emailId"],
+          "type": "object"
+        },
+        "name": "get_email_status",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "answered": {
+              "type": "boolean"
+            },
+            "date": {
+              "type": "string"
+            },
+            "flagged": {
+              "type": "boolean"
+            },
+            "from": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "labels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailbox": {
+              "type": "string"
+            },
+            "seen": {
+              "type": "boolean"
+            },
+            "subject": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "mailbox",
+            "subject",
+            "from",
+            "date",
+            "seen",
+            "flagged",
+            "answered",
+            "labels"
           ],
           "type": "object"
         }
@@ -6391,7 +6531,7 @@
               "type": "array"
             },
             "bcc": {
-              "description": "CC recipients",
+              "description": "BCC recipients",
               "items": {
                 "format": "email",
                 "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
@@ -6725,7 +6865,7 @@
               "type": "array"
             },
             "bcc": {
-              "description": "CC recipients",
+              "description": "BCC recipients",
               "items": {
                 "format": "email",
                 "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
@@ -8121,7 +8261,7 @@
               "type": "array"
             },
             "bcc": {
-              "description": "CC recipients",
+              "description": "BCC recipients",
               "items": {
                 "format": "email",
                 "pattern": "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",

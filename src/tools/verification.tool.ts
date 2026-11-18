@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { delimitUntrusted } from '../safety/untrusted-content.js';
 import ClipboardService from '../services/clipboard.service.js';
 import type ImapService from '../services/imap.service.js';
 import VerificationService from '../services/verification.service.js';
@@ -94,12 +95,15 @@ export default function registerVerificationTool(
 
         const ageSeconds = Math.max(0, Math.round((Date.now() - Date.parse(hit.date)) / 1000));
         const valueLabel = hit.kind === 'code' ? 'Code' : 'Sign-in link';
+        // The service name, sender and subject all come from the message, so they sit inside the
+        // untrusted markers; a hostile subject cannot pass as the tool's own words.
         const lines = [
-          `${valueLabel} from ${hit.service}: ${hit.display}`,
-          `From: ${hit.from}`,
-          `Subject: ${hit.subject}`,
+          `${valueLabel}: ${hit.display}`,
           `Account/mailbox: ${hit.account}/${hit.mailbox}`,
           `Age: ${ageSeconds}s${hit.confidence ? ` · Confidence: ${hit.confidence}` : ''}`,
+          delimitUntrusted(
+            [`Service: ${hit.service}`, `From: ${hit.from}`, `Subject: ${hit.subject}`].join('\n'),
+          ),
         ];
         if (copied) lines.push('Copied to clipboard.');
         if (copyError) lines.push(`Could not copy to clipboard: ${copyError}`);

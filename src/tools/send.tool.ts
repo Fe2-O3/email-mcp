@@ -40,7 +40,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         bcc: z
           .array(z.email({ pattern: z.regexes.html5Email }))
           .optional()
-          .describe('CC recipients'),
+          .describe('BCC recipients'),
         html: z.boolean().default(false).describe('Send as HTML (default: plain text)'),
         attachments: z
           .array(attachmentInput)
