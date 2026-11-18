@@ -8,7 +8,13 @@ import audit from '../safety/audit.js';
 import { MAX_EMAIL_BODY_LENGTH, validateInputLength } from '../safety/validation.js';
 
 import type SmtpService from '../services/smtp.service.js';
-import { attachmentInput, toOutgoingAttachments } from './schema-helpers.js';
+import {
+  attachmentInput,
+  dryRunFailure,
+  dryRunParam,
+  dryRunResult,
+  toOutgoingAttachments,
+} from './schema-helpers.js';
 
 export default function registerSendTools(server: McpServer, smtpService: SmtpService): void {
   // ---------------------------------------------------------------------------
@@ -50,6 +56,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .boolean()
           .default(false)
           .describe('Deliberately resend the same recipients+subject within one minute'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -57,12 +64,16 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
       try {
         validateInputLength(params.subject, 998, 'Subject');
         validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
-        const result = await smtpService.sendEmail(params.account, {
+        const sendOptions = {
           ...params,
           attachments: toOutgoingAttachments(params.attachments),
           messageId: params.message_id,
           allowDuplicate: params.allow_duplicate,
-        });
+        };
+        if (params.dryRun) {
+          return dryRunResult(await smtpService.previewSend(params.account, sendOptions));
+        }
+        const result = await smtpService.sendEmail(params.account, sendOptions);
         await audit.log(
           'send_email',
           params.account,
@@ -78,6 +89,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           ],
         };
       } catch (err) {
+        if (params.dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log(
           'send_email',
@@ -119,16 +131,21 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .array(attachmentInput)
           .optional()
           .describe('Files to attach: base64 parts or absolute local file paths'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     async (params) => {
       try {
         validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
-        const result = await smtpService.replyToEmail(params.account, {
+        const replyOptions = {
           ...params,
           attachments: toOutgoingAttachments(params.attachments),
-        });
+        };
+        if (params.dryRun) {
+          return dryRunResult(await smtpService.previewReply(params.account, replyOptions));
+        }
+        const result = await smtpService.replyToEmail(params.account, replyOptions);
         await audit.log(
           'reply_email',
           params.account,
@@ -144,6 +161,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           ],
         };
       } catch (err) {
+        if (params.dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log(
           'reply_email',
@@ -202,6 +220,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           .describe(
             'Extra files to attach besides the original\u2019s: base64 parts or absolute local file paths',
           ),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -210,11 +229,15 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
         if (params.body !== undefined) {
           validateInputLength(params.body, MAX_EMAIL_BODY_LENGTH, 'Body');
         }
-        const result = await smtpService.forwardEmail(params.account, {
+        const forwardOptions = {
           ...params,
           attachments: toOutgoingAttachments(params.attachments),
           includeAttachments: params.include_attachments,
-        });
+        };
+        if (params.dryRun) {
+          return dryRunResult(await smtpService.previewForward(params.account, forwardOptions));
+        }
+        const result = await smtpService.forwardEmail(params.account, forwardOptions);
         await audit.log(
           'forward_email',
           params.account,
@@ -230,6 +253,7 @@ export default function registerSendTools(server: McpServer, smtpService: SmtpSe
           ],
         };
       } catch (err) {
+        if (params.dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log(
           'forward_email',

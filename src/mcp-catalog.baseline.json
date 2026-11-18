@@ -335,6 +335,11 @@
               "description": "Destination mailbox — required when action is 'move'",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "ids": {
               "description": "Array of email UIDs (max 100). Get UIDs from list_emails or search_emails.",
               "items": {
@@ -467,6 +472,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "path": {
               "description": "Folder path to create (e.g., 'Archive/2026' or 'Projects')",
               "minLength": 1,
@@ -533,6 +543,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "emailId": {
               "description": "Email ID to delete (from list_emails)",
               "type": "string"
@@ -562,6 +577,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "name": {
               "description": "Label name to delete",
               "type": "string"
@@ -580,6 +600,11 @@
             "account": {
               "description": "Account name from list_accounts",
               "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "path": {
               "description": "Folder path to delete (⚠️ all emails inside will be lost)",
@@ -775,6 +800,11 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "emailId": {
               "description": "Email ID to forward (from list_emails or get_email)",
@@ -2164,6 +2194,11 @@
               "description": "Target mailbox (e.g., Archive). Use list_mailboxes to see options.",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "emailId": {
               "description": "Email ID to move (from list_emails)",
               "type": "string"
@@ -2213,6 +2248,11 @@
             "account": {
               "description": "Account name from list_accounts",
               "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "new_path": {
               "description": "New folder path",
@@ -2270,6 +2310,11 @@
               "description": "Reply body content",
               "maxLength": 5000000,
               "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "emailId": {
               "description": "Email ID to reply to (from list_emails or get_email)",
@@ -2668,6 +2713,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "id": {
               "description": "Draft email UID (from list_emails on Drafts mailbox)",
               "maximum": 9007199254740991,
@@ -2747,6 +2797,11 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "html": {
               "default": false,
@@ -4898,6 +4953,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "emailId": {
               "description": "Email ID to delete (from list_emails)",
               "type": "string"
@@ -5027,6 +5087,11 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "emailId": {
               "description": "Email ID to forward (from list_emails or get_email)",
@@ -6172,6 +6237,11 @@
               "description": "Target mailbox (e.g., Archive). Use list_mailboxes to see options.",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "emailId": {
               "description": "Email ID to move (from list_emails)",
               "type": "string"
@@ -6253,6 +6323,11 @@
               "description": "Reply body content",
               "maxLength": 5000000,
               "type": "string"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "emailId": {
               "description": "Email ID to reply to (from list_emails or get_email)",
@@ -6587,6 +6662,11 @@
               "description": "Account name from list_accounts",
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "id": {
               "description": "Draft email UID (from list_emails on Drafts mailbox)",
               "maximum": 9007199254740991,
@@ -6666,6 +6746,11 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "html": {
               "default": false,
@@ -7753,6 +7838,11 @@
               "maxLength": 5000000,
               "type": "string"
             },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
+            },
             "emailId": {
               "description": "Email ID to reply to (from list_emails or get_email)",
               "type": "string"
@@ -8052,6 +8142,11 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "dryRun": {
+              "default": false,
+              "description": "Check everything and report what would happen, without changing anything (no send, move, delete or create)",
+              "type": "boolean"
             },
             "html": {
               "default": false,

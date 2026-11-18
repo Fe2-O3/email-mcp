@@ -7,6 +7,7 @@ import { z } from 'zod';
 import audit from '../safety/audit.js';
 
 import type ImapService from '../services/imap.service.js';
+import { dryRunFailure, dryRunParam, dryRunResult } from './schema-helpers.js';
 
 export default function registerFolderTools(server: McpServer, imapService: ImapService): void {
   // ---------------------------------------------------------------------------
@@ -24,11 +25,14 @@ export default function registerFolderTools(server: McpServer, imapService: Imap
           .string()
           .min(1)
           .describe("Folder path to create (e.g., 'Archive/2026' or 'Projects')"),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ account, path: folderPath }) => {
+    async ({ account, path: folderPath, dryRun }) => {
       try {
+        if (dryRun)
+          return dryRunResult(await imapService.previewCreateMailbox(account, folderPath));
         await imapService.createMailbox(account, folderPath);
         await audit.log('create_mailbox', account, { path: folderPath }, 'ok');
         return {
@@ -40,6 +44,7 @@ export default function registerFolderTools(server: McpServer, imapService: Imap
           ],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log('create_mailbox', account, { path: folderPath }, 'error', errMsg);
         return {
@@ -68,11 +73,15 @@ export default function registerFolderTools(server: McpServer, imapService: Imap
         account: z.string().describe('Account name from list_accounts'),
         path: z.string().min(1).describe('Current folder path'),
         new_path: z.string().min(1).describe('New folder path'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
-    async ({ account, path: folderPath, new_path: newPath }) => {
+    async ({ account, path: folderPath, new_path: newPath, dryRun }) => {
       try {
+        if (dryRun) {
+          return dryRunResult(await imapService.previewRenameMailbox(account, folderPath, newPath));
+        }
         await imapService.renameMailbox(account, folderPath, newPath);
         await audit.log('rename_mailbox', account, { path: folderPath, new_path: newPath }, 'ok');
         return {
@@ -84,6 +93,7 @@ export default function registerFolderTools(server: McpServer, imapService: Imap
           ],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log(
           'rename_mailbox',
@@ -120,11 +130,14 @@ export default function registerFolderTools(server: McpServer, imapService: Imap
           .string()
           .min(1)
           .describe('Folder path to delete (⚠️ all emails inside will be lost)'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ account, path: folderPath }) => {
+    async ({ account, path: folderPath, dryRun }) => {
       try {
+        if (dryRun)
+          return dryRunResult(await imapService.previewDeleteMailbox(account, folderPath));
         await imapService.deleteMailbox(account, folderPath);
         await audit.log('delete_mailbox', account, { path: folderPath }, 'ok');
         return {
@@ -136,6 +149,7 @@ export default function registerFolderTools(server: McpServer, imapService: Imap
           ],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log('delete_mailbox', account, { path: folderPath }, 'error', errMsg);
         return {

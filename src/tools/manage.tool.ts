@@ -8,6 +8,7 @@ import audit from '../safety/audit.js';
 import { sanitizeMailboxName } from '../safety/validation.js';
 
 import type ImapService from '../services/imap.service.js';
+import { dryRunFailure, dryRunParam, dryRunResult } from './schema-helpers.js';
 
 export default function registerManageTools(server: McpServer, imapService: ImapService): void {
   // ---------------------------------------------------------------------------
@@ -28,11 +29,17 @@ export default function registerManageTools(server: McpServer, imapService: Imap
         destinationMailbox: z
           .string()
           .describe('Target mailbox (e.g., Archive). Use list_mailboxes to see options.'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ account, emailId, sourceMailbox, destinationMailbox }) => {
+    async ({ account, emailId, sourceMailbox, destinationMailbox, dryRun }) => {
       try {
+        if (dryRun) {
+          return dryRunResult(
+            await imapService.previewMove(account, emailId, sourceMailbox, destinationMailbox),
+          );
+        }
         const cleanSource = sanitizeMailboxName(sourceMailbox);
         const cleanDest = sanitizeMailboxName(destinationMailbox);
         await imapService.moveEmail(account, emailId, cleanSource, cleanDest);
@@ -51,6 +58,7 @@ export default function registerManageTools(server: McpServer, imapService: Imap
           ],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log(
           'move_email',
@@ -87,11 +95,17 @@ export default function registerManageTools(server: McpServer, imapService: Imap
         emailId: z.string().describe('Email ID to delete (from list_emails)'),
         mailbox: z.string().default('INBOX').describe('Mailbox containing the email'),
         permanent: z.boolean().default(false).describe('⚠️ Permanently delete (skip Trash)'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ account, emailId, mailbox, permanent }) => {
+    async ({ account, emailId, mailbox, permanent, dryRun }) => {
       try {
+        if (dryRun) {
+          return dryRunResult(
+            await imapService.previewDelete(account, emailId, mailbox, permanent),
+          );
+        }
         const cleanMailbox = sanitizeMailboxName(mailbox);
         await imapService.deleteEmail(account, emailId, cleanMailbox, permanent);
         await audit.log('delete_email', account, { emailId, mailbox, permanent }, 'ok');
@@ -104,6 +118,7 @@ export default function registerManageTools(server: McpServer, imapService: Imap
           ],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log('delete_email', account, { emailId, mailbox, permanent }, 'error', errMsg);
         return {

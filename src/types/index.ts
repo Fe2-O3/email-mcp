@@ -253,6 +253,13 @@ export interface Email extends EmailMeta {
 // Results
 // ---------------------------------------------------------------------------
 
+/** What a write tool would do, reported by a dry run. Nothing was changed. */
+export interface DryRunPlan {
+  summary: string;
+  /** Things worth knowing before running it for real. */
+  notes: string[];
+}
+
 export interface SendResult {
   messageId: string;
   status: 'sent' | 'failed';

@@ -9,7 +9,13 @@ import { MAX_EMAIL_BODY_LENGTH, validateInputLength } from '../safety/validation
 
 import type ImapService from '../services/imap.service.js';
 import type SmtpService from '../services/smtp.service.js';
-import { attachmentInput, toOutgoingAttachments } from './schema-helpers.js';
+import {
+  attachmentInput,
+  dryRunFailure,
+  dryRunParam,
+  dryRunResult,
+  toOutgoingAttachments,
+} from './schema-helpers.js';
 
 export default function registerDraftTools(
   server: McpServer,
@@ -103,11 +109,13 @@ export default function registerDraftTools(
         account: z.string().describe('Account name from list_accounts'),
         id: z.number().int().describe('Draft email UID (from list_emails on Drafts mailbox)'),
         mailbox: z.string().optional().describe('Drafts folder path (auto-detected if omitted)'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ account, id, mailbox }) => {
+    async ({ account, id, mailbox, dryRun }) => {
       try {
+        if (dryRun) return dryRunResult(await smtpService.previewSendDraft(account, id, mailbox));
         const result = await smtpService.sendDraft(account, id, mailbox);
 
         await audit.log('send_draft', account, { id, mailbox }, 'ok');
@@ -121,6 +129,7 @@ export default function registerDraftTools(
           ],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log('send_draft', account, { id, mailbox }, 'error', errMsg);
         return {

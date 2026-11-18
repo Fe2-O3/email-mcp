@@ -6,7 +6,7 @@
 
 import path from 'node:path';
 
-import type { ImapFlow } from 'imapflow';
+import type { ImapFlow, ListResponse } from 'imapflow';
 import { DEFAULT_SEND_LIMIT_MB, resolveSendLimitMb } from '../config/send-limit.js';
 import { CALENDAR_ATTACHMENTS_DIR } from '../config/xdg.js';
 import type { IConnectionManager } from '../connections/types.js';
@@ -17,6 +17,7 @@ import type {
   BulkResult,
   Contact,
   DailyVolume,
+  DryRunPlan,
   Email,
   EmailAddress,
   EmailMeta,
@@ -1836,6 +1837,214 @@ export default class ImapService {
     const client = await this.connections.getImapClient(accountName);
     await assertMailboxRemovable(client, folderPath, 'delete');
     await imapCommand(`Deleting mailbox "${folderPath}"`, () => client.mailboxDelete(folderPath));
+  }
+
+  // -------------------------------------------------------------------------
+  // Dry run: check what a write would do, change nothing
+  // -------------------------------------------------------------------------
+
+  /**
+   * The listed mailbox that `requested` names, or an error. Matches the way the write paths name
+   * mailboxes: exactly, INBOX in any case, or with the personal namespace prefix added.
+   */
+  private static async findListedMailbox(
+    client: ImapFlow,
+    requested: string,
+  ): Promise<{ mailbox: ListResponse; all: ListResponse[] }> {
+    const all = await client.list();
+    const prefix = client.namespace?.prefix;
+    const found =
+      all.find((m) => m.path === requested) ??
+      (requested.toUpperCase() === 'INBOX'
+        ? all.find((m) => m.path.toUpperCase() === 'INBOX')
+        : undefined) ??
+      (prefix ? all.find((m) => m.path === `${prefix}${requested}`) : undefined);
+    if (!found) {
+      throw new Error(`Mailbox "${requested}" does not exist. Use list_mailboxes to see options.`);
+    }
+    return { mailbox: found, all };
+  }
+
+  /** Which of `uids` are in `mailbox`. Opens it read-only; flags and \\Recent are left alone. */
+  private async existingUids(
+    client: ImapFlow,
+    mailbox: string,
+    uids: number[],
+  ): Promise<Set<number>> {
+    const lock = await imapCommand(`Opening mailbox "${mailbox}"`, () =>
+      lockMailboxBounded(client, mailbox, { readOnly: true }),
+    );
+    try {
+      const found = await client.search({ uid: uids.join(',') }, { uid: true });
+      return new Set(found || []);
+    } finally {
+      lock.release();
+    }
+  }
+
+  private static parseUid(emailId: string): number {
+    const uid = Number(emailId);
+    if (!Number.isInteger(uid) || uid <= 0) {
+      throw new Error(`Email ID "${emailId}" is not a numeric UID. Get IDs from list_emails.`);
+    }
+    return uid;
+  }
+
+  async previewMove(
+    accountName: string,
+    emailId: string,
+    sourceMailbox: string,
+    destinationMailbox: string,
+  ): Promise<DryRunPlan> {
+    const client = await this.connections.getImapClient(accountName);
+    const source = sanitizeMailboxName(sourceMailbox);
+    const dest = sanitizeMailboxName(destinationMailbox);
+    const uid = ImapService.parseUid(emailId);
+    const src = await ImapService.findListedMailbox(client, source);
+    const dst = await ImapService.findListedMailbox(client, dest);
+    await ImapService.assertRealMailbox(client, src.mailbox.path);
+    const present = await this.existingUids(client, src.mailbox.path, [uid]);
+    if (!present.has(uid)) throw new Error(`Email ${emailId} not found in "${source}".`);
+    const notes: string[] = [];
+    if (src.mailbox.path === dst.mailbox.path)
+      notes.push('Source and destination are the same folder.');
+    return {
+      summary: `Would move email ${emailId} from "${source}" to "${dest}".`,
+      notes,
+    };
+  }
+
+  async previewDelete(
+    accountName: string,
+    emailId: string,
+    mailbox: string,
+    permanent: boolean,
+  ): Promise<DryRunPlan> {
+    const client = await this.connections.getImapClient(accountName);
+    const safeMailbox = sanitizeMailboxName(mailbox);
+    const uid = ImapService.parseUid(emailId);
+    const { mailbox: listed, all } = await ImapService.findListedMailbox(client, safeMailbox);
+    const present = await this.existingUids(client, listed.path, [uid]);
+    if (!present.has(uid)) throw new Error(`Email ${emailId} not found in "${safeMailbox}".`);
+    if (permanent) {
+      return {
+        summary: `Would permanently delete email ${emailId} from "${safeMailbox}". This cannot be undone.`,
+        notes: [],
+      };
+    }
+    await ImapService.assertRealMailbox(client, listed.path);
+    const trash = all.find((mb) => mb.specialUse === '\\Trash');
+    const notes = trash
+      ? []
+      : ['No folder is marked as Trash; the server would be asked for "Trash".'];
+    return {
+      summary: `Would move email ${emailId} from "${safeMailbox}" to Trash ("${trash?.path ?? 'Trash'}").`,
+      notes,
+    };
+  }
+
+  async previewBulk(
+    accountName: string,
+    ids: number[],
+    mailbox: string,
+    action: 'mark_read' | 'mark_unread' | 'flag' | 'unflag' | 'move' | 'delete',
+    destination?: string,
+  ): Promise<DryRunPlan> {
+    const client = await this.connections.getImapClient(accountName);
+    const safeMailbox = sanitizeMailboxName(mailbox);
+    const { mailbox: listed, all } = await ImapService.findListedMailbox(client, safeMailbox);
+    const notes: string[] = [];
+    let what = '';
+    if (action === 'move') {
+      if (!destination) throw new Error('Destination mailbox is required for "move" action.');
+      const dest = sanitizeMailboxName(destination);
+      await ImapService.findListedMailbox(client, dest);
+      await ImapService.assertRealMailbox(client, listed.path);
+      what = `move to "${dest}"`;
+    } else if (action === 'delete') {
+      await ImapService.assertRealMailbox(client, listed.path);
+      const trash = all.find((mb) => mb.specialUse === '\\Trash');
+      if (!trash)
+        notes.push('No folder is marked as Trash; the server would be asked for "Trash".');
+      what = `move to Trash ("${trash?.path ?? 'Trash'}")`;
+    } else {
+      what = action.replace('_', ' as ').replace('mark as ', 'mark ');
+    }
+    const present = await this.existingUids(client, listed.path, ids);
+    const missing = ids.filter((id) => !present.has(id));
+    if (missing.length > 0) {
+      notes.push(
+        `${missing.length} of ${ids.length} IDs are not in "${safeMailbox}" (${missing.slice(0, 20).join(', ')}${missing.length > 20 ? ', ...' : ''}).`,
+      );
+    }
+    return {
+      summary: `Would ${what}: ${present.size} of ${ids.length} messages in "${safeMailbox}".`,
+      notes,
+    };
+  }
+
+  async previewCreateMailbox(accountName: string, folderPath: string): Promise<DryRunPlan> {
+    const client = await this.connections.getImapClient(accountName);
+    const safe = sanitizeMailboxName(folderPath);
+    const exists = await ImapService.findListedMailbox(client, safe).then(
+      () => true,
+      () => false,
+    );
+    if (exists) throw new Error(`Mailbox "${safe}" already exists.`);
+    return { summary: `Would create mailbox "${safe}".`, notes: [] };
+  }
+
+  async previewRenameMailbox(
+    accountName: string,
+    folderPath: string,
+    newPath: string,
+  ): Promise<DryRunPlan> {
+    const client = await this.connections.getImapClient(accountName);
+    const from = sanitizeMailboxName(folderPath);
+    const to = sanitizeMailboxName(newPath);
+    await ImapService.findListedMailbox(client, from);
+    await assertMailboxRemovable(client, from, 'rename');
+    const taken = await ImapService.findListedMailbox(client, to).then(
+      () => true,
+      () => false,
+    );
+    if (taken) throw new Error(`Mailbox "${to}" already exists.`);
+    return { summary: `Would rename mailbox "${from}" to "${to}".`, notes: [] };
+  }
+
+  async previewDeleteMailbox(accountName: string, folderPath: string): Promise<DryRunPlan> {
+    const client = await this.connections.getImapClient(accountName);
+    const safe = sanitizeMailboxName(folderPath);
+    const { mailbox } = await ImapService.findListedMailbox(client, safe);
+    await assertMailboxRemovable(client, safe, 'delete');
+    const notes: string[] = [];
+    try {
+      const status = await client.status(mailbox.path, { messages: true });
+      if (status && typeof status.messages === 'number') {
+        notes.push(`The folder holds ${status.messages} message(s); all would be lost.`);
+      }
+    } catch {
+      notes.push('The message count could not be read.');
+    }
+    return { summary: `Would permanently delete mailbox "${safe}" and its contents.`, notes };
+  }
+
+  async previewDeleteLabel(accountName: string, name: string): Promise<DryRunPlan> {
+    const strategy = await this.getLabelStrategy(accountName);
+    const client = await this.connections.getImapClient(accountName);
+    if (strategy.type === 'keyword') {
+      throw new Error(
+        'IMAP keywords cannot be deleted server-wide. ' +
+          'Remove the keyword from individual emails using remove_label instead.',
+      );
+    }
+    const labels = await strategy.listLabels(client);
+    const label = labels.find((l) => l.name === name);
+    if (!label) throw new Error(`Label "${name}" does not exist. Use list_labels to see options.`);
+    return {
+      summary: `Would delete label "${name}" (${strategy.type}); mail filed under it stays in the account.`,
+      notes: [],
+    };
   }
 
   // -------------------------------------------------------------------------

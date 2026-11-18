@@ -13,7 +13,7 @@ import type { IConnectionManager } from '../connections/types.js';
 import { mcpLog } from '../logging.js';
 import type RateLimiter from '../safety/rate-limiter.js';
 import { sanitizeTemplateVariable } from '../safety/validation.js';
-import type { SendResult } from '../types/index.js';
+import type { DryRunPlan, SendResult } from '../types/index.js';
 import type ImapService from './imap.service.js';
 import {
   type OutgoingAttachmentInput,
@@ -24,6 +24,49 @@ import {
 export const REPLY_PREFIX = /^\s*(re|aw|sv)\s*:/i;
 /** Forward markers: Fwd, Fw, WG (German). */
 export const FORWARD_PREFIX = /^\s*(fwd?|wg)\s*:/i;
+
+export interface SendEmailOptions {
+  to: string[];
+  subject: string;
+  body: string;
+  cc?: string[];
+  bcc?: string[];
+  html?: boolean;
+  /** Attachments: inline base64 `content`, or the `path` of a local file (checked by the read guard). */
+  attachments?: OutgoingAttachmentInput[];
+  /**
+   * Explicit Message-ID for retries. Without it nodemailer mints a fresh
+   * one per attempt, so a retried send is indistinguishable from a new
+   * email and the recipient sees both.
+   */
+  messageId?: string;
+  inReplyTo?: string;
+  references?: string[];
+  /** Set on a deliberate resend to pass the duplicate-send guard. */
+  allowDuplicate?: boolean;
+}
+
+export interface ReplyOptions {
+  emailId: string;
+  mailbox?: string;
+  body: string;
+  replyAll?: boolean;
+  html?: boolean;
+  attachments?: OutgoingAttachmentInput[];
+}
+
+export interface ForwardOptions {
+  emailId: string;
+  mailbox?: string;
+  to: string[];
+  body?: string;
+  cc?: string[];
+  html?: boolean;
+  /** Defaults to true: a forward that silently drops the invoice is the bug. */
+  includeAttachments?: boolean;
+  /** Extra attachments added to the forward: inline base64 `content`, or a local file `path`. */
+  attachments?: OutgoingAttachmentInput[];
+}
 
 export default class SmtpService {
   private readonly pendingSentFilings = new Set<Promise<void>>();
@@ -39,39 +82,42 @@ export default class SmtpService {
   // Send email
   // -------------------------------------------------------------------------
 
-  async sendEmail(
-    accountName: string,
-    options: {
-      to: string[];
-      subject: string;
-      body: string;
-      cc?: string[];
-      bcc?: string[];
-      html?: boolean;
-      /** Attachments: inline base64 `content`, or the `path` of a local file (checked by the read guard). */
-      attachments?: OutgoingAttachmentInput[];
-      /**
-       * Explicit Message-ID for retries. Without it nodemailer mints a fresh
-       * one per attempt, so a retried send is indistinguishable from a new
-       * email and the recipient sees both.
-       */
-      messageId?: string;
-      inReplyTo?: string;
-      references?: string[];
-      /** Set on a deliberate resend to pass the duplicate-send guard. */
-      allowDuplicate?: boolean;
-    },
-  ): Promise<SendResult> {
+  async sendEmail(accountName: string, options: SendEmailOptions): Promise<SendResult> {
     this.checkRateLimit(accountName);
     this.assertNotDuplicate(accountName, options.to, options.subject, options.allowDuplicate);
 
+    const mailOptions = await this.composeSend(accountName, options);
+    const transport = await this.connections.getSmtpTransport(accountName);
+
+    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+
+    this.recordDuplicate(accountName, options.to, options.subject);
+    this.fileToSent(accountName, mailOptions);
+
+    return {
+      messageId: result.messageId ?? '',
+      status: 'sent',
+    };
+  }
+
+  /** Everything `sendEmail` checks and builds, without sending, filing or counting against the rate limit. */
+  async previewSend(accountName: string, options: SendEmailOptions): Promise<DryRunPlan> {
+    this.assertRateLimitAvailable(accountName);
+    this.assertNotDuplicate(accountName, options.to, options.subject, options.allowDuplicate);
+    const mailOptions = await this.composeSend(accountName, options);
+    return SmtpService.describeMail('send this email', mailOptions);
+  }
+
+  private async composeSend(
+    accountName: string,
+    options: SendEmailOptions,
+  ): Promise<Record<string, unknown>> {
     const account = this.connections.getAccount(accountName);
     const attachments = await this.resolveAttachments(account, options.attachments);
-    const transport = await this.connections.getSmtpTransport(accountName);
 
     const messageId =
       options.messageId ?? `<${crypto.randomUUID()}@${account.email.split('@')[1]}>`;
-    const mailOptions = {
+    return {
       from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
@@ -94,10 +140,20 @@ export default class SmtpService {
       disableFileAccess: true,
       disableUrlAccess: true,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // Reply
+  // -------------------------------------------------------------------------
+
+  async replyToEmail(accountName: string, options: ReplyOptions): Promise<SendResult> {
+    this.checkRateLimit(accountName);
+
+    const mailOptions = await this.composeReply(accountName, options);
+    const transport = await this.connections.getSmtpTransport(accountName);
 
     const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
-    this.recordDuplicate(accountName, options.to, options.subject);
     this.fileToSent(accountName, mailOptions);
 
     return {
@@ -106,23 +162,17 @@ export default class SmtpService {
     };
   }
 
-  // -------------------------------------------------------------------------
-  // Reply
-  // -------------------------------------------------------------------------
+  /** Everything `replyToEmail` checks and builds, without sending or counting against the rate limit. */
+  async previewReply(accountName: string, options: ReplyOptions): Promise<DryRunPlan> {
+    this.assertRateLimitAvailable(accountName);
+    const mailOptions = await this.composeReply(accountName, options);
+    return SmtpService.describeMail('send this reply', mailOptions);
+  }
 
-  async replyToEmail(
+  private async composeReply(
     accountName: string,
-    options: {
-      emailId: string;
-      mailbox?: string;
-      body: string;
-      replyAll?: boolean;
-      html?: boolean;
-      attachments?: OutgoingAttachmentInput[];
-    },
-  ): Promise<SendResult> {
-    this.checkRateLimit(accountName);
-
+    options: ReplyOptions,
+  ): Promise<Record<string, unknown>> {
     const account = this.connections.getAccount(accountName);
     const extraAttachments = await this.resolveAttachments(account, options.attachments);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
@@ -155,9 +205,7 @@ export default class SmtpService {
       ? original.subject
       : `Re: ${original.subject}`;
 
-    const transport = await this.connections.getSmtpTransport(accountName);
-
-    const mailOptions = {
+    return {
       from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to: to.join(', '),
       cc: cc.length > 0 ? cc.join(', ') : undefined,
@@ -179,6 +227,17 @@ export default class SmtpService {
       disableFileAccess: true,
       disableUrlAccess: true,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // Forward
+  // -------------------------------------------------------------------------
+
+  async forwardEmail(accountName: string, options: ForwardOptions): Promise<SendResult> {
+    this.checkRateLimit(accountName);
+
+    const mailOptions = await this.composeForward(accountName, options);
+    const transport = await this.connections.getSmtpTransport(accountName);
 
     const result = await this.sendWithRecovery(accountName, transport, mailOptions);
 
@@ -190,27 +249,17 @@ export default class SmtpService {
     };
   }
 
-  // -------------------------------------------------------------------------
-  // Forward
-  // -------------------------------------------------------------------------
+  /** Everything `forwardEmail` checks and builds, without sending or counting against the rate limit. */
+  async previewForward(accountName: string, options: ForwardOptions): Promise<DryRunPlan> {
+    this.assertRateLimitAvailable(accountName);
+    const mailOptions = await this.composeForward(accountName, options);
+    return SmtpService.describeMail('forward this email', mailOptions);
+  }
 
-  async forwardEmail(
+  private async composeForward(
     accountName: string,
-    options: {
-      emailId: string;
-      mailbox?: string;
-      to: string[];
-      body?: string;
-      cc?: string[];
-      html?: boolean;
-      /** Defaults to true: a forward that silently drops the invoice is the bug. */
-      includeAttachments?: boolean;
-      /** Extra attachments added to the forward: inline base64 `content`, or a local file `path`. */
-      attachments?: OutgoingAttachmentInput[];
-    },
-  ): Promise<SendResult> {
-    this.checkRateLimit(accountName);
-
+    options: ForwardOptions,
+  ): Promise<Record<string, unknown>> {
     const account = this.connections.getAccount(accountName);
     const extraAttachments = await this.resolveAttachments(account, options.attachments);
     const original = await this.imapService.getEmail(accountName, options.emailId, options.mailbox);
@@ -260,8 +309,6 @@ export default class SmtpService {
       fullBody = (options.body ?? '') + forwardHeader + originalBody;
     }
 
-    const transport = await this.connections.getSmtpTransport(accountName);
-
     // Reattach the original's parts. Fetching happens before anything goes
     // out, and the fetch refuses oversized originals at compose time.
     const includeAttachments =
@@ -285,7 +332,7 @@ export default class SmtpService {
       );
     }
 
-    const mailOptions = {
+    return {
       from: account.fullName ? { name: account.fullName, address: account.email } : account.email,
       to: options.to.join(', '),
       cc: options.cc?.join(', '),
@@ -295,15 +342,6 @@ export default class SmtpService {
       ...(attachments.length > 0 ? { attachments } : {}),
       disableFileAccess: true,
       disableUrlAccess: true,
-    };
-
-    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
-
-    this.fileToSent(accountName, mailOptions);
-
-    return {
-      messageId: result.messageId ?? '',
-      status: 'sent',
     };
   }
 
@@ -318,6 +356,42 @@ export default class SmtpService {
           `Please wait before sending more emails.`,
       );
     }
+  }
+
+  /** Like `checkRateLimit`, but does not use up a send. */
+  private assertRateLimitAvailable(accountName: string): void {
+    if (this.rateLimiter.remaining(accountName) < 1) {
+      throw new Error(
+        `Rate limit exceeded for account "${accountName}". ` +
+          `Please wait before sending more emails.`,
+      );
+    }
+  }
+
+  /** Turn a composed message into a dry-run report. Nothing in it is sent. */
+  private static describeMail(verb: string, mail: Record<string, unknown>): DryRunPlan {
+    const list = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+    const from = mail.from as string | { name?: string; address: string };
+    const fromText = typeof from === 'string' ? from : from.address;
+    const attachments = (mail.attachments ?? []) as Array<{
+      filename?: string;
+      content: string;
+    }>;
+    const bodyText = String(mail.html ?? mail.text ?? '');
+    const notes = [
+      `From: ${fromText}`,
+      `To: ${list(mail.to) ?? '(none)'}`,
+      ...(list(mail.cc) ? [`Cc: ${list(mail.cc)}`] : []),
+      ...(list(mail.bcc) ? [`Bcc: ${list(mail.bcc)}`] : []),
+      `Subject: ${String(mail.subject ?? '')}`,
+      ...(list(mail.inReplyTo) ? [`In reply to: ${list(mail.inReplyTo)}`] : []),
+      `Body: ${bodyText.length} characters${mail.html ? ' (HTML)' : ''}`,
+      ...attachments.map(
+        (a) =>
+          `Attachment: ${a.filename ?? '(unnamed)'}, ${Buffer.from(a.content, 'base64').length} bytes`,
+      ),
+    ];
+    return { summary: `Would ${verb}.`, notes };
   }
 
   private sendLimitMb(account: ReturnType<IConnectionManager['getAccount']>): number {
@@ -442,6 +516,43 @@ export default class SmtpService {
   async sendDraft(accountName: string, draftId: number, mailbox?: string): Promise<SendResult> {
     this.checkRateLimit(accountName);
 
+    const { mailOptions, draftsPath } = await this.composeDraft(accountName, draftId, mailbox);
+    const transport = await this.connections.getSmtpTransport(accountName);
+
+    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
+
+    // Delete the draft after successful send
+    await this.imapService.deleteDraft(accountName, draftId, draftsPath);
+
+    this.fileToSent(accountName, mailOptions);
+
+    return {
+      messageId: result.messageId ?? '',
+      status: 'sent',
+    };
+  }
+
+  /** Everything `sendDraft` checks and builds, without sending, deleting the draft or using up a send. */
+  async previewSendDraft(
+    accountName: string,
+    draftId: number,
+    mailbox?: string,
+  ): Promise<DryRunPlan> {
+    this.assertRateLimitAvailable(accountName);
+    const { mailOptions, draftsPath } = await this.composeDraft(accountName, draftId, mailbox);
+    if (!mailOptions.to && !mailOptions.cc && !mailOptions.bcc) {
+      throw new Error(`Draft ${draftId} has no recipients. Add some before sending it.`);
+    }
+    const plan = SmtpService.describeMail('send this draft', mailOptions);
+    plan.notes.push(`The draft would then be removed from "${draftsPath}".`);
+    return plan;
+  }
+
+  private async composeDraft(
+    accountName: string,
+    draftId: number,
+    mailbox?: string,
+  ): Promise<{ mailOptions: Record<string, unknown>; draftsPath: string }> {
     // Fetch the draft via IMAP
     const { email: draft, mailbox: draftsPath } = await this.imapService.fetchDraft(
       accountName,
@@ -450,7 +561,6 @@ export default class SmtpService {
     );
 
     const account = this.connections.getAccount(accountName);
-    const transport = await this.connections.getSmtpTransport(accountName);
 
     const to = draft.to.map((a) => a.address).join(', ');
     const cc = draft.cc?.map((a) => a.address).join(', ');
@@ -479,17 +589,6 @@ export default class SmtpService {
       disableFileAccess: true,
       disableUrlAccess: true,
     };
-
-    const result = await this.sendWithRecovery(accountName, transport, mailOptions);
-
-    // Delete the draft after successful send
-    await this.imapService.deleteDraft(accountName, draftId, draftsPath);
-
-    this.fileToSent(accountName, mailOptions);
-
-    return {
-      messageId: result.messageId ?? '',
-      status: 'sent',
-    };
+    return { mailOptions, draftsPath };
   }
 }

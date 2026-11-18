@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 import type { OutgoingAttachmentInput } from '../services/outgoing-attachments.js';
+import type { DryRunPlan } from '../types/index.js';
 
 /**
  * One outgoing attachment: inline base64 bytes, or the absolute path of a local file.
@@ -40,4 +41,33 @@ export function toOutgoingAttachments(
     content: a.base64,
     path: a.path,
   }));
+}
+
+/** Reusable `dryRun` parameter for write tools. */
+export const dryRunParam = z
+  .boolean()
+  .default(false)
+  .describe(
+    'Check everything and report what would happen, without changing anything (no send, move, delete or create)',
+  );
+
+/** Tool result for a dry run that passed every check. */
+export function dryRunResult(plan: DryRunPlan) {
+  const text = [
+    `[DRY RUN] ${plan.summary}`,
+    ...plan.notes.map((n) => `- ${n}`),
+    'Nothing was changed.',
+  ];
+  return { content: [{ type: 'text' as const, text: text.join('\n') }] };
+}
+
+/** Tool result for a dry run that found a problem a real run would hit. */
+export function dryRunFailure(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  return {
+    isError: true,
+    content: [
+      { type: 'text' as const, text: `[DRY RUN] Would fail: ${message}. Nothing was changed.` },
+    ],
+  };
 }

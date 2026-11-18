@@ -8,6 +8,7 @@ import audit from '../safety/audit.js';
 
 import type ImapService from '../services/imap.service.js';
 import type { BulkResult } from '../types/index.js';
+import { dryRunFailure, dryRunParam, dryRunResult } from './schema-helpers.js';
 
 export default function registerBulkTools(server: McpServer, imapService: ImapService): void {
   server.registerTool(
@@ -31,11 +32,17 @@ export default function registerBulkTools(server: McpServer, imapService: ImapSe
           .string()
           .optional()
           .describe("Destination mailbox — required when action is 'move'"),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ account, mailbox, action, ids, destination }) => {
+    async ({ account, mailbox, action, ids, destination, dryRun }) => {
       try {
+        if (dryRun) {
+          return dryRunResult(
+            await imapService.previewBulk(account, ids, mailbox, action, destination),
+          );
+        }
         if (action === 'move' && !destination) {
           return {
             isError: true,
@@ -78,6 +85,7 @@ export default function registerBulkTools(server: McpServer, imapService: ImapSe
           ],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log(
           'bulk_action',

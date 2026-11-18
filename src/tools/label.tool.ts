@@ -12,6 +12,7 @@ import audit from '../safety/audit.js';
 import { validateLabelName } from '../safety/validation.js';
 
 import type ImapService from '../services/imap.service.js';
+import { dryRunFailure, dryRunParam, dryRunResult } from './schema-helpers.js';
 
 export default function registerLabelTools(server: McpServer, imapService: ImapService): void {
   // ---------------------------------------------------------------------------
@@ -198,17 +199,20 @@ export default function registerLabelTools(server: McpServer, imapService: ImapS
       inputSchema: z.object({
         account: z.string().describe('Account name from list_accounts'),
         name: z.string().describe('Label name to delete'),
+        dryRun: dryRunParam,
       }),
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ account, name }) => {
+    async ({ account, name, dryRun }) => {
       try {
+        if (dryRun) return dryRunResult(await imapService.previewDeleteLabel(account, name));
         await imapService.deleteLabel(account, name);
         await audit.log('delete_label', account, { name }, 'ok');
         return {
           content: [{ type: 'text' as const, text: `🏷️ Label "${name}" deleted.` }],
         };
       } catch (err) {
+        if (dryRun) return dryRunFailure(err);
         const errMsg = err instanceof Error ? err.message : String(err);
         await audit.log('delete_label', account, { name }, 'error', errMsg);
         return {
