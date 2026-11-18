@@ -135,7 +135,8 @@ describe('Sieve tools against Dovecot Pigeonhole', () => {
 
     const allowed = await call('sieve_put_script', {
       name: 'fwd',
-      content: 'redirect :copy "me@example.org";\n',
+      // Pigeonhole rejects :copy without its require.
+      content: 'require "copy";\nredirect :copy "me@example.org";\n',
       apply: true,
     });
     expect(allowed.isError).toBeUndefined();
