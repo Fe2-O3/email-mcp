@@ -63,9 +63,10 @@ Claude Code:
 claude mcp add email -- npx -y imap-wizard stdio
 ```
 
-Claude Desktop, Cursor or Windsurf: run the installer. It finds those apps,
-asks which ones to set up and how to launch the server (pick `npx`), then
-writes the config. Restart the app after.
+Claude Desktop, Cursor, Windsurf, VS Code, Codex or OpenCode: run the installer.
+It finds those apps (and Claude Code, if `claude` is on your PATH), asks which
+ones to set up and how to launch the server (pick `npx`), then writes the
+config. Your other servers and comments are left alone. Restart the app after.
 
 ```bash
 npx -y imap-wizard install
@@ -477,7 +478,8 @@ All of these use the `npx` launch. If you built from source, swap in
 
 <br>
 
-`npx -y imap-wizard install` writes this for you. By hand, add it to
+`npx -y imap-wizard install` writes this for you (and the VS Code, Codex and
+OpenCode files below). By hand, add it to
 `claude_desktop_config.json`, `~/.cursor/mcp.json` or
 `~/.codeium/windsurf/mcp_config.json`:
 
@@ -496,19 +498,22 @@ All of these use the `npx` launch. If you built from source, swap in
 <details>
 <summary><strong>VS Code (GitHub Copilot)</strong></summary>
 
+`install` writes this to your user `mcp.json` (`~/Library/Application Support/Code/User/mcp.json`
+on macOS, `~/.config/Code/User/mcp.json` on Linux, `%APPDATA%\Code\User\mcp.json` on Windows):
+
 ```json
 {
-  "mcp": {
-    "servers": {
-      "email": {
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "imap-wizard", "stdio"]
-      }
+  "servers": {
+    "email": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "imap-wizard", "stdio"]
     }
   }
 }
 ```
+
+If you put it in `settings.json` instead, nest it as `"mcp": { "servers": { ... } }`.
 </details>
 
 <details>
@@ -579,7 +584,7 @@ It refuses to listen on a non-local address without a token.
 | Search returns nothing on a server you know has mail | Some servers send broken SEARCH replies | This build fails loudly instead of reporting zero results. Check the error |
 | A server process keeps running after you quit | Your client never closes the pipe | Set `settings.idle_exit = 1800`, or close the client cleanly |
 | `Cannot find module .../nodemailer/...` after an update | The old server process is still running | Restart your client (in Claude Code: `/mcp`, then reconnect) |
-| `install` says no clients found | It only knows Claude Desktop, Cursor and Windsurf | Use `claude mcp add` or the JSON above |
+| `install` says no clients found | It only knows Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Codex and OpenCode, and finds an app by its config folder (or the `claude` command) | Use `claude mcp add` or the config snippets above |
 | `Warning: account "x" cannot log in` at start | Its Keychain item or `password_command` could not be read | Run `imap-wizard keychain migrate`, or fix the command. The other accounts still work |
 | The watcher and alerts never run | The writer lock in `~/.local/state/email-mcp/` cannot be used (read-only folder, full disk) | Make that folder writable. The server tries again every 30 seconds |
 
