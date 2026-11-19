@@ -197,7 +197,18 @@ export interface CacheConfig {
 export type Toolset = 'full' | 'core' | 'minimal';
 
 /** A tick box in `imap-wizard tools`. See TOOL_GROUPS in tools/toolsets.ts. */
-export type ToolGroup = 'read' | 'send' | 'organize' | 'rules' | 'calendar' | 'alerts';
+export type ToolGroup =
+  | 'read'
+  | 'drafts'
+  | 'send'
+  | 'tidy'
+  | 'delete'
+  | 'calendar'
+  | 'rules'
+  | 'reports'
+  | 'templates'
+  | 'alerts'
+  | 'codes';
 
 export interface AppConfig {
   settings: {

@@ -255,7 +255,19 @@ export const CacheConfigSchema = z.object({
 });
 
 export const ToolsetSchema = z.enum(['full', 'core', 'minimal']);
-export const ToolGroupSchema = z.enum(['read', 'send', 'organize', 'rules', 'calendar', 'alerts']);
+export const ToolGroupSchema = z.enum([
+  'read',
+  'drafts',
+  'send',
+  'tidy',
+  'delete',
+  'calendar',
+  'rules',
+  'reports',
+  'templates',
+  'alerts',
+  'codes',
+]);
 
 export const SettingsSchema = z.object({
   rate_limit: z.number().int().min(1).default(10),

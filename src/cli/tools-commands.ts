@@ -7,6 +7,9 @@
  * - tools reset        — drop the choice; the toolset preset decides again
  */
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import { cancel, intro, isCancel, log, multiselect, outro } from '@clack/prompts';
 
 import {
@@ -16,8 +19,10 @@ import {
   setToolGroupsInConfig,
 } from '../config/loader.js';
 import type { RawAppConfig } from '../config/schema.js';
+import { TEMPLATES_DIR } from '../config/xdg.js';
 import {
   CORE_TOOLS,
+  DEFAULT_TOOL_GROUPS,
   MINIMAL_TOOLS,
   normalizeToolGroups,
   TOOL_GROUP_NAMES,
@@ -32,6 +37,7 @@ function printToolsUsage(): void {
   console.log(`Usage: imap-wizard tools [subcommand]
 
 Pick what your AI can do. Each box turns on a group of tools.
+New setups start with: ${DEFAULT_TOOL_GROUPS.join(', ')}.
 
 Subcommands:
   (none)          Tick boxes to choose groups
@@ -51,14 +57,68 @@ export function countTools(groups: readonly ToolGroup[]): number {
 
 /** Options for the tick boxes, shared with the setup wizard. */
 export function toolGroupOptions(): { value: ToolGroup; label: string; hint: string }[] {
-  return TOOL_GROUP_NAMES.map((g) => ({
-    value: g,
-    label: TOOL_GROUPS[g].label,
-    hint:
-      g === 'read'
-        ? `${TOOL_GROUPS[g].hint} (always on)`
-        : `${TOOL_GROUPS[g].hint}, ${TOOL_GROUPS[g].tools.length} tools`,
-  }));
+  return TOOL_GROUP_NAMES.map((g) => {
+    const { label, hint, tools } = TOOL_GROUPS[g];
+    const count = tools.length === 1 ? '1 tool' : `${tools.length} tools`;
+    return { value: g, label, hint: `${hint} (${count})` };
+  });
+}
+
+/** The words shown above the boxes, in setup and in `imap-wizard tools`. */
+export const TOOL_PICK_MESSAGE =
+  'What may your AI do? Ticked boxes are on. Space ticks, enter saves.\n' +
+  'Safe choices start ticked. Change this any time with: imap-wizard tools';
+
+/** The boxes that match what the settings turn on now, for the starting ticks. */
+export function currentGroups(settings: RawAppConfig['settings']): ToolGroup[] {
+  if (settings.tools) return normalizeToolGroups(settings.tools);
+  const codes: ToolGroup[] = settings.verification?.enabled ? ['codes'] : [];
+  if (settings.toolset === 'minimal') return normalizeToolGroups(['drafts', 'send', ...codes]);
+  if (settings.toolset === 'core') {
+    return normalizeToolGroups(['drafts', 'send', 'tidy', 'delete', ...codes]);
+  }
+  return normalizeToolGroups([...TOOL_GROUP_NAMES.filter((g) => g !== 'codes'), ...codes]);
+}
+
+const EXAMPLE_TEMPLATE = `# An example template. Copy this file to make your own.
+# Words in {{double braces}} are blanks the AI fills in.
+name = "thank-you"
+description = "A short thank-you note"
+subject = "Thank you, {{name}}"
+body = """
+Hi {{name}},
+
+Thank you for {{reason}}.
+
+Best,
+{{sender}}
+"""
+variables = ["name", "reason", "sender"]
+`;
+
+/**
+ * After a choice is saved: make the ticked features usable and say how to
+ * come back. Templates get an example file when there are none yet.
+ */
+export async function afterToolChoice(
+  groups: readonly ToolGroup[],
+  templatesDir: string = TEMPLATES_DIR,
+): Promise<void> {
+  if (groups.includes('templates')) {
+    const existing = await fs.readdir(templatesDir).catch(() => [] as string[]);
+    if (!existing.some((f) => f.endsWith('.toml'))) {
+      await fs.mkdir(templatesDir, { recursive: true });
+      const file = path.join(templatesDir, 'thank-you.toml');
+      await fs.writeFile(file, EXAMPLE_TEMPLATE, { flag: 'wx' }).catch(() => undefined);
+      log.info(`Templates: added an example at ${file}. Copy it to make your own.`);
+    }
+  }
+  if (groups.includes('codes')) {
+    log.warning(
+      'Sign-in code catcher is on. Your AI can read login codes from your mail. Turn it off with: imap-wizard tools',
+    );
+  }
+  log.info(`${countTools(groups)} tools on. Change this any time with: imap-wizard tools`);
 }
 
 /** Parse "read, send" into groups. Throws on an unknown name. */
@@ -107,25 +167,23 @@ function readOnlyNote(config: RawAppConfig): void {
 
 async function showTools(): Promise<void> {
   const config = await loadExisting();
-  const on = new Set<ToolGroup>(
-    config.settings.tools ? normalizeToolGroups(config.settings.tools) : [],
-  );
+  const on = new Set<ToolGroup>(currentGroups(config.settings));
   console.log(`Your AI can use: ${describeChoice(config.settings)}\n`);
-  if (config.settings.tools) {
-    for (const g of TOOL_GROUP_NAMES) {
-      console.log(`  [${on.has(g) ? 'x' : ' '}] ${TOOL_GROUPS[g].label}`);
-    }
-    console.log('');
+  for (const g of TOOL_GROUP_NAMES) {
+    console.log(`  [${on.has(g) ? 'x' : ' '}] ${TOOL_GROUPS[g].label}: ${TOOL_GROUPS[g].hint}`);
   }
+  console.log('\nChange it with: imap-wizard tools');
   if (config.settings.read_only) {
-    console.log('Read-only mode is on: tools that change mail are hidden.\n');
+    console.log('Read-only mode is on: tools that change mail are hidden.');
   }
+  console.log('');
 }
 
 async function setTools(groups: ToolGroup[]): Promise<void> {
   const config = await loadExisting();
   await setToolGroupsInConfig(groups);
   console.log(`Saved. Your AI can use: ${describeChoice({ ...config.settings, tools: groups })}`);
+  await afterToolChoice(groups);
   console.log('Restart your AI app to load the new tool list.');
 }
 
@@ -143,15 +201,10 @@ async function pickTools(): Promise<void> {
   const config = await loadExisting();
   log.info(`Now on: ${describeChoice(config.settings)}`);
 
-  const current = config.settings.tools
-    ? normalizeToolGroups(config.settings.tools)
-    : config.settings.toolset === 'full'
-      ? [...TOOL_GROUP_NAMES]
-      : (['read', 'send'] as ToolGroup[]);
   const picked = await multiselect<ToolGroup>({
-    message: 'What should your AI be able to do? (space to tick, enter to save)',
+    message: TOOL_PICK_MESSAGE,
     options: toolGroupOptions(),
-    initialValues: current,
+    initialValues: currentGroups(config.settings),
     required: false,
   });
   if (isCancel(picked)) {
@@ -159,8 +212,9 @@ async function pickTools(): Promise<void> {
     return;
   }
   const groups = normalizeToolGroups(picked);
-  if (!picked.includes('read')) log.info('Read mail stays on: the other groups need it.');
+  if (!picked.includes('read')) log.info('Reading stays on: the other boxes need it.');
   await setToolGroupsInConfig(groups);
+  await afterToolChoice(groups);
   readOnlyNote(config);
   outro(
     `Saved. Your AI can now: ${describeChoice({ ...config.settings, tools: groups })}. Restart your AI app to load it.`,

@@ -3,7 +3,15 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { loadConfig, setToolGroupsInConfig } from '../config/loader.js';
-import { countTools, describeChoice, parseGroupList } from './tools-commands.js';
+import TemplateService from '../services/template.service.js';
+import { TOOL_GROUP_NAMES } from '../tools/toolsets.js';
+import {
+  afterToolChoice,
+  countTools,
+  currentGroups,
+  describeChoice,
+  parseGroupList,
+} from './tools-commands.js';
 
 const ACCOUNT = `
 [[accounts]]
@@ -80,7 +88,7 @@ describe('setToolGroupsInConfig', () => {
 
 describe('tools command helpers', () => {
   it('parses a group list and adds read', () => {
-    expect(parseGroupList('send, Organize')).toEqual(['read', 'send', 'organize']);
+    expect(parseGroupList('send, Tidy')).toEqual(['read', 'send', 'tidy']);
   });
 
   it('names the bad group', () => {
@@ -88,15 +96,53 @@ describe('tools command helpers', () => {
   });
 
   it('counts tools, read included', () => {
-    expect(countTools([])).toBe(16);
-    expect(countTools(['read', 'send', 'organize', 'rules', 'calendar', 'alerts'])).toBe(61);
+    expect(countTools([])).toBe(11);
+    expect(countTools([...TOOL_GROUP_NAMES])).toBe(62);
   });
 
   it('describes a preset and a group choice', () => {
     const base = { toolset: 'core', read_only: false } as never;
-    expect(describeChoice(base)).toBe('the "core" preset (24 of 61 tools)');
+    expect(describeChoice(base)).toBe('the "core" preset (24 of 62 tools)');
     expect(describeChoice({ ...(base as object), tools: ['send'] } as never)).toBe(
-      'read mail, send and reply (25 of 61 tools)',
+      'read and search your mail, send email as you (18 of 62 tools)',
     );
+  });
+
+  it('starts the boxes from what is on now', () => {
+    const full = { toolset: 'full', read_only: false } as never;
+    expect(currentGroups(full)).not.toContain('codes');
+    expect(
+      currentGroups({ ...(full as object), verification: { enabled: true } } as never),
+    ).toContain('codes');
+    expect(currentGroups({ ...(full as object), tools: ['delete'] } as never)).toEqual([
+      'read',
+      'delete',
+    ]);
+  });
+
+  it('adds an example template when templates are ticked and none exist', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tpl-'));
+    try {
+      await afterToolChoice(['templates'], dir);
+      const files = await fs.readdir(dir);
+      expect(files).toEqual(['thank-you.toml']);
+      const text = await fs.readFile(path.join(dir, files[0] as string), 'utf-8');
+      expect(text).toContain('{{name}}');
+      // The example must load cleanly, or the AI sees a broken template.
+      const loaded = await new TemplateService(dir).loadTemplates();
+      expect(loaded.problems).toEqual([]);
+      expect(loaded.templates.map((t) => t.name)).toEqual(['thank-you']);
+      // A second run leaves the folder alone.
+      await afterToolChoice(['templates'], dir);
+      expect(await fs.readdir(dir)).toEqual(['thank-you.toml']);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('adds nothing when templates are not ticked', async () => {
+    const dir = path.join(os.tmpdir(), `tpl-none-${process.pid}`);
+    await afterToolChoice(['send'], dir);
+    await expect(fs.readdir(dir)).rejects.toThrow();
   });
 });

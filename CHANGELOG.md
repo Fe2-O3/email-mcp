@@ -10,10 +10,12 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ### Added
 
-- Pick what your AI can do. Setup now asks "What should your AI be able to do?" with tick boxes: Read mail, Send and reply, Organize, Filter rules, Calendar and reminders, Alerts. Reading is always on.
-- New `imap-wizard tools` command to change the choice later (`show`, `set read,send`, `reset`). It edits only the one `tools` line in config.toml, so comments stay.
+- Pick what your AI can do. Setup shows one screen of tick boxes sorted by risk: read (always on), drafts, send, tidy up, delete, calendar, filter rules, reports, templates, alerts, and the sign-in code catcher. Every feature is listed. Safe ones start ticked (read, drafts, tidy up, calendar: 29 tools instead of 62); send, delete, rules and the code catcher start off. Ticking templates adds an example template; ticking the code catcher turns it on.
+- Bulk actions can delete only when the "Delete mail" box is ticked.
+- New `imap-wizard tools` command to change the choice later (`show`, `set drafts,send`, `reset`). It edits only the one `tools` line in config.toml, so comments stay.
 - The log now says why the server stopped, for example "the MCP client closed the connection". Clients often call any stop "unexpected", so this tells a normal stop from a crash.
-- Setup ends by offering to connect the server to Claude Desktop, Cursor or Windsurf. Say no and it shows the `npx` commands to run later.
+- `imap-wizard install` now also sets up Claude Code, VS Code, Codex and OpenCode.
+- Setup ends by offering to connect the server to your AI app. Say no and it shows the `npx` commands to run later.
 - New `settings.tools` setting (env `MCP_EMAIL_TOOLS`). When set it wins over `toolset`. The `full`, `core` and `minimal` presets and `read_only` work as before.
 
 ### Changed

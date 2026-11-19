@@ -52,7 +52,7 @@ import registerSendTools from './send.tool.js';
 import { registerSieveReadTools, registerSieveWriteTools } from './sieve.tool.js';
 import { registerTemplateReadTools, registerTemplateWriteTools } from './templates.tool.js';
 import registerThreadTools from './thread.tool.js';
-import { restrictToToolset } from './toolsets.js';
+import { allowedTools, codesAllowed, restrictToToolset } from './toolsets.js';
 import registerVerificationTool from './verification.tool.js';
 import { registerWatcherReadTools, registerWatcherWriteTools } from './watcher.tool.js';
 
@@ -112,8 +112,9 @@ export default function registerAllTools(
   registerSieveReadTools(server, connections, sieveManager);
   const localRulesStore = extras.localRulesStore ?? new LocalRulesStore();
   registerLocalRulesReadTools(server, localRulesStore, config);
-  if (config.settings.verification.enabled) {
-    // Explicit opt-in, so it is registered in every toolset.
+  if (codesAllowed(tools, config.settings.verification.enabled)) {
+    // Explicit opt-in: the "codes" box, or [settings.verification] when no box
+    // list is set. Registered past the toolset filter, which never lists it.
     registerVerificationTool(fullServer, imapService, config);
   }
 
@@ -122,7 +123,11 @@ export default function registerAllTools(
     registerSendTools(server, smtpService);
     registerManageTools(server, imapService);
     registerLabelTools(server, imapService);
-    registerBulkTools(server, imapService);
+    // bulk_action sits in "tidy up"; it can delete only when deleting is allowed.
+    const allowed = allowedTools(toolset, tools);
+    registerBulkTools(server, imapService, {
+      allowDelete: !allowed || allowed.has('delete_email'),
+    });
     registerDraftTools(server, imapService, smtpService);
     registerFolderTools(server, imapService);
     registerTemplateWriteTools(server, templateService, imapService, smtpService);

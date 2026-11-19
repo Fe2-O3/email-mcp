@@ -43,12 +43,12 @@ import {
   keychainSet,
   makeKeychainSentinel,
 } from '../security/keychain.js';
-import { normalizeToolGroups, TOOL_GROUP_NAMES } from '../tools/toolsets.js';
+import { DEFAULT_TOOL_GROUPS, normalizeToolGroups } from '../tools/toolsets.js';
 import type { AccountConfig, ToolGroup } from '../types/index.js';
 import ensureInteractive from './guard.js';
 import { buildServerEntry, runInstall } from './install-commands.js';
 import { detectProvider } from './providers.js';
-import { countTools, toolGroupOptions } from './tools-commands.js';
+import { afterToolChoice, TOOL_PICK_MESSAGE, toolGroupOptions } from './tools-commands.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -557,9 +557,9 @@ async function addAccount(): Promise<void> {
   let toolGroups: ToolGroup[] | undefined;
   if (!existingConfig) {
     const picked = await multiselect<ToolGroup>({
-      message: 'What should your AI be able to do? (space to tick, enter to go on)',
+      message: TOOL_PICK_MESSAGE,
       options: toolGroupOptions(),
-      initialValues: [...TOOL_GROUP_NAMES],
+      initialValues: [...DEFAULT_TOOL_GROUPS],
       required: false,
     });
     if (isCancel(picked)) {
@@ -567,7 +567,6 @@ async function addAccount(): Promise<void> {
       return;
     }
     toolGroups = normalizeToolGroups(picked);
-    log.info(`${countTools(toolGroups)} tools on. Change this any time with 'imap-wizard tools'.`);
   }
 
   // 6. Save
@@ -614,7 +613,8 @@ async function addAccount(): Promise<void> {
             idle_timeout: 1740,
           },
           verification: {
-            enabled: false,
+            // The "sign-in code catcher" box. Off unless ticked.
+            enabled: toolGroups?.includes('codes') ?? false,
             include_magic_links: false,
           },
           hooks: {
@@ -649,10 +649,11 @@ async function addAccount(): Promise<void> {
     await saveConfig(config);
   }
   log.success(`Account "${identity.name}" added. Config saved to ${CONFIG_FILE}`);
+  if (toolGroups) await afterToolChoice(toolGroups);
 
   // Finish the job: hook the server up to the user's AI app, or say how.
   const connectNow = await confirm({
-    message: 'Connect it to Claude Desktop, Cursor or Windsurf now?',
+    message: 'Connect it to your AI app now (Claude, Cursor, VS Code, Codex and more)?',
     initialValue: true,
   });
   if (!isCancel(connectNow) && connectNow) {

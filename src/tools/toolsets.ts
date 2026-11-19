@@ -46,14 +46,19 @@ export const CORE_TOOLS: readonly string[] = [
 ];
 
 /**
- * Tool groups: the boxes a person ticks in `imap-wizard tools`. Every tool
- * except the opt-in get_verification_code sits in exactly one group. "read"
- * is always on, because every other group needs it to find mail.
+ * Tool groups: the boxes a person ticks in setup and in `imap-wizard tools`.
+ * They are sorted by risk, not by topic, because that is how people decide
+ * ("may it send as me?", "may it delete?"). Every tool sits in exactly one
+ * group. "read" is always on, because every other group needs it to find mail.
+ *
+ * Every optional feature is listed, even the rare or risky ones, so people
+ * can see it exists. Risky ones start off. `on` is the starting tick.
  */
 export const TOOL_GROUPS = {
   read: {
-    label: 'Read mail',
-    hint: 'list, search and open mail, threads, attachments',
+    label: 'Read and search your mail',
+    hint: 'always on. Open, search and summarize mail, threads and attachments',
+    on: true,
     tools: [
       'list_accounts',
       'list_mailboxes',
@@ -64,51 +69,71 @@ export const TOOL_GROUPS = {
       'get_email_status',
       'get_thread',
       'download_attachment',
-      'export_email',
-      'extract_contacts',
-      'get_email_stats',
-      'check_health',
       'find_email_folder',
       'get_email_security',
-      'list_templates',
     ],
   },
+  drafts: {
+    label: 'Write drafts for you to review',
+    hint: 'replies stay in the right thread. You press send yourself',
+    on: true,
+    tools: ['save_draft'],
+  },
   send: {
-    label: 'Send and reply',
-    hint: 'send, reply, forward, drafts, templates, scheduled sends',
+    label: 'Send email as you',
+    hint: 'send, reply, forward, schedule. Off: an email it reads could trick it into sending',
+    on: false,
     tools: [
       'send_email',
       'reply_email',
       'forward_email',
-      'save_draft',
       'send_draft',
-      'apply_template',
       'schedule_email',
       'list_scheduled',
       'cancel_scheduled',
     ],
   },
-  organize: {
-    label: 'Organize',
-    hint: 'move, label, mark, delete, folders',
+  tidy: {
+    label: 'Tidy up',
+    hint: 'mark read, flag, move, label, make and rename folders',
+    on: true,
     tools: [
       'mark_email',
       'move_email',
-      'delete_email',
       'bulk_action',
       'list_labels',
       'add_label',
       'remove_label',
       'create_label',
-      'delete_label',
       'create_mailbox',
       'rename_mailbox',
-      'delete_mailbox',
+    ],
+  },
+  delete: {
+    label: 'Delete mail',
+    hint: 'to Trash or for good, plus folders and labels. Off: mistakes are hard to undo',
+    on: false,
+    tools: ['delete_email', 'delete_label', 'delete_mailbox'],
+  },
+  calendar: {
+    label: 'Calendar and reminders',
+    hint: 'add invites and reminders to the Calendar and Reminders apps (Mac)',
+    on: true,
+    tools: [
+      'extract_calendar',
+      'add_to_calendar',
+      'check_calendar_permissions',
+      'list_calendars',
+      'list_events',
+      'list_reminders',
+      'create_reminder',
+      'analyze_email_for_scheduling',
     ],
   },
   rules: {
-    label: 'Filter rules',
-    hint: 'Sieve filters on the server, local rules',
+    label: 'Filter rules that keep running',
+    hint: 'sort new mail by rules. Off: rules run after the chat ends and can forward mail',
+    on: false,
     tools: [
       'sieve_status',
       'sieve_list_scripts',
@@ -122,24 +147,24 @@ export const TOOL_GROUPS = {
       'remove_local_rule',
     ],
   },
-  calendar: {
-    label: 'Calendar and reminders',
-    hint: 'invites, events, reminders',
-    tools: [
-      'extract_calendar',
-      'add_to_calendar',
-      'check_calendar_permissions',
-      'list_calendars',
-      'list_events',
-      'list_reminders',
-      'create_reminder',
-      'analyze_email_for_scheduling',
-    ],
+  reports: {
+    label: 'Reports and exports',
+    hint: 'mail stats, your top contacts, save an email as a file',
+    on: false,
+    tools: ['get_email_stats', 'extract_contacts', 'export_email'],
+  },
+  templates: {
+    label: 'Templates',
+    hint: 'fill-in-the-blank messages you save as files. Setup adds an example to start',
+    on: false,
+    tools: ['list_templates', 'apply_template'],
   },
   alerts: {
-    label: 'Alerts',
-    hint: 'new-mail watcher, desktop and webhook alerts',
+    label: 'Alerts and troubleshooting',
+    hint: 'let the AI check connections and change new-mail alerts. Alerts work without it',
+    on: false,
     tools: [
+      'check_health',
       'get_watcher_status',
       'list_presets',
       'get_hooks_config',
@@ -148,10 +173,35 @@ export const TOOL_GROUPS = {
       'configure_alerts',
     ],
   },
-} as const satisfies Record<ToolGroup, { label: string; hint: string; tools: readonly string[] }>;
+  codes: {
+    label: 'Sign-in code catcher',
+    hint: 'finds the newest login code in your mail. Off: it helps anyone who controls the AI log in as you',
+    on: false,
+    tools: ['get_verification_code'],
+  },
+} as const satisfies Record<
+  ToolGroup,
+  { label: string; hint: string; on: boolean; tools: readonly string[] }
+>;
 
 /** Group names in the order they are shown. */
 export const TOOL_GROUP_NAMES = Object.keys(TOOL_GROUPS) as ToolGroup[];
+
+/** The starting ticks for a new setup: read, drafts, tidy up, calendar. */
+export const DEFAULT_TOOL_GROUPS: readonly ToolGroup[] = TOOL_GROUP_NAMES.filter(
+  (name) => TOOL_GROUPS[name].on,
+);
+
+/**
+ * True when the settings let the sign-in code catcher run. With a `tools`
+ * list, the "codes" box decides. Without one, [settings.verification] does.
+ */
+export function codesAllowed(
+  groups: readonly ToolGroup[] | undefined,
+  verificationEnabled: boolean,
+): boolean {
+  return groups ? groups.includes('codes') : verificationEnabled;
+}
 
 /** The chosen groups, with "read" added and duplicates dropped, in display order. */
 export function normalizeToolGroups(groups: readonly ToolGroup[]): ToolGroup[] {

@@ -218,27 +218,35 @@ post exploits in public.
 
 ### Choosing tools
 
-Setup asks "What should your AI be able to do?" and shows tick boxes. Change
-the answer any time:
+Setup shows one screen of tick boxes, sorted by risk. Every feature is on the
+list, even the rare or risky ones, so you can see what exists. Safe ones start
+ticked. Press enter to keep them, or tick and untick first. Change the answer
+any time:
 
 ```bash
 imap-wizard tools                  # tick boxes
 imap-wizard tools show             # what is on now
-imap-wizard tools set read,send    # no prompts (scripts)
+imap-wizard tools set drafts,send  # no prompts (scripts)
 imap-wizard tools reset            # back to the toolset preset
 ```
 
-| Group | Tools | What's in it |
-|---|---|---|
-| `read` (always on) | 16 | list, search and open mail, threads, attachments, export, contacts, stats, health, security check, templates list |
-| `send` | 9 | send, reply, forward, drafts, apply a template, scheduled sends |
-| `organize` | 12 | mark, move, delete, bulk actions, labels, folders |
-| `rules` | 10 | Sieve filters on the server, local rules |
-| `calendar` | 8 | invites, events, reminders |
-| `alerts` | 6 | new-mail watcher, desktop and webhook alerts |
+| Box | Starts | Tools | What it does |
+|---|---|---|---|
+| `read` Read and search your mail | always on | 11 | open, search and summarize mail, threads and attachments, check if a sender is fake |
+| `drafts` Write drafts for you to review | on | 1 | save a draft in the right thread. You press send yourself |
+| `send` Send email as you | off | 7 | send, reply, forward, send a draft, schedule a send. Off because an email the AI reads could trick it into sending |
+| `tidy` Tidy up | on | 9 | mark read, flag, move, label, make and rename folders, bulk actions (bulk delete only with `delete`) |
+| `delete` Delete mail | off | 3 | delete mail (to Trash or for good), folders and labels |
+| `calendar` Calendar and reminders | on | 8 | add invites and reminders to the Calendar and Reminders apps (Mac) |
+| `rules` Filter rules that keep running | off | 10 | Sieve filters on the server, local rules. Off because rules keep running after the chat ends and can forward mail |
+| `reports` Reports and exports | off | 3 | mail stats, top contacts, save an email as a `.eml` file |
+| `templates` Templates | off | 2 | fill-in-the-blank messages saved as files in `~/.config/email-mcp/templates/`. Ticking it adds an example |
+| `alerts` Alerts and troubleshooting | off | 7 | lets the AI check connections and change new-mail alerts. Alerts work without it |
+| `codes` Sign-in code catcher | off | 1 | `get_verification_code` finds the newest login code in your mail. Off because it helps anyone who controls the AI log in as you |
 
 This is saved as `settings.tools` (env var `MCP_EMAIL_TOOLS`, comma-separated).
-When it is set it wins over `toolset`. Restart your AI app after a change.
+When it is set it wins over `toolset`, and the `codes` box wins over
+`settings.verification.enabled`. Restart your AI app after a change.
 
 ### Toolsets
 

@@ -7,19 +7,25 @@ import type { AppConfig, ToolGroup, Toolset } from '../types/index.js';
 import registerAllTools from './register.js';
 import {
   CORE_TOOLS,
+  DEFAULT_TOOL_GROUPS,
   MINIMAL_TOOLS,
   normalizeToolGroups,
   TOOL_GROUP_NAMES,
   TOOL_GROUPS,
 } from './toolsets.js';
 
-function configFor(readOnly: boolean, toolset: Toolset, tools?: ToolGroup[]): AppConfig {
+function configFor(
+  readOnly: boolean,
+  toolset: Toolset,
+  tools?: ToolGroup[],
+  codes = false,
+): AppConfig {
   return {
     settings: {
       readOnly,
       toolset,
       ...(tools ? { tools } : {}),
-      verification: { enabled: false, includeMagicLinks: false },
+      verification: { enabled: codes, includeMagicLinks: false },
     },
     accounts: [],
   } as unknown as AppConfig;
@@ -29,7 +35,17 @@ async function toolNames(
   readOnly: boolean,
   toolset: Toolset,
   tools?: ToolGroup[],
+  codes = false,
 ): Promise<string[]> {
+  return (await listTools(readOnly, toolset, tools, codes)).map((tool) => tool.name).sort();
+}
+
+async function listTools(
+  readOnly: boolean,
+  toolset: Toolset,
+  tools?: ToolGroup[],
+  codes = false,
+): Promise<{ name: string; inputSchema: { properties?: Record<string, unknown> } }[]> {
   const server = createServer();
   const stub = new Proxy({}, { get: () => () => [] }) as never;
   registerAllTools(
@@ -37,7 +53,7 @@ async function toolNames(
     { getAccountNames: () => [] } as never,
     stub,
     stub,
-    configFor(readOnly, toolset, tools),
+    configFor(readOnly, toolset, tools, codes),
     stub,
     stub,
     stub,
@@ -53,7 +69,7 @@ async function toolNames(
     server.connect(serverTransport as never),
   ]);
   try {
-    return (await client.listTools()).tools.map((tool) => tool.name).sort();
+    return (await client.listTools()).tools as never;
   } finally {
     await Promise.allSettled([client.close(), server.close()]);
   }
@@ -139,8 +155,8 @@ describe('tool groups', () => {
 
   it('puts every registered tool in exactly one group', async () => {
     // A new tool that no group names would silently vanish for anyone using
-    // the tools setting. This catches it.
-    const full = await toolNames(false, 'full');
+    // the tools setting. This catches it. Codes on, so every tool registers.
+    const full = await toolNames(false, 'full', undefined, true);
     const grouped = groupTools(TOOL_GROUP_NAMES);
     expect(grouped).toEqual(full);
     expect(new Set(grouped).size).toBe(grouped.length);
@@ -148,13 +164,48 @@ describe('tool groups', () => {
 
   it('registers exactly the ticked groups, plus read', async () => {
     expect(await toolNames(false, 'full', ['send'])).toEqual(groupTools(['read', 'send']));
-    expect(await toolNames(false, 'full', ['organize', 'alerts'])).toEqual(
-      groupTools(['read', 'organize', 'alerts']),
+    expect(await toolNames(false, 'full', ['tidy', 'alerts'])).toEqual(
+      groupTools(['read', 'tidy', 'alerts']),
     );
+  });
+
+  it('starts new setups careful: read, drafts, tidy up, calendar', () => {
+    expect(DEFAULT_TOOL_GROUPS).toEqual(['read', 'drafts', 'tidy', 'calendar']);
+  });
+
+  it('lists every risky feature as a box that starts off', () => {
+    for (const g of ['send', 'delete', 'rules', 'codes'] as ToolGroup[]) {
+      expect(TOOL_GROUP_NAMES).toContain(g);
+      expect(TOOL_GROUPS[g].on).toBe(false);
+    }
+  });
+
+  it('turns the sign-in code catcher on with its box, even when the setting is off', async () => {
+    expect(await toolNames(false, 'full', ['codes'])).toContain('get_verification_code');
+  });
+
+  it('keeps the code catcher off without its box, even when the setting is on', async () => {
+    expect(await toolNames(false, 'full', ['send'], true)).not.toContain('get_verification_code');
+  });
+
+  it('without a box list, the old setting still decides the code catcher', async () => {
+    expect(await toolNames(false, 'full', undefined, true)).toContain('get_verification_code');
+    expect(await toolNames(false, 'full')).not.toContain('get_verification_code');
   });
 
   it('keeps read on when nothing is ticked', async () => {
     expect(await toolNames(false, 'full', [])).toEqual(groupTools(['read']));
+  });
+
+  it('bulk_action offers delete only when the delete box is ticked', async () => {
+    const actionsFor = async (groups: ToolGroup[]) => {
+      const bulk = (await listTools(false, 'full', groups)).find((t) => t.name === 'bulk_action');
+      return (bulk?.inputSchema.properties?.action as { enum?: string[] } | undefined)?.enum;
+    };
+    expect(await actionsFor(['tidy'])).not.toContain('delete');
+    expect(await actionsFor(['tidy'])).toContain('move');
+    expect(await actionsFor(['tidy', 'delete'])).toContain('delete');
+    expect(await actionsFor([...TOOL_GROUP_NAMES])).toContain('delete');
   });
 
   it('wins over the toolset preset', async () => {
@@ -164,7 +215,7 @@ describe('tool groups', () => {
   });
 
   it('still hides write tools in read_only mode', async () => {
-    const names = await toolNames(true, 'full', ['send', 'organize', 'calendar']);
+    const names = await toolNames(true, 'full', ['send', 'tidy', 'delete', 'calendar']);
     ['send_email', 'move_email', 'delete_email', 'add_to_calendar'].forEach((name) => {
       expect(names).not.toContain(name);
     });
