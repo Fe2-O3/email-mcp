@@ -21,7 +21,7 @@ import {
   select,
   text,
 } from '@clack/prompts';
-
+import { z } from 'zod';
 import { forgetCachedAccount } from '../cache/store.js';
 import {
   appendAccountToConfig,
@@ -43,6 +43,7 @@ import {
   keychainSet,
   makeKeychainSentinel,
 } from '../security/keychain.js';
+
 import { DEFAULT_TOOL_GROUPS, normalizeToolGroups } from '../tools/toolsets.js';
 import type { AccountConfig, ToolGroup } from '../types/index.js';
 import ensureInteractive from './guard.js';
@@ -109,13 +110,52 @@ export function resolveSmtpSecurityDefault(defaults?: Partial<ServerSettings>): 
   return 'none';
 }
 
+// ---------------------------------------------------------------------------
+// Answer checks. Each runs at the prompt, so a typo is fixed on the spot
+// instead of throwing away every answer at the end.
+// ---------------------------------------------------------------------------
+
+const EMAIL_FORMAT = z.string().email();
+
+/** @internal Exported for testing. */
+export function checkEmail(value?: string): string | undefined {
+  return EMAIL_FORMAT.safeParse((value ?? '').trim()).success
+    ? undefined
+    : 'Type a full email address, like you@example.com';
+}
+
+/** @internal Exported for testing. Empty is fine: the shown default is used. */
+export function checkPort(value?: string): string | undefined {
+  const v = (value ?? '').trim();
+  if (v === '') return undefined;
+  if (!/^\d+$/.test(v)) return 'Type a number, like 993';
+  const n = Number(v);
+  return n >= 1 && n <= 65535 ? undefined : 'Type a number from 1 to 65535';
+}
+
+/** @internal Exported for testing. */
+export function checkHost(value: string | undefined, what: string): string | undefined {
+  const v = (value ?? '').trim();
+  if (v === '')
+    return `${what} is required, like ${what.startsWith('IMAP') ? 'imap' : 'smtp'}.example.com`;
+  if (/\s/.test(v)) return `${what} cannot have spaces`;
+  if (v.includes('://') || v.includes('/'))
+    return `${what} is just the name, like mail.example.com`;
+  return undefined;
+}
+
+function portOr(value: string, fallback: number): number {
+  const v = value.trim();
+  return v === '' ? fallback : Number(v);
+}
+
 async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise<ServerSettings> {
   const imapHost = await text({
     message: 'IMAP host',
     placeholder: 'imap.example.com',
     defaultValue: defaults?.imapHost,
     initialValue: defaults?.imapHost,
-    validate: (v) => (!v || v.length === 0 ? 'IMAP host is required' : undefined),
+    validate: (v) => checkHost(v, 'IMAP host'),
   });
   assertNotCancel(imapHost);
 
@@ -124,6 +164,7 @@ async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise
     placeholder: '993',
     defaultValue: String(defaults?.imapPort ?? 993),
     initialValue: defaults?.imapPort ? String(defaults.imapPort) : undefined,
+    validate: checkPort,
   });
   assertNotCancel(imapPortStr);
 
@@ -143,7 +184,7 @@ async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise
     placeholder: 'smtp.example.com',
     defaultValue: defaults?.smtpHost,
     initialValue: defaults?.smtpHost,
-    validate: (v) => (!v || v.length === 0 ? 'SMTP host is required' : undefined),
+    validate: (v) => checkHost(v, 'SMTP host'),
   });
   assertNotCancel(smtpHost);
 
@@ -152,6 +193,7 @@ async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise
     placeholder: '465',
     defaultValue: String(defaults?.smtpPort ?? 465),
     initialValue: defaults?.smtpPort ? String(defaults.smtpPort) : undefined,
+    validate: checkPort,
   });
   assertNotCancel(smtpPortStr);
 
@@ -174,12 +216,12 @@ async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise
   const smtpPoolMaxMessages = defaults?.smtpPoolMaxMessages ?? 100;
 
   return {
-    imapHost,
-    imapPort: parseInt(imapPortStr || '993', 10),
+    imapHost: imapHost.trim(),
+    imapPort: portOr(imapPortStr ?? '', defaults?.imapPort ?? 993),
     imapTls: imapSecurity === 'tls',
     imapStarttls: imapSecurity === 'starttls',
-    smtpHost,
-    smtpPort: parseInt(smtpPortStr || '465', 10),
+    smtpHost: smtpHost.trim(),
+    smtpPort: portOr(smtpPortStr ?? '', defaults?.smtpPort ?? 465),
     smtpTls: smtpSecurity === 'tls',
     smtpStarttls: smtpSecurity === 'starttls',
     smtpPoolEnabled,
@@ -210,7 +252,7 @@ async function promptAccountIdentity(defaults?: {
     placeholder: 'you@example.com',
     defaultValue: defaults?.email,
     initialValue: defaults?.email,
-    validate: (v) => (v?.includes('@') ? undefined : 'Please enter a valid email address'),
+    validate: checkEmail,
   });
   assertNotCancel(email);
 
@@ -222,7 +264,7 @@ async function promptAccountIdentity(defaults?: {
   });
   assertNotCancel(fullName);
 
-  return { name, email, fullName };
+  return { name: name.trim(), email: email.trim(), fullName: fullName.trim() };
 }
 
 /**
@@ -348,7 +390,6 @@ function accountPassesSchema(account: RawAccountConfig): boolean {
   for (const issue of result.error.issues) {
     log.error(issue.message);
   }
-  cancel('Nothing was tested or saved. Change the security setting and try again.');
   return false;
 }
 
@@ -541,14 +582,27 @@ async function addAccount(): Promise<void> {
   }
 
   // 2. Server settings (auto-detect or manual)
-  const server = await resolveServerSettings(identity.email);
+  let server = await resolveServerSettings(identity.email);
 
   // 3. Credentials
   const creds = await promptCredentials({ email: identity.email });
 
   // 4. Check the choices, then test connections
-  const newAccount = buildRawAccount(identity, creds, server);
-  if (!accountPassesSchema(newAccount)) return;
+  let newAccount = buildRawAccount(identity, creds, server);
+  // A problem the prompts could not catch (for example no encryption to a
+  // remote server): fix the server settings now, keeping every other answer.
+  while (!accountPassesSchema(newAccount)) {
+    const retry = await confirm({
+      message: 'Fix the server settings now? Your other answers are kept.',
+      initialValue: true,
+    });
+    if (isCancel(retry) || !retry) {
+      cancel('Nothing was tested or saved.');
+      return;
+    }
+    server = await promptServerSettings(server);
+    newAccount = buildRawAccount(identity, creds, server);
+  }
   const testAccount = buildTestAccount(identity, creds, server);
   const ok = await testConnections(testAccount);
   if (!ok) return;
@@ -799,7 +853,10 @@ async function editAccount(nameArg?: string): Promise<void> {
 
   const passwordChanged = fields === 'credentials' || fields === 'all';
   const updatedAccount = buildEditedAccount(current, identity, creds, server, passwordChanged);
-  if (!accountPassesSchema(updatedAccount)) return;
+  if (!accountPassesSchema(updatedAccount)) {
+    cancel('Nothing was tested or saved. Fix the item above and try again.');
+    return;
+  }
 
   // Test connections. The password to test with is the one just typed, or the
   // stored one; a Keychain placeholder is never used as a password.

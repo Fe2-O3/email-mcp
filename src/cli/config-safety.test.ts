@@ -201,15 +201,44 @@ describe('account add', () => {
       'smtp.example.org',
       '465',
       'tls',
-      true,
-      '1',
-      '100',
       'plain@example.org',
       'pw',
+      false, // fix the server settings now? no
     );
     await runAccountCommand('add');
     expect(testImap).not.toHaveBeenCalled();
     await expect(fs.access(env.configFile)).rejects.toThrow();
+  });
+
+  it('a refused setting can be fixed on the spot, keeping the other answers', async () => {
+    await fs.writeFile(env.configFile, RICH);
+    answers.push(
+      'fixme',
+      'fixme@example.org',
+      '',
+      'imap.example.org',
+      '143',
+      'none', // refused: no encryption to a remote server
+      'smtp.example.org',
+      '465',
+      'tls',
+      'fixme@example.org',
+      'pw',
+      true, // fix the server settings now? yes
+      'imap.example.org',
+      '993',
+      'tls',
+      'smtp.example.org',
+      '465',
+      'tls',
+      false, // connect the AI app now? no
+    );
+    keychain.keychainAvailable.mockResolvedValue(false);
+    await runAccountCommand('add');
+    expect(testImap).toHaveBeenCalledTimes(1);
+    const text = await fs.readFile(env.configFile, 'utf-8');
+    expect(text).toContain('name = "fixme"');
+    expect(text).toMatch(/port = 993/);
   });
 });
 

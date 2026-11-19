@@ -21,6 +21,9 @@ import type { ServerSettings } from './account-commands.js';
 import {
   buildRawAccount,
   buildTestAccount,
+  checkEmail,
+  checkHost,
+  checkPort,
   resolveImapSecurityDefault,
 } from './account-commands.js';
 
@@ -95,5 +98,32 @@ describe('Bug1 — IMAP wizard supports plain, STARTTLS and TLS', () => {
     const testAcct = buildTestAccount(identity, creds, server);
     expect(testAcct.imap.tls).toBe(true);
     expect(testAcct.imap.starttls).toBe(false);
+  });
+});
+
+describe('setup answer checks', () => {
+  it('accepts a real email address and refuses a half one', () => {
+    expect(checkEmail('me@example.com')).toBeUndefined();
+    expect(checkEmail('  me@example.com ')).toBeUndefined();
+    expect(checkEmail('test@tets')).toMatch(/full email address/);
+    expect(checkEmail('')).toMatch(/full email address/);
+  });
+
+  it('accepts a port number or blank, and refuses anything else', () => {
+    expect(checkPort('993')).toBeUndefined();
+    expect(checkPort(' 465 ')).toBeUndefined();
+    expect(checkPort('')).toBeUndefined();
+    expect(checkPort(undefined)).toBeUndefined();
+    expect(checkPort('t')).toMatch(/number/);
+    expect(checkPort('99.3')).toMatch(/number/);
+    expect(checkPort('0')).toMatch(/1 to 65535/);
+    expect(checkPort('70000')).toMatch(/1 to 65535/);
+  });
+
+  it('accepts a host name and refuses blanks, spaces and web addresses', () => {
+    expect(checkHost('imap.example.com', 'IMAP host')).toBeUndefined();
+    expect(checkHost('', 'IMAP host')).toMatch(/required/);
+    expect(checkHost('imap example.com', 'IMAP host')).toMatch(/spaces/);
+    expect(checkHost('https://imap.example.com', 'IMAP host')).toMatch(/just the name/);
   });
 });

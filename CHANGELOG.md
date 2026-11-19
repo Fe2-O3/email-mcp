@@ -20,6 +20,7 @@ All notable changes to **this fork** ([Fe2-O3/imap-wizard](https://github.com/Fe
 
 ### Changed
 
+- Setup checks each answer where you type it. A half email address (`me@example`), a port that is not a number, or a host with spaces is caught on the spot with a plain hint, instead of throwing away every answer at the end with the wrong advice ("Change the security setting"). If a server setting is still refused, setup offers to fix just those and keeps the rest.
 - Setup no longer asks three SMTP "pool" questions. It uses one connection for up to 100 messages, which suits normal mailboxes. You can still change `[accounts.smtp.pool]` in config.toml.
 - The end of setup used to show a config snippet that ran a global `imap-wizard` command most people do not have. It now uses `npx`.
 - Less log noise. A background sync cut off by shutdown is logged as info, not a warning. Node's "SQLite is an experimental feature" notice is no longer printed on every start; other warnings still are.
