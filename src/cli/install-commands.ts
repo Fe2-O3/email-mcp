@@ -189,7 +189,7 @@ function isRegistered(config: Record<string, unknown>, serversKey: string): bool
 // Subcommands
 // ---------------------------------------------------------------------------
 
-async function runInstall(): Promise<void> {
+export async function runInstall(): Promise<void> {
   ensureInteractive();
   intro('imap-wizard › Install MCP Server');
 

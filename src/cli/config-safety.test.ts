@@ -50,6 +50,13 @@ vi.mock('@clack/prompts', () => ({
 }));
 vi.mock('./guard.js', () => ({ default: vi.fn() }));
 
+// The real installer would read this machine's Claude/Cursor settings.
+const runInstall = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock('./install-commands.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./install-commands.js')>()),
+  runInstall,
+}));
+
 const keychain = vi.hoisted(() => ({
   keychainAvailable: vi.fn(async () => true),
   keychainSet: vi.fn(async () => undefined),
@@ -110,6 +117,20 @@ afterAll(async () => {
   await fs.rm(env.root, { recursive: true, force: true });
 });
 
+const MANUAL_ANSWERS = [
+  'second',
+  'second@example.org',
+  '',
+  'imap.example.org',
+  '993',
+  'tls',
+  'smtp.example.org',
+  '465',
+  'tls',
+  'second@example.org',
+  'pw',
+];
+
 describe('account add', () => {
   it('stops on an unreadable config and leaves the file byte for byte unchanged', async () => {
     const broken = 'password = "hunter2-SECRET"\n[[accounts\nname = 1\n';
@@ -124,30 +145,49 @@ describe('account add', () => {
   it('adds to a good config without losing a comment', async () => {
     await fs.writeFile(env.configFile, RICH);
     // name, email, full name, imap host/port, imap sec, smtp host/port, sec,
-    // pool, max conns, max msgs, username, password
-    answers.push(
-      'second',
-      'second@example.org',
-      '',
-      'imap.example.org',
-      '993',
-      'tls',
-      'smtp.example.org',
-      '465',
-      'tls',
-      true,
-      '1',
-      '100',
-      'second@example.org',
-      'pw',
-      true,
-    );
+    // username, password, connect now (no)
+    answers.push(...MANUAL_ANSWERS, false);
     keychain.keychainAvailable.mockResolvedValue(false);
     await runAccountCommand('add');
     const text = await fs.readFile(env.configFile, 'utf-8');
     expect(text).toContain('# keep this comment');
     expect(text).toContain('name = "second"');
     expect(text).toContain('max_attachment_mb = 40');
+  });
+
+  it('never asks about the SMTP pool and saves the safe defaults', async () => {
+    await fs.writeFile(env.configFile, RICH);
+    answers.push(...MANUAL_ANSWERS, false);
+    keychain.keychainAvailable.mockResolvedValue(false);
+    await runAccountCommand('add');
+    const asked = JSON.stringify([
+      ...prompts.text.mock.calls,
+      ...prompts.confirm.mock.calls,
+    ]).toLowerCase();
+    expect(asked).not.toContain('pool');
+    const text = await fs.readFile(env.configFile, 'utf-8');
+    expect(text).toMatch(/max_connections = 1\b/);
+    expect(text).toMatch(/max_messages = 100\b/);
+  });
+
+  it('offers to connect the AI app at the end and runs the installer on yes', async () => {
+    await fs.writeFile(env.configFile, RICH);
+    answers.push(...MANUAL_ANSWERS, true);
+    keychain.keychainAvailable.mockResolvedValue(false);
+    await runAccountCommand('add');
+    expect(runInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it('on no, skips the installer and shows the npx commands, not a bare imap-wizard', async () => {
+    await fs.writeFile(env.configFile, RICH);
+    answers.push(...MANUAL_ANSWERS, false);
+    keychain.keychainAvailable.mockResolvedValue(false);
+    await runAccountCommand('add');
+    expect(runInstall).not.toHaveBeenCalled();
+    const { note } = await import('@clack/prompts');
+    const shown = JSON.stringify(vi.mocked(note).mock.calls);
+    expect(shown).toContain('npx -y imap-wizard install');
+    expect(shown).toContain('\\"command\\": \\"npx\\"');
   });
 
   it('"None" security to a remote host never tests the login in the clear', async () => {

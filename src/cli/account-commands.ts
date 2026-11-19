@@ -46,6 +46,7 @@ import {
 import { normalizeToolGroups, TOOL_GROUP_NAMES } from '../tools/toolsets.js';
 import type { AccountConfig, ToolGroup } from '../types/index.js';
 import ensureInteractive from './guard.js';
+import { buildServerEntry, runInstall } from './install-commands.js';
 import { detectProvider } from './providers.js';
 import { countTools, toolGroupOptions } from './tools-commands.js';
 
@@ -165,51 +166,12 @@ async function promptServerSettings(defaults?: Partial<ServerSettings>): Promise
   });
   assertNotCancel(smtpSecurity);
 
-  const smtpPoolEnabled = await confirm({
-    message: 'Enable SMTP connection pooling?',
-    initialValue: defaults?.smtpPoolEnabled ?? true,
-  });
-  assertNotCancel(smtpPoolEnabled);
-
-  let smtpPoolMaxConnections = defaults?.smtpPoolMaxConnections ?? 1;
-  let smtpPoolMaxMessages = defaults?.smtpPoolMaxMessages ?? 100;
-
-  if (smtpPoolEnabled) {
-    const maxConnectionsStr = await text({
-      message: 'SMTP pool max connections',
-      defaultValue: String(defaults?.smtpPoolMaxConnections ?? 1),
-      initialValue:
-        defaults?.smtpPoolMaxConnections !== undefined
-          ? String(defaults.smtpPoolMaxConnections)
-          : undefined,
-      validate: (v) => {
-        if (!v) return 'Must be a positive integer';
-        const n = parseInt(v, 10);
-        if (Number.isNaN(n) || n < 1) return 'Must be a positive integer';
-        return undefined;
-      },
-    });
-    assertNotCancel(maxConnectionsStr);
-
-    const maxMessagesStr = await text({
-      message: 'SMTP pool max messages per connection',
-      defaultValue: String(defaults?.smtpPoolMaxMessages ?? 100),
-      initialValue:
-        defaults?.smtpPoolMaxMessages !== undefined
-          ? String(defaults.smtpPoolMaxMessages)
-          : undefined,
-      validate: (v) => {
-        if (!v) return 'Must be a positive integer';
-        const n = parseInt(v, 10);
-        if (Number.isNaN(n) || n < 1) return 'Must be a positive integer';
-        return undefined;
-      },
-    });
-    assertNotCancel(maxMessagesStr);
-
-    smtpPoolMaxConnections = parseInt(maxConnectionsStr || '1', 10);
-    smtpPoolMaxMessages = parseInt(maxMessagesStr || '100', 10);
-  }
+  // Sending reuses one connection for up to 100 messages. This suits every
+  // mailbox we know of, so the wizard does not ask. Power users can change
+  // [accounts.smtp.pool] in the config file; an edit keeps what is there.
+  const smtpPoolEnabled = defaults?.smtpPoolEnabled ?? true;
+  const smtpPoolMaxConnections = defaults?.smtpPoolMaxConnections ?? 1;
+  const smtpPoolMaxMessages = defaults?.smtpPoolMaxMessages ?? 100;
 
   return {
     imapHost,
@@ -688,22 +650,25 @@ async function addAccount(): Promise<void> {
   }
   log.success(`Account "${identity.name}" added. Config saved to ${CONFIG_FILE}`);
 
+  // Finish the job: hook the server up to the user's AI app, or say how.
+  const connectNow = await confirm({
+    message: 'Connect it to Claude Desktop, Cursor or Windsurf now?',
+    initialValue: true,
+  });
+  if (!isCancel(connectNow) && connectNow) {
+    await runInstall();
+    return;
+  }
   note(
-    JSON.stringify(
-      {
-        mcpServers: {
-          email: {
-            command: 'imap-wizard',
-            args: ['stdio'],
-          },
-        },
-      },
-      null,
-      2,
-    ),
-    'Add this to your MCP client config (e.g., Claude Desktop, Cursor)',
+    [
+      'Run this when you are ready:  npx -y imap-wizard install',
+      'Claude Code:  claude mcp add email -- npx -y imap-wizard stdio',
+      '',
+      'Or add this to your app config by hand:',
+      JSON.stringify({ mcpServers: { email: buildServerEntry('npx') } }, null, 2),
+    ].join('\n'),
+    'Connect your AI app',
   );
-
   outro('Done!');
 }
 
