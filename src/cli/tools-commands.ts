@@ -60,7 +60,7 @@ export function toolGroupOptions(): { value: ToolGroup; label: string; hint: str
   return TOOL_GROUP_NAMES.map((g) => {
     const { label, hint, tools } = TOOL_GROUPS[g];
     const count = tools.length === 1 ? '1 tool' : `${tools.length} tools`;
-    return { value: g, label, hint: `${hint} (${count})` };
+    return { value: g, label, hint: `${hint}. ${count}` };
   });
 }
 
@@ -68,6 +68,10 @@ export function toolGroupOptions(): { value: ToolGroup; label: string; hint: str
 export const TOOL_PICK_MESSAGE =
   'What may your AI do? Ticked boxes are on. Space ticks, enter saves.\n' +
   'Safe choices start ticked. Change this any time with: imap-wizard tools';
+
+/** The same question in `imap-wizard tools`, where the ticks are today's choice. */
+export const TOOL_CHANGE_MESSAGE =
+  'What may your AI do? Ticked boxes are on now. Space ticks, enter saves.';
 
 /** The boxes that match what the settings turn on now, for the starting ticks. */
 export function currentGroups(settings: RawAppConfig['settings']): ToolGroup[] {
@@ -202,7 +206,7 @@ async function pickTools(): Promise<void> {
   log.info(`Now on: ${describeChoice(config.settings)}`);
 
   const picked = await multiselect<ToolGroup>({
-    message: TOOL_PICK_MESSAGE,
+    message: TOOL_CHANGE_MESSAGE,
     options: toolGroupOptions(),
     initialValues: currentGroups(config.settings),
     required: false,
